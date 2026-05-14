@@ -39,9 +39,9 @@ Patch `REPOSITORY.md` in the current repository with repo-specific multi-agent m
 - **Idempotency:** Re-running patch on a `REPOSITORY.md` with no remaining placeholders aborts at step 4 rather than producing duplicate sections or overwriting custom content.
 - **Parameters:** `--force` — optional pre-positional flag. Default target is `REPOSITORY.md` in the repo root.
 - **Examples:** `/agent patch`, `/agent patch --force`.
-- **Boundary:** Edits `REPOSITORY.md` only. Does not touch `CLAUDE.md`, `AGENTS.md`, `~/.cursor/`, or agent settings JSON.
+- **Boundary:** Edits `REPOSITORY.md` only. Leaves `CLAUDE.md`, `AGENTS.md`, template sources, command sources, rule sources, and agent settings JSON unchanged.
 - **Validation:** The patch workflow validates scaffold-local state only: `REPOSITORY.md` remains present and every `<!-- TODO(patch): ... -->` marker is resolved after the write.
-- **Validation inference scope:** Validation commands may be inferred only from the target repo — do not copy command paths from sibling `_functions/<ns>/*.md` playbooks or any other source outside the target repo root. Concrete failed example: lifting `./link.sh` and `./tools/smoke-check.sh` from `_functions/test/run.md` (a sibling route in the same `~/.cursor/` tree) produced paths that do not exist in the target repo. When the exact path does not resolve under the target repo, leave a bounded `<!-- TODO(patch): list repo-specific validation commands -->` placeholder.
+- **Validation inference scope:** Validation commands may be inferred only from the target repo — do not copy command paths from sibling `_functions/<ns>/*.md` playbooks or any other source outside the target repo root. Concrete failed example: copying a command path from a sibling route file that resolves under `~/.cursor/` but does not exist in the target repo. When the exact path does not resolve under the target repo, leave a bounded `<!-- TODO(patch): list repo-specific validation commands -->` placeholder.
 - **Confirm-before-write:** `patch.md` is a confirm-before-write route; the confirmation step is mandatory and not optional for any placeholder. Gate contract: `cursor/_core/command-argument.md`.
 - **Force flag:** `--force` is eligible only for the route's gated overwrite path. It does not bypass missing-file, idempotency, inference, validation, or permission failures.
 

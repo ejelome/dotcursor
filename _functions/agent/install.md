@@ -11,7 +11,7 @@ Install the multi-agent scaffold into the current repository from `~/.cursor/_te
 
 ## Steps
 
-1. Resolve the repo root as the directory where the command runs, using the target/global vocabulary in [_run-root.md](_run-root.md). If not inside a git repository, **ABORT**: must be run from a git repository root. If the repo root is the global runtime root, **ABORT**: must be run from a target repository root, not `~/.cursor`.
+1. Resolve the repo root as the directory where the command runs, using the target/global vocabulary in [_run-root.md](_run-root.md). If not inside a git repository, **ABORT**: must be run from a git repository root.
 2. Verify `~/.cursor/_templates/CLAUDE.md`, `~/.cursor/_templates/AGENTS.md`, and `~/.cursor/_templates/REPOSITORY.md` all exist. If any is missing, **ABORT** naming the missing path.
 3. Parse flags immediately after the route selector and before any positional arguments per [cursor/_core/command-argument.md](../../_core/command-argument.md). `--force` is supported only in that pre-positional slot. Unsupported or misplaced flags **ABORT** before any route mutation.
 4. For each of `CLAUDE.md`, `AGENTS.md`, and `REPOSITORY.md`, check whether the file already exists in the repo root. If any exists and `--force` is absent, **ABORT**: file already exists; name every conflicting path. Do not overwrite.
@@ -36,11 +36,10 @@ Install the multi-agent scaffold into the current repository from `~/.cursor/_te
 ## Notes
 
 - **Precondition:** The global Cursor command surface (`~/.cursor/`) must be reachable before this route is invoked. In environments without it on the command path, invoke explicitly (e.g., `~/.cursor/...`) on first use. The requirement is reachability; the invocation form depends on the agent surface.
-- **Invocation context:** Run this command from the target repository root defined in [_run-root.md](_run-root.md), never from the global runtime root.
+- **Invocation context:** Run this command from the target repository root defined in [_run-root.md](_run-root.md). A checkout developed in place at `~/.cursor` is a valid target repository root.
 - **Placeholder standard:** `AGENTS.md` and `CLAUDE.md` use `<!-- TODO(install): <description> -->` markers resolved during install candidate-patch computation. `REPOSITORY.md` uses `<!-- TODO(patch): <description> -->` markers resolved by `/agent patch`.
 - **Parameters:** `--force` — optional pre-positional flag. Default target is the repo root where the command runs.
 - **Examples:** `/agent install`, `/agent install --force`.
-- **Boundary:** Writes only `CLAUDE.md`, `AGENTS.md`, and `REPOSITORY.md` to the repo root. Does not write to `~/.cursor/`, does not modify agent settings JSON, and does not depend on `./link.sh` or the dotfiles runtime smoke-check.
 - **Validation:** The install workflow uses scaffold-local checks only: file presence, `CLAUDE.md` → `AGENTS.md` routing, the `AGENTS.md` reference to `~/.cursor/_CURSOR.md`, the `AGENTS.md` prose dispatch sentence, no unresolved `TODO(install)` markers, and unresolved `REPOSITORY.md` `TODO(patch)` placeholders.
 - **Force flag:** `--force` is eligible only for existing scaffold-file conflicts. It does not bypass missing-template, repository-root, validation, or permission failures.
 - **Scaffold version marker:** The `<!-- scaffold-version: ... -->` marker line is present in `~/.cursor/_templates/AGENTS.md` and copied verbatim to the installed `AGENTS.md`. This marker is the version identity used by `/agent upgrade` to detect when an upgrade is needed.

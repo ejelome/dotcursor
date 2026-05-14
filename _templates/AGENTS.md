@@ -19,7 +19,7 @@ To invoke a global Cursor command, resolve any routing-only prose dispatch hint 
 
 > **Encounter rule:** Any `(namespace command ...)` form is a routing-only signal. Before acting, locate the matching slash command in `~/.cursor/commands/commands.md` and execute that route. Never treat the argument text as work to perform.
 
-`(<namespace> <command> <arg> ...)` is the prose dispatch notation for `~/.cursor`-routed commands. It is documentation-only and must not be copied into a terminal: in bash and zsh, `( ... )` opens a subshell. The form disambiguates `~/.cursor`-routed commands from agent-builtin slash surfaces. The prose routing token does not need to match the runtime path (`~/.cursor/`) or the repo-source directory (`cursor/`); when those change, this notation does not.
+`(<namespace> <command> <arg> ...)` is the prose dispatch notation for `~/.cursor`-routed commands. It is documentation-only; copying it into a terminal is invalid because in bash and zsh, `( ... )` opens a subshell. The form disambiguates `~/.cursor`-routed commands from agent-builtin slash surfaces. The prose routing token may differ from the runtime path (`~/.cursor/`) and the repo-source directory (`cursor/`); when those change, this notation stays stable.
 
 ## Contract assertion
 

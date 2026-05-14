@@ -53,6 +53,7 @@ End-to-end validation: `tests/run.sh` (which invokes `tools/cursor/audit.sh`).
 - `_generated/` is generator-owned — do not edit by hand. Edit upstream source under `_core/`, `_functions/`, `_roles/`, `_mdc/`, or `tools/collab/`, then re-run the matching `tools/cursor/sync-*.sh` (or `tools/collab/lifecycle-doc.py` for collab lifecycle).
 - Adapter files (`CLAUDE.md`, `AGENTS.md`, `_CURSOR.md`) are routing-only. They must not embed executable logic; behavior belongs in `_functions/` or `_mdc/`.
 - `_templates/*` defines the scaffold shape consumed by `/agent install` and `/agent upgrade`. The `<!-- scaffold-version: <ISO-date> -->` marker in `_templates/AGENTS.md` is the version identity; bumping it forces re-installs to upgrade.
+- `~/.cursor/` is a valid project target for `/agent install`, `/agent patch`, and `/agent upgrade`; these commands write tracked source only; `_generated/` remains generator-owned.
 
 ## 5) Validation Modes
 

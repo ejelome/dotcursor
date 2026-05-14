@@ -23,7 +23,7 @@ Run QA harnesses by target so maintainers can execute canonical test checklists 
    - `repo` → load `REPOSITORY.md` at repository root. If missing, **ABORT** naming the expected path.
    - `all` → run `commands`, then `rules`, then `_functions`, then `_mdc`, then `_core`, then `_roles`, then `_settings`, then `repo` in that order.
 3. If any target fails, patch the governed files and rerun that target’s full harness procedure until pass or documented blockers.
-4. For target `repo` or `all`, run source mode (`./tests/run.sh` and `./tools/smoke-check.sh`), and run runtime mode (`SMOKE_CHECK_RUNTIME=1 SKIP_TESTS_RUN=1 ./tools/smoke-check.sh`) after `./link.sh` when runtime projection checks are required.
+4. For target `repo` or `all`, run `./tools/cursor/audit.sh` and `./tests/run.sh`.
 5. Return harness-required output blocks per executed targets plus a concise consolidated status.
 
 ## Notes

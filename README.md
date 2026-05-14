@@ -41,7 +41,7 @@ Files under `_generated/` are produced by scripts in `tools/cursor/`. Edit the s
 
 ## Done signal
 
-Run `tools/cursor/audit.sh` to verify the framework surface. The audit is generated for this `~/.cursor` repo rather than migrated from `~/dotfiles`, and exits 0 when:
+Run `tools/cursor/audit.sh` to verify the framework surface. The audit exits 0 when:
 
 - Runtime paths (`.collabs/`, `.claude/`, `projects/`) are excluded from git
 - No accidental untracked payload

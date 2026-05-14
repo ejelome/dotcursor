@@ -18,7 +18,7 @@ Run a staged narrative rewrite: audit drift in narrative content, align project 
 3. Read `cursor/_roles/<key>.json`. If unreadable, **ABORT**: role file unreadable; name the expected path.
 4. Validate the role JSON against [cursor/_core/agent-role.md](../../_core/agent-role.md): `key` must match `<key>`, and `displayName` and non-empty `concerns` must be present. If invalid, **ABORT**: invalid role JSON; name the failed field.
 5. For `audit`, run **Phase 1 — Audit**. Focus: meaning assessment — locating drift before scope is known.
-6. For `align`, resolve the state file through `tools/narrative/state.py align --role <key>`. If the state file is missing or `~/.cursor` resolves to the repository `cursor/` tree, **ABORT** naming the failed path. Recovery: re-run `audit` to create state or run `./link.sh` to refresh the runtime tree before continuing. Then run **Phase 2 — Align**. Focus: surface enumeration, verifiable match.
+6. For `align`, resolve the state file through `tools/narrative/state.py align --role <key>`. If the state file is missing or `~/.cursor` resolves to the repository `cursor/` tree, **ABORT** naming the failed path. Recovery: re-run `audit` to create state before continuing. Then run **Phase 2 — Align**. Focus: surface enumeration, verifiable match.
 7. For `gate`, resolve `validationCommands` through `tools/narrative/state.py gate --role <key>`. If the state file is missing or `validationCommands` is empty, **ABORT** naming the missing field. Recovery: re-run `audit` to populate the state file before continuing. Then run **Phase 3 — Gate**. Focus: verifiable execution.
 
 ## Notes
@@ -80,7 +80,7 @@ Next phase:
 Run `/narrative rewrite content align --role <key>` to check project rule alignment, then `/narrative rewrite content gate --role <key>`.
 ```
 
-- **Phase 2 — Align:** Do not edit files outside the alignment surface. Call `tools/narrative/state.py align --role <key>` before comparing files so the runtime guard rejects symlinked `~/.cursor` projections and writes `roleBindings.align` and `concernRequirements.align` from the resolved role. Enumerate project-local `*.mdc` files and compare each against `~/.cursor/rules/`. Read `phaseOutputs.audit` from state before producing output; if missing or malformed, **ABORT** naming `phaseOutputs.audit`. Report mismatches — do not auto-resolve. Verify `coveredConcerns` and write the artifact to `phaseOutputs.align`; on coverage miss, emit the artifact, name missing keys, and **ABORT** before handing off. Emit:
+- **Phase 2 — Align:** Do not edit files outside the alignment surface. Call `tools/narrative/state.py align --role <key>` before comparing files to write `roleBindings.align` and `concernRequirements.align` from the resolved role. Enumerate project-local `*.mdc` files and compare each against `~/.cursor/rules/`. Read `phaseOutputs.audit` from state before producing output; if missing or malformed, **ABORT** naming `phaseOutputs.audit`. Report mismatches — do not auto-resolve. Verify `coveredConcerns` and write the artifact to `phaseOutputs.align`; on coverage miss, emit the artifact, name missing keys, and **ABORT** before handing off. Emit:
 
 ```text
 ### Phase 2 — Align

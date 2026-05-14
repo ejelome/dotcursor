@@ -39,4 +39,4 @@ Return a pass/fail report by check (`P1..Pn`) and list exact file paths for fail
 When environment allows, run:
 
 - `./tests/run.sh`
-- `./tools/smoke-check.sh`
+- `./tools/cursor/audit.sh`

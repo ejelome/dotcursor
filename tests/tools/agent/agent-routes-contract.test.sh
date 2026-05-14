@@ -12,8 +12,9 @@ fail() {
 grep -Fq 'global runtime root' _functions/agent/_run-root.md || fail "_run-root.md does not define global runtime root"
 grep -Fq 'target repository root' _functions/agent/_run-root.md || fail "_run-root.md does not define target repository root"
 
-grep -Fq 'not `~/.cursor`' _functions/agent/install.md || fail "install.md lacks runtime-root abort"
-grep -Fq 'not `~/.cursor`' _functions/agent/upgrade.md || fail "upgrade.md lacks runtime-root abort"
+grep -Fq 'a target path of `~/.cursor` is permitted' _functions/agent/_run-root.md || fail "_run-root.md lacks valid ~/.cursor target policy"
+grep -Fq 'A checkout developed in place at `~/.cursor` is a valid target repository root' _functions/agent/install.md || fail "install.md lacks valid ~/.cursor target policy"
+grep -Fq 'A checkout developed in place at `~/.cursor` is a valid target repository root' _functions/agent/upgrade.md || fail "upgrade.md lacks valid ~/.cursor target policy"
 
 grep -Fq 'TODO(install)' _templates/AGENTS.md || fail "AGENTS template lacks TODO(install)"
 grep -Fq 'TODO(patch)' _templates/REPOSITORY.md || fail "REPOSITORY template lacks TODO(patch)"
@@ -28,6 +29,6 @@ grep -Fq 'no `<!-- TODO(patch): ... -->` markers remain' _functions/agent/patch.
 grep -Fq 'if any `TODO(install)` marker would survive in the candidate patch, **ABORT**' _functions/agent/upgrade.md || fail "upgrade.md lacks unresolved TODO(install) overwrite abort"
 
 grep -Fq 'include a command path only when that exact path exists in the target repo' _functions/agent/patch.md || fail "patch.md lacks deterministic validation-command inference"
-grep -Fq '_functions/test/run.md' _functions/agent/patch.md || fail "patch.md lacks sibling-route failed example"
+grep -Fq 'sibling route file' _functions/agent/patch.md || fail "patch.md lacks sibling-route failed example"
 
 printf 'OK: agent route contract covers run-root and marker-class invariants\n'
