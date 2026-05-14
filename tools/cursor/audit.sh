@@ -27,7 +27,7 @@ require_dir() {
 
 is_source_path() {
   case "$1" in
-    .gitignore|CLAUDE.md|AGENTS.md|_CURSOR.md|README.md) return 0 ;;
+    .gitignore|CLAUDE.md|AGENTS.md|_CURSOR.md|README.md|REPOSITORY.md) return 0 ;;
     _core/*|_functions/*|_generated/*|_mdc/*|_roles/*|_templates/*|_tests/*|commands/*|rules/*|tests/*|tools/*) return 0 ;;
     *) return 1 ;;
   esac
@@ -51,7 +51,7 @@ check_required_surface() {
 }
 
 check_adapters() {
-  grep -Fq '_CURSOR.md' CLAUDE.md || fail "CLAUDE.md does not route to _CURSOR.md"
+  grep -Fq 'AGENTS.md' CLAUDE.md || fail "CLAUDE.md does not route to AGENTS.md"
   grep -Fq '_CURSOR.md' AGENTS.md || fail "AGENTS.md does not route to _CURSOR.md"
   grep -Fq 'commands/commands.md' _CURSOR.md || fail "_CURSOR.md does not route to commands/commands.md"
   grep -Fq 'alwaysApply: true' rules/auto.mdc || fail "rules/auto.mdc is not auto-applied"

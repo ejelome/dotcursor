@@ -9,7 +9,7 @@ Deterministic QA for scaffold template sources projected to `~/.cursor/_template
 3. Validate each template file has one H1 and is <= 250 lines.
 4. Validate `CLAUDE.md` is routing-only and points to `AGENTS.md`.
 5. Validate `AGENTS.md` references `~/.cursor/_CURSOR.md` and `REPOSITORY.md`.
-6. Validate `REPOSITORY.md` contains `<!-- TODO(agent): ... -->` placeholders for repo-specific authoring.
+6. Validate `AGENTS.md` contains `<!-- TODO(install): ... -->` placeholders for install-time scaffold authoring and `REPOSITORY.md` contains `<!-- TODO(patch): ... -->` placeholders for repo-specific authoring.
 
 ## Required roster
 

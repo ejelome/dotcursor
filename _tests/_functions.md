@@ -19,6 +19,7 @@ Deterministic QA for private route playbooks in `~/.cursor/_functions/**/*.md`.
 Private function files under `~/.cursor/_functions/`:
 
 - `agent/install.md`
+- `agent/_run-root.md`
 - `agent/patch.md`
 - `agent/upgrade.md`
 - `collab/archive.md`

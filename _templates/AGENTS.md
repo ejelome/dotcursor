@@ -1,6 +1,6 @@
 # Agent guide
 <!-- scaffold-version: 2026-05-02 -->
-<!-- TODO(agent): Replace the heading above with the project-specific title, e.g. "Agent guide — MyProject" -->
+<!-- TODO(install): Replace the heading above with the project-specific title, e.g. "Agent guide — MyProject" -->
 
 Agents edit tracked source in this repository. Global Cursor guidance lives in `~/.cursor/_CURSOR.md`.
 

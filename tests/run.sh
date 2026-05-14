@@ -9,4 +9,4 @@ cd "$ROOT"
 while IFS= read -r test_script; do
   [[ -n "$test_script" ]] || continue
   bash "$test_script"
-done < <(find tests/tools/collab/registry.py -name "*.test.sh" -type f | sort)
+done < <(find tests -name "*.test.sh" -type f | sort)
