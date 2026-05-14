@@ -23,7 +23,7 @@ Authority is strict and ordered:
    - `tools/cursor/roles.py`, `tools/cursor/command-reference.py` — generators consumed by the sync scripts
    - `tools/collab/registry.py`, `tools/collab/lifecycle-doc.py` — collab engine and lifecycle doc generator
 2. Repo-owned source files and policy documents:
-   - Adapters and core: `CLAUDE.md`, `AGENTS.md`, `_CURSOR.md`, `README.md`
+   - Adapters and entry surfaces: `CLAUDE.md`, `AGENTS.md`, `_CURSOR.md`, `README.md`
    - `_core/` — cross-cutting invariants and contracts
    - `_functions/<namespace>/<route>.md` — slash-command route implementations
    - `_mdc/{auto,shared}/*.mdc` — Cursor rule bodies
@@ -36,7 +36,6 @@ Authority is strict and ordered:
 3. Derived runtime or generated outputs:
    - `_generated/collab-lifecycle.md`, `_generated/command-reference.md`, `_generated/content-invariants.tsv` — produced by `tools/cursor/sync-*.sh` and `tools/collab/lifecycle-doc.py`; never edited by hand
    - Project-local `.cursor/` overlays (per `_CURSOR.md` system model) — derived per-project, out of scope here
-   - Runtime state under `.collabs/`, `.claude/`, `projects/`, `extensions/`, `skills/`, `plugins/`, `plans/`, `subagents/`, `ide_state.json` — excluded by `.gitignore`, never tracked
 
 ## 3) Output Chain Contract
 
@@ -54,8 +53,6 @@ End-to-end validation: `tests/run.sh` (which invokes `tools/cursor/audit.sh`).
 - `_generated/` is generator-owned — do not edit by hand. Edit upstream source under `_core/`, `_functions/`, `_roles/`, `_mdc/`, or `tools/collab/`, then re-run the matching `tools/cursor/sync-*.sh` (or `tools/collab/lifecycle-doc.py` for collab lifecycle).
 - Adapter files (`CLAUDE.md`, `AGENTS.md`, `_CURSOR.md`) are routing-only. They must not embed executable logic; behavior belongs in `_functions/` or `_mdc/`.
 - `_templates/*` defines the scaffold shape consumed by `/agent install` and `/agent upgrade`. The `<!-- scaffold-version: <ISO-date> -->` marker in `_templates/AGENTS.md` is the version identity; bumping it forces re-installs to upgrade.
-- Runtime/state paths listed in `.gitignore` (`.collabs/`, `.claude/`, `projects/`, `extensions/`, `skills/`, `plugins/`, `plans/`, `subagents/`, `skills-cursor/`, `ide_state.json`) are local machine state and must never be tracked.
-- `/agent install` and `/agent patch` (per their Boundary notes) do not write to `~/.cursor/`. Edits to this repo's adapter and contract files are performed manually or via repo-specific tooling.
 
 ## 5) Validation Modes
 
@@ -66,7 +63,7 @@ End-to-end validation: `tests/run.sh` (which invokes `tools/cursor/audit.sh`).
 
 ### Runtime Mode (required if the repo projects runtime state)
 
-This repo does not project runtime state outside `_generated/`, which is regenerated from source by the `tools/cursor/sync-*.sh` scripts listed in §2.1. No separate runtime-mode validation is required; re-running the source-mode commands after a sync is sufficient.
+This repo does not project runtime state outside `_generated/`, which is regenerated from source by the `tools/cursor/sync-*.sh` scripts and `tools/collab/lifecycle-doc.py` listed in §2.1. No separate runtime-mode validation is required; re-running the source-mode commands after a sync is sufficient.
 
 ### Overlay Mode (optional)
 
@@ -84,8 +81,8 @@ Contract version: `0.1.0`.
 
 On completion, report:
 
-- `tools/cursor/audit.sh` exit status and the names of any failed checks (untracked payload, broken references, unreachable tracked files, runtime-path leakage)
+- `tools/cursor/audit.sh` exit status and the names of any failed checks
 - `tests/run.sh` outcome (audit pass/fail plus any discovered `*.test.sh` results)
-- Any unresolved `TODO(agent)` placeholders remaining in `REPOSITORY.md` or installed scaffold files
+- Any unresolved `TODO(patch)` placeholders remaining in `REPOSITORY.md` or installed scaffold files
 - Any `_generated/` file whose mtime is newer than its sync script's last run, or any source-vs-generated drift surfaced by `_tests/_generated.md`
-- Residual risks: runtime-path entries newly tracked, adapter files that grew executable behavior, or templates whose `scaffold-version:` marker changed without an `/agent upgrade` audit
+- Residual risks: adapter files that grew executable behavior, or templates whose `scaffold-version:` marker changed without an `/agent upgrade` audit
