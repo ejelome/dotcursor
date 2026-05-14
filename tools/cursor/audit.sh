@@ -28,7 +28,7 @@ require_dir() {
 is_source_path() {
   case "$1" in
     .gitignore|CLAUDE.md|AGENTS.md|_CURSOR.md|README.md) return 0 ;;
-    _core/*|_functions/*|_generated/*|_mdc/*|_roles/*|_templates/*|_tests/*|commands/*|rules/*|tools/*) return 0 ;;
+    _core/*|_functions/*|_generated/*|_mdc/*|_roles/*|_templates/*|_tests/*|commands/*|rules/*|tests/*|tools/*) return 0 ;;
     *) return 1 ;;
   esac
 }

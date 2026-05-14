@@ -15,6 +15,8 @@ Deterministic QA for generated Cursor artifacts projected to `~/.cursor/_generat
 Tracked generated files under `cursor/_generated/`:
 
 - `collab-lifecycle.md`
+- `command-reference.md`
+- `content-invariants.tsv`
 
 ## Output
 

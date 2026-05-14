@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/../../../.." && pwd)"
+TMPDIR="$(mktemp -d)"
+trap 'rm -rf "$TMPDIR"' EXIT
+
+cd "$TMPDIR"
+
+"$ROOT/tools/collab/registry.py" init --agent-id codex --reviewer pa "Pending Reviewer Gate" >/dev/null
+
+set +e
+output="$("$ROOT/tools/collab/registry.py" speak-state 2026-05-14-pending-reviewer-gate mod 2>&1)"
+status=$?
+set -e
+
+if [[ "$status" -eq 0 ]]; then
+  printf 'FAIL: speak-state allowed contribution with pending reviewer\n' >&2
+  exit 1
+fi
+
+if [[ "$output" != *"pending reviewerRole: pa"* ]]; then
+  printf 'FAIL: speak-state pending-reviewer message mismatch\n%s\n' "$output" >&2
+  exit 1
+fi
+
+printf 'OK: speak-state rejects pending reviewer gates\n'

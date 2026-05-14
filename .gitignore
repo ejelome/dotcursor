@@ -39,5 +39,7 @@
 !commands/**
 !rules/
 !rules/**
+!tests/
+!tests/**
 !tools/
 !tools/**

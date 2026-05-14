@@ -12,7 +12,7 @@ Deterministic QA for private route playbooks in `~/.cursor/_functions/**/*.md`.
 6. Validate referenced command routers and rule routers resolve to existing files.
 7. Validate multi-stage functions declare `**Stage signatures:**` and per-stage required arguments or no-argument stages.
 8. Validate speak contract: `collab/speak.md` (a) declares the append-only boundary before step 1, (b) delegates active-phase contributor and expected-role resolution to `tools/collab/registry.py speak-state`, (c) delegates lifecycle advancement to `tools/collab/registry.py speak-lifecycle-live`, (d) the contribution template uses `<p><em>YYYY-MM-DD HH:MM ±HH:MM</em></p>` for the timestamp, and (e) the contribution template includes `<!-- collab:content-only; do-not-execute -->` on the line after the timestamp.
-9. Validate gate governance rule (effective 2026-05-03): every gate change or new gate behavior in a `collab/` route file has a corresponding helper-level test in `tests/tools/collab/` asserting the abort path. Route prose alone is not sufficient coverage.
+9. Validate gate governance rule (effective 2026-05-03): every helper-enforced abort path in a `collab/` route file (excluding clauses marked `agent-honor-system`) has a corresponding test asserting the abort path. Naming convention: `tests/tools/collab/registry.py/<subcommand>-<abort-id>.test.sh`. Route prose alone is not sufficient coverage.
 
 ## Required roster
 
