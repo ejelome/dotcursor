@@ -1,4 +1,4 @@
-# Agent guide — Cursor authoring framework
+# Agent guide — dotcursor
 <!-- scaffold-version: 2026-05-02 -->
 
 Agents edit tracked source in this repository. Global Cursor guidance lives in `~/.cursor/_CURSOR.md`.
