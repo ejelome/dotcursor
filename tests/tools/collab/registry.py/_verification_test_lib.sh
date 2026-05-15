@@ -8,11 +8,18 @@ read_json_field() {
 }
 
 registry_revision() {
-  python3 - <<'PY'
+  local registry
+  registry="$(registry_path)"
+  python3 - "$registry" <<'PY'
 import json
+import sys
 from pathlib import Path
-print(json.loads(Path('.collabs/registry.json').read_text()).get('revision', 0))
+print(json.loads(Path(sys.argv[1]).read_text()).get('revision', 0))
 PY
+}
+
+registry_path() {
+  "$ROOT/tools/collab/registry.py" registry-path
 }
 
 init_reviewer_target() {
@@ -46,13 +53,15 @@ seal_target() {
 
 seed_handoff_scope() {
   local slug="$1"
-  python3 - "$slug" <<'PY'
+  local registry
+  registry="$(registry_path)"
+  python3 - "$slug" "$registry" <<'PY'
 import json
 import sys
 from pathlib import Path
 
 slug = sys.argv[1]
-path = Path('.collabs/registry.json')
+path = Path(sys.argv[2])
 data = json.loads(path.read_text())
 entry = next(item for item in data['collabs'] if item['slug'] == slug)
 entry['handoff'] = {
@@ -72,13 +81,15 @@ PY
 assert_seal_stale() {
   local slug="$1"
   local reason="$2"
-  python3 - "$slug" "$reason" <<'PY'
+  local registry
+  registry="$(registry_path)"
+  python3 - "$slug" "$reason" "$registry" <<'PY'
 import json
 import sys
 from pathlib import Path
 
-slug, reason = sys.argv[1:3]
-entry = next(item for item in json.loads(Path('.collabs/registry.json').read_text())['collabs'] if item['slug'] == slug)
+slug, reason, registry = sys.argv[1:4]
+entry = next(item for item in json.loads(Path(registry).read_text())['collabs'] if item['slug'] == slug)
 seal = entry['verificationSeal']
 assert seal['stale'] is True, seal
 assert seal['staleReason'] == reason, seal

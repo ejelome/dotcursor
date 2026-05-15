@@ -1,6 +1,6 @@
 # /collab registry
 
-Reference document for the `.collabs/registry.json` schema and field ownership used by all collab routes.
+Reference document for the resolved collab `registry.json` schema and field ownership used by all collab routes.
 
 ## Trigger
 
@@ -15,7 +15,7 @@ Reference document for the `.collabs/registry.json` schema and field ownership u
 
 ## Notes
 
-- **Registry contract:** `.collabs/registry.json` is the authoritative source of truth for all collab command state. Markdown transcripts under `.collabs/records/*.md` are append-only human context; they are never parsed for machine state. All routes resolve collab targets, phase, status, participants, and turn order from the registry only, using `tools/collab/registry.py` as the shared read/write helper.
+- **Registry contract:** The default registry is resolved from `.collab-project.json` to `$HOME/.collabs/<project-id>/registry.json`; `--registry` bypasses that resolver. That registry is the authoritative source of truth for all collab command state. Markdown transcripts under `records/*.md` in the same state root are append-only human context; they are never parsed for machine state. All routes resolve collab targets, phase, status, participants, and turn order from the registry only, using `tools/collab/registry.py` as the shared read/write helper.
 
 - **Top-level fields:**
 
@@ -41,7 +41,7 @@ Reference document for the `.collabs/registry.json` schema and field ownership u
   | `reviewerRole` | string | Optional reviewer key for collab-level judgment passes. May be written before the role is listed in `participants`; while pending, `speak-state` aborts before turn-order checks. |
   | `reviewerMode` | string | Optional reviewer behavior mode. Initial supported value: `last-in-convergent-phases`. |
   | `reviewerOptionalPhases` | string[] | Optional phase names where the reviewer may speak without blocking the ordinary expected speaker. Defaults to `Discussion` when a reviewer is set. Mutating this field affects only the current or later active phase; it does not retroactively admit the reviewer into a phase that has already advanced. |
-  | `transcriptPath` | string | Relative path to the markdown transcript: `.collabs/records/<id>.md`. |
+  | `transcriptPath` | string | Relative path to the markdown transcript inside the state root: `records/<id>.md`. |
   | `archived` | boolean | `true` after a soft delete via `archive`. |
   | `execution` | object | Keyed by role key. Each value: `{ "status": "in_progress" \| "completed" \| "failed", "date": "YYYY-MM-DD", "validationResult"?: string, "validationScope"?: "scoped" \| "full" \| "deferred", "touchedPaths"?: string[] }`. `in_progress` is reserved for true pre-work async dispatch or necessary retry trace; default successful execution records are `completed` with validation scope and touched paths. For reviewer-backed collabs, completing all `execution.<role>` entries does not trigger auto-close; a current non-stale `verificationSeal` is also required. |
   | `completion.subState` | string | `"execution"` \| `"verification"`. Present when the `Completion` phase is active for a reviewer-backed collab. Set to `"verification"` after all assigned `execution.<role>` entries are `completed`; transitions back to `"execution"` after a reopen-handoff or reopen-action-plan cap exit. Absent for non-reviewer-backed collabs. |

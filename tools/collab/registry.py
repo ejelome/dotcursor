@@ -10,6 +10,7 @@ import json
 import os
 import re
 import sys
+import uuid
 import webbrowser
 from contextlib import contextmanager
 from collections.abc import Callable
@@ -52,6 +53,11 @@ DEFAULT_REVIEWER_MODE = 'last-in-convergent-phases'
 DEFAULT_REVIEWER_OPTIONAL_PHASES = ['Discussion']
 INVALID_AGENT_ID_ALTERNATIVES = {'n/a', 'unspecified'}
 DEFAULT_OPEN_ROSTER_EFFORT = 'medium'
+PROJECT_ID_FILENAME = '.collab-project.json'
+LEGACY_STATE_DIRNAME = '.collabs'
+STATE_HOME_ENV = 'CURSOR_COLLAB_STATE_HOME'
+DEFAULT_STATE_HOME = Path.home() / '.collabs'
+PROJECT_ID_RE = re.compile(r'^[a-z0-9][a-z0-9-]{7,127}$')
 def resolve_cursor_root() -> Path:
     configured = os.environ.get('CURSOR_CONFIG_ROOT')
     if configured:
@@ -129,6 +135,143 @@ ACTION_PLAN_SHAPE_EXAMPLE = '- [ ] **tw:** Update the route doc.'
 
 def die(message: str) -> None:
     raise SystemExit(message)
+
+
+def find_project_identity_path(start: Path | None = None) -> Path | None:
+    current = (start or Path.cwd()).resolve()
+    for directory in [current, *current.parents]:
+        identity_path = directory / PROJECT_ID_FILENAME
+        if identity_path.exists():
+            return identity_path
+    return None
+
+
+def read_project_identity(path: Path) -> dict:
+    try:
+        data = json.loads(path.read_text())
+    except json.JSONDecodeError as exc:
+        die(f'project identity invalid JSON: {path}: {exc}')
+    if not isinstance(data, dict):
+        die(f'project identity must be an object: {path}')
+    schema_version = data.get('schemaVersion')
+    if schema_version != 1:
+        die(f'project identity schemaVersion must be 1: {path}')
+    project_id = data.get('projectId')
+    if not isinstance(project_id, str) or not PROJECT_ID_RE.match(project_id):
+        die(f'project identity projectId must be an opaque lowercase id: {path}')
+    label = data.get('label')
+    if label is not None and (not isinstance(label, str) or not label.strip()):
+        die(f'project identity label must be a non-empty string when present: {path}')
+    state = data.get('state')
+    if state is not None and not isinstance(state, dict):
+        die(f'project identity state must be an object when present: {path}')
+    return data
+
+
+def write_project_identity(project_root: Path, label: str | None = None) -> dict:
+    project_root.mkdir(parents=True, exist_ok=True)
+    identity_path = project_root / PROJECT_ID_FILENAME
+    if identity_path.exists():
+        return read_project_identity(identity_path)
+    project_id = uuid.uuid4().hex
+    data = {
+        'schemaVersion': 1,
+        'projectId': project_id,
+        'label': label or project_root.name or 'cursor-project',
+        'state': {
+            'mode': 'shared',
+            'isolation': 'opt-in',
+        },
+    }
+    identity_path.write_text(json.dumps(data, indent=2) + '\n')
+    return data
+
+
+def collab_state_home() -> Path:
+    configured = os.environ.get(STATE_HOME_ENV)
+    if configured:
+        return Path(configured).expanduser().resolve()
+    return DEFAULT_STATE_HOME
+
+
+def state_root_for_project(project_id: str) -> Path:
+    return collab_state_home() / project_id
+
+
+def normalize_transcript_path_for_state(path_value: str, collab_id: str) -> str:
+    legacy = f'{LEGACY_STATE_DIRNAME}/records/{collab_id}.md'
+    current = f'records/{collab_id}.md'
+    if path_value == legacy:
+        return current
+    if path_value == current:
+        return current
+    die('registry: transcriptPath must match records/<id>.md')
+
+
+def migrate_legacy_state(project_root: Path, state_root: Path, project_id: str) -> None:
+    legacy_root = project_root / LEGACY_STATE_DIRNAME
+    legacy_registry = legacy_root / 'registry.json'
+    target_registry = state_root / 'registry.json'
+    if not legacy_registry.exists() or target_registry.exists():
+        return
+
+    data = json.loads(legacy_registry.read_text())
+    if not isinstance(data, dict):
+        die(f'registry invalid JSON: {legacy_registry}: top-level value must be an object')
+    for entry in data.get('collabs', []):
+        if not isinstance(entry, dict):
+            continue
+        collab_id = entry.get('id')
+        transcript_path = entry.get('transcriptPath')
+        if not isinstance(collab_id, str) or not isinstance(transcript_path, str):
+            continue
+        next_transcript_path = normalize_transcript_path_for_state(transcript_path, collab_id)
+        source_transcript = project_root / transcript_path
+        target_transcript = state_root / next_transcript_path
+        if source_transcript.exists():
+            target_transcript.parent.mkdir(parents=True, exist_ok=True)
+            target_transcript.write_text(source_transcript.read_text())
+        entry['transcriptPath'] = next_transcript_path
+
+    state_root.mkdir(parents=True, exist_ok=True)
+    validate_registry(data, target_registry)
+    target_registry.write_text(json.dumps(data, indent=2) + '\n')
+    load_registry(target_registry)
+
+    legacy_root.mkdir(parents=True, exist_ok=True)
+    (legacy_root / 'project.json').write_text(json.dumps({
+        'schemaVersion': 1,
+        'projectId': project_id,
+    }, indent=2) + '\n')
+    (legacy_root / 'README.md').write_text(
+        'Collab state moved to the project-id resolver.\n'
+        f'This transitional stub records only projectId {project_id}.\n'
+    )
+    legacy_registry.unlink(missing_ok=True)
+    records_root = legacy_root / 'records'
+    if records_root.exists():
+        for record in records_root.glob('*.md'):
+            record.unlink(missing_ok=True)
+
+
+def resolve_default_registry_path(command: str | None) -> tuple[Path, bool]:
+    project_root = Path.cwd().resolve()
+    identity_path = find_project_identity_path(project_root)
+
+    legacy_registry = project_root / LEGACY_STATE_DIRNAME / 'registry.json'
+    if identity_path is None and (legacy_registry.exists() or command == 'init'):
+        identity = write_project_identity(project_root)
+        identity_path = project_root / PROJECT_ID_FILENAME
+    elif identity_path is not None:
+        identity = read_project_identity(identity_path)
+        project_root = identity_path.parent
+        legacy_registry = project_root / LEGACY_STATE_DIRNAME / 'registry.json'
+    else:
+        return Path(LEGACY_STATE_DIRNAME) / 'registry.json', False
+
+    state_root = state_root_for_project(identity['projectId'])
+    migrate_legacy_state(project_root, state_root, identity['projectId'])
+    return state_root / 'registry.json', True
 
 
 def load_registry(path: Path) -> dict:
@@ -1049,9 +1192,9 @@ def validate_registry(data: dict, path: Path | None = None) -> None:
 
         if not ID_RE.match(collab_id):
             die(f'{source}: collab id must use YYYY-MM-DD-<slug>')
-        expected_path = f'.collabs/records/{collab_id}.md'
-        if transcriptPath != expected_path:
-            die(f'{source}: transcriptPath must match .collabs/records/<id>.md')
+        expected_paths = {f'records/{collab_id}.md', f'.collabs/records/{collab_id}.md'}
+        if transcriptPath not in expected_paths:
+            die(f'{source}: transcriptPath must match records/<id>.md')
         if collab_id[11:] != slug:
             die(f'{source}: collab id suffix must match slug')
         if status not in ALLOWED_STATUSES:
@@ -3875,7 +4018,7 @@ def init_collab(
         date = dt.date.today().isoformat()
         slug = normalize_slug(title)
         collab_id = f'{date}-{slug}'
-        transcript_rel = f'.collabs/records/{collab_id}.md'
+        transcript_rel = f'records/{collab_id}.md'
         transcript_path = Path(transcript_rel)
 
         if transcript_path.exists():
@@ -4211,6 +4354,11 @@ def validate_command(path: Path) -> int:
     return 0
 
 
+def registry_path_command(path: Path) -> int:
+    print(path)
+    return 0
+
+
 def role_row_command(roles_dir: Path, role: str, index: int) -> int:
     print(participant_row(load_role(roles_dir, role), index))
     return 0
@@ -4255,12 +4403,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description='Shared collab registry helper.')
     parser.add_argument(
         '--registry',
-        default='.collabs/registry.json',
-        help='Path to the collab registry JSON file.',
+        default=None,
+        help='Path to the collab registry JSON file; bypasses the project-id state resolver.',
     )
     subparsers = parser.add_subparsers(dest='command', required=True)
 
     subparsers.add_parser('validate')
+    subparsers.add_parser('registry-path')
     list_parser = subparsers.add_parser('list')
     list_parser.add_argument('--status', choices=sorted(ALLOWED_STATUSES))
     flag_inventory_parser = subparsers.add_parser('flag-inventory')
@@ -4462,10 +4611,23 @@ def main(argv: list[str]) -> int:
                 if item.startswith('--'):
                     die(f'unknown flag: {item}')
         parser.error(f'unrecognized arguments: {" ".join(unknown_args)}')
-    path = Path(args.registry)
+    for path_arg in ('content_file', 'summary_file'):
+        if hasattr(args, path_arg) and getattr(args, path_arg):
+            setattr(args, path_arg, str(Path(getattr(args, path_arg)).resolve()))
+
+    if args.registry is None:
+        path, use_state_root = resolve_default_registry_path(args.command)
+        if use_state_root:
+            path = path.resolve()
+            path.parent.mkdir(parents=True, exist_ok=True)
+            os.chdir(path.parent)
+    else:
+        path = Path(args.registry)
 
     if args.command == 'validate':
         return validate_command(path)
+    if args.command == 'registry-path':
+        return registry_path_command(path)
     if args.command == 'list':
         return list_collabs(load_registry(path), args.status)
     if args.command == 'flag-inventory':

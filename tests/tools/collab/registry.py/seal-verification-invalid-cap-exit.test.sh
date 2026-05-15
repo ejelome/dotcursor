@@ -2,6 +2,11 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../../../.." && pwd)"
+TMPDIR="$(mktemp -d)"
+trap 'rm -rf "$TMPDIR"' EXIT
+
+cd "$TMPDIR"
+export CURSOR_COLLAB_STATE_HOME="$TMPDIR/state-home"
 
 set +e
 output="$("$ROOT/tools/collab/registry.py" seal-render missing pa --observed-revision 0 --cap-exit retry 2>&1)"

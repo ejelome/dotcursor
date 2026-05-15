@@ -6,6 +6,7 @@ TMPDIR="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR"' EXIT
 
 cd "$TMPDIR"
+export CURSOR_COLLAB_STATE_HOME="$TMPDIR/state-home"
 
 RUN_DATE="$(date +%Y-%m-%d)"
 
@@ -25,6 +26,7 @@ init_target() {
 
 init_target "Verification Seal Flow" "verification-seal-flow"
 TARGET="$RUN_DATE-verification-seal-flow"
+REGISTRY="$("$ROOT/tools/collab/registry.py" registry-path)"
 
 "$ROOT/tools/collab/registry.py" execution "$TARGET" pe completed "2026-05-15T21:00:00+02:00" \
   --assigned-role pe \
@@ -34,10 +36,11 @@ TARGET="$RUN_DATE-verification-seal-flow"
   --touched-path tools/collab/registry.py \
   --caller-role pe >/dev/null
 
-python3 - <<'PY'
+python3 - "$REGISTRY" <<'PY'
 import json
+import sys
 from pathlib import Path
-entry = json.loads(Path('.collabs/registry.json').read_text())['collabs'][0]
+entry = json.loads(Path(sys.argv[1]).read_text())['collabs'][0]
 assert entry['status'] == 'open'
 assert entry['completion']['subState'] == 'verification'
 assert entry['verification']['rounds'] == 0
@@ -80,11 +83,13 @@ if [[ "$stale_status" -eq 0 || "$stale_output" != *"stale registry revision: obs
 fi
 
 "$ROOT/tools/collab/registry.py" seal-render "$TARGET" pa --observed-revision "$revision" --caller-role pa >/dev/null
-python3 - <<'PY'
+python3 - "$REGISTRY" <<'PY'
 import json
+import sys
 from pathlib import Path
-entry = json.loads(Path('.collabs/registry.json').read_text())['collabs'][0]
-transcript = Path(entry['transcriptPath']).read_text()
+registry = Path(sys.argv[1])
+entry = json.loads(registry.read_text())['collabs'][0]
+transcript = (registry.parent / entry['transcriptPath']).read_text()
 assert entry['status'] == 'closed'
 assert entry['verificationSeal']['sealedBy'] == 'pa'
 assert entry['verificationSeal']['stale'] is False
@@ -93,20 +98,22 @@ PY
 
 init_target "Verification Zero Round" "verification-zero-round"
 ZERO_TARGET="$RUN_DATE-verification-zero-round"
-python3 - <<'PY'
+python3 - "$REGISTRY" <<'PY'
 import json
+import sys
 from pathlib import Path
-path = Path('.collabs/registry.json')
+path = Path(sys.argv[1])
 data = json.loads(path.read_text())
 entry = next(item for item in data['collabs'] if item['slug'] == 'verification-zero-round')
 entry['completion'] = {'subState': 'verification'}
 entry['verification'] = {'rounds': 0, 'cap': 3}
 path.write_text(json.dumps(data, indent=2) + '\n')
 PY
-zero_revision="$(python3 - <<'PY'
+zero_revision="$(python3 - "$REGISTRY" <<'PY'
 import json
+import sys
 from pathlib import Path
-print(json.loads(Path('.collabs/registry.json').read_text()).get('revision', 0))
+print(json.loads(Path(sys.argv[1]).read_text()).get('revision', 0))
 PY
 )"
 set +e
@@ -126,10 +133,11 @@ CAP_TARGET="$RUN_DATE-verification-cap-exit"
   --validation-scope scoped \
   --touched-path tools/collab/registry.py \
   --caller-role pe >/dev/null
-python3 - <<'PY'
+python3 - "$REGISTRY" <<'PY'
 import json
+import sys
 from pathlib import Path
-path = Path('.collabs/registry.json')
+path = Path(sys.argv[1])
 data = json.loads(path.read_text())
 entry = next(item for item in data['collabs'] if item['slug'] == 'verification-cap-exit')
 entry['verification']['cap'] = 1
@@ -146,10 +154,11 @@ if [[ "$cap_status" -eq 0 || "$cap_output" != *"round cap reached; reissue with 
   exit 1
 fi
 "$ROOT/tools/collab/registry.py" seal-render "$CAP_TARGET" pa --observed-revision "$cap_revision" --cap-exit reopen-handoff --caller-role pa >/dev/null
-python3 - <<'PY'
+python3 - "$REGISTRY" <<'PY'
 import json
+import sys
 from pathlib import Path
-entry = next(item for item in json.loads(Path('.collabs/registry.json').read_text())['collabs'] if item['slug'] == 'verification-cap-exit')
+entry = next(item for item in json.loads(Path(sys.argv[1]).read_text())['collabs'] if item['slug'] == 'verification-cap-exit')
 assert entry['status'] == 'open'
 assert entry['activePhase'] == 'Handoff'
 assert entry['verificationSeal']['capExit'] == 'reopen-handoff'

@@ -12,7 +12,7 @@ If any file in the bootstrap chain has not been read, stop and list the missing 
 
 ## Engine residency
 
-`tools/collab/` is shared infrastructure resident at `~/.cursor/tools/collab/`. Invoke the helper by absolute path from any project: `~/.cursor/tools/collab/registry.py <args>`. Each project carries its own `.collabs/` directory as project-scoped state; no project copies the engine. `CURSOR_CONFIG_ROOT` is not required when working from `~/.cursor` as the runtime root.
+`tools/collab/` is shared infrastructure resident at `~/.cursor/tools/collab/`. Invoke the helper by absolute path from any project: `~/.cursor/tools/collab/registry.py <args>`. Each project carries a checked-in `.collab-project.json` identity file; by default the helper resolves runtime state to `$HOME/.collabs/<project-id>/` with `registry.json` and `records/` inside that state root. `--registry` remains an explicit override for tests and emergency recovery. `CURSOR_CONFIG_ROOT` is not required when working from `~/.cursor` as the runtime root.
 
 ## Resume contract
 
@@ -24,7 +24,7 @@ tools/collab/registry.py speak-state --resume <target> <role>
 
 The helper reports active phase, turn order, reviewer state, contributors, last contributor, expected role, allowed roles, and ready-to-write status. Re-run it after every context-changing event — never trust prior helper output carried across that boundary.
 
-Human-facing checklist (for inspecting state manually): read the bootstrap entry, the active registry entry, the transcript header, and the active route file; then re-run the route helper before writing.
+Human-facing checklist (for inspecting state manually): read the bootstrap entry, resolve the active registry with `tools/collab/registry.py registry-path`, read the active registry entry, the transcript header, and the active route file; then re-run the route helper before writing.
 
 ## Context management
 

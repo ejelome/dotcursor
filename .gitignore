@@ -3,7 +3,7 @@
 # The leading `*` ignores everything in this local Cursor config directory.
 # Source is opted in below. Runtime and IDE-produced state stays ignored by
 # omission, including:
-#   .collabs/       — ephemeral collab runtime; not source
+#   .collabs/       — transitional collab stub/cache; not source
 #   .claude/        — local agent state; not source
 #   projects/       — local Cursor project state; not source
 #   extensions/     — local extension cache/state; not source
@@ -22,6 +22,7 @@
 !REPOSITORY.md
 !_CURSOR.md
 !README.md
+!.collab-project.json
 !.github/
 !.github/**
 !_core/

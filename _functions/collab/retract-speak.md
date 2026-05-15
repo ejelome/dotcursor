@@ -21,7 +21,7 @@ Retract the current role's latest contribution in the active phase while preserv
 ## Notes
 
 - **Parameters:** target collab slug, id, or numeric `#N` as the first token after `retract speak`; when absent, resolved per **Registry targeting** in **Notes**. `--reason <text>` is optional short human text explaining why the contribution is withdrawn.
-- **Registry targeting:** Resolve the target collab from `.collabs/registry.json`, using `tools/collab/registry.py` as the shared helper. When the first token after the route is present, treat it as a collab slug, id, or stable numeric position. Otherwise use `activeCollabId`. If the registry is unreadable or invalid, the token does not match any entry, or `activeCollabId` is empty, **ABORT**: registry target unavailable; name the registry field or token.
+- **Registry targeting:** Resolve the target collab from the resolved registry, using `tools/collab/registry.py` as the shared helper. When the first token after the route is present, treat it as a collab slug, id, or stable numeric position. Otherwise use `activeCollabId`. If the registry is unreadable or invalid, the token does not match any entry, or `activeCollabId` is empty, **ABORT**: registry target unavailable; name the registry field or token.
 - **Transcript-safe semantics:** Retraction is not physical deletion. It preserves the contribution anchor and details block so existing references remain stable.
 - **Not found:** If no active-phase contribution exists for the role, the helper exits 1 and names the missing role and phase.
 - **Already finalized:** In `Completion`, use `/collab rewrite execution` for execution-history correction or a moderator follow-up for governance context.

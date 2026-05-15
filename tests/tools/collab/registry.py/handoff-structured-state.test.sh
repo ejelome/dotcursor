@@ -6,11 +6,13 @@ TMPDIR="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR"' EXIT
 
 cd "$TMPDIR"
+export CURSOR_COLLAB_STATE_HOME="$TMPDIR/state-home"
 
 RUN_DATE="$(date +%Y-%m-%d)"
 TARGET="${RUN_DATE}-structured-handoff"
 
 "$ROOT/tools/collab/registry.py" init --agent-id mod-agent "Structured Handoff" >/dev/null
+REGISTRY="$("$ROOT/tools/collab/registry.py" registry-path)"
 "$ROOT/tools/collab/registry.py" join-participants "$TARGET" pe --agent-id codex >/dev/null
 "$ROOT/tools/collab/registry.py" set "$TARGET" turn-order pe --caller-role mod >/dev/null
 "$ROOT/tools/collab/registry.py" set "$TARGET" active-phase Handoff --force --caller-role mod >/dev/null
@@ -42,13 +44,15 @@ if [[ "$bad_output" != *"ABORT: validationCommands contains disallowed pattern: 
   exit 1
 fi
 
-python3 - <<'PY'
+python3 - "$REGISTRY" <<'PY'
 import json
+import sys
 from pathlib import Path
-data = json.loads(Path('.collabs/registry.json').read_text())
+registry = Path(sys.argv[1])
+data = json.loads(registry.read_text())
 entry = next(item for item in data['collabs'] if item['slug'] == 'structured-handoff')
 assert 'handoff' not in entry
-assert 'handoff-pe-1' not in Path(entry['transcriptPath']).read_text()
+assert 'handoff-pe-1' not in (registry.parent / entry['transcriptPath']).read_text()
 PY
 
 state="$("$ROOT/tools/collab/registry.py" speak-state "$TARGET" pe)"
@@ -68,17 +72,19 @@ GOOD
 
 "$ROOT/tools/collab/registry.py" speak-render "$TARGET" pe --content-file good-handoff.md --observed-revision "$revision" --caller-role pe >/dev/null
 
-python3 - <<'PY'
+python3 - "$REGISTRY" <<'PY'
 import json
+import sys
 from pathlib import Path
-data = json.loads(Path('.collabs/registry.json').read_text())
+registry = Path(sys.argv[1])
+data = json.loads(registry.read_text())
 entry = next(item for item in data['collabs'] if item['slug'] == 'structured-handoff')
 state = entry['handoff']['roles']['pe']
 assert state['schemaVersion'] == 1
 assert state['writeScope'] == ['tools/collab/registry.py', 'tests/tools/collab/registry.py']
 assert state['validationCommands'] == [['./tools/cursor/audit.sh'], ['./tests/run.sh']]
 assert '_requires: #1_' in state['body']
-transcript = Path(entry['transcriptPath']).read_text()
+transcript = (registry.parent / entry['transcriptPath']).read_text()
 assert 'handoff-pe-1' in transcript
 assert '_requires: #1_' in transcript
 assert '["./tools/cursor/audit.sh"]' in transcript
@@ -92,7 +98,16 @@ state = json.loads(Path('handoff-state.json').read_text())
 assert state['writeScope'][0] == 'tools/collab/registry.py'
 PY
 
-transcript_path=".collabs/records/${TARGET}.md"
+transcript_path="$(python3 - "$REGISTRY" "$TARGET" <<'PY'
+import json
+import sys
+from pathlib import Path
+registry = Path(sys.argv[1])
+target = sys.argv[2]
+entry = next(item for item in json.loads(registry.read_text())['collabs'] if item['id'] == target)
+print(registry.parent / entry['transcriptPath'])
+PY
+)"
 "$ROOT/tools/collab/registry.py" render-status "$TARGET" >/dev/null
 cp "$transcript_path" first-render.md
 "$ROOT/tools/collab/registry.py" render-status "$TARGET" >/dev/null
@@ -130,10 +145,11 @@ if [[ "$returned_output" != *"returned path outside assigned scope: tests/tools/
   exit 1
 fi
 
-python3 - <<'PY'
+python3 - "$REGISTRY" <<'PY'
 import json
+import sys
 from pathlib import Path
-path = Path('.collabs/registry.json')
+path = Path(sys.argv[1])
 data = json.loads(path.read_text())
 entry = next(item for item in data['collabs'] if item['slug'] == 'structured-handoff')
 entry['handoff']['roles']['pe']['futureOptionalField'] = {'compatible': True}

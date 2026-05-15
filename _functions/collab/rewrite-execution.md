@@ -12,7 +12,7 @@ Rewrite the calling role's last execution record in-place within the Completion 
 ## Steps
 
 1. Read [_invariants.md](_invariants.md) before executing; call the relevant helper fresh and do not trust prior reads from conversation context (Invariant #4). Resolve the target collab with **Registry targeting** in **Notes**.
-2. Read `.collabs/registry.json` and the resolved transcript path. If either is unreadable, **ABORT**: record unreadable; name the path.
+2. Read the resolved registry and the resolved transcript path. If either is unreadable, **ABORT**: record unreadable; name the path.
 3. If the registry status is `closed` or `archived`, **ABORT**: closed collaboration records cannot be re-executed.
 4. Resolve the active phase from registry `activePhase`. If missing or unknown, **ABORT**: active phase missing in metadata.
 5. If the active phase is not `Completion`, **ABORT**: `/collab rewrite execution` is valid only when registry `activePhase` is `Completion`.
@@ -32,7 +32,7 @@ Rewrite the calling role's last execution record in-place within the Completion 
 ## Notes
 
 - **Parameters:** target collab slug, id, or numeric `#N` as the first token after `rewrite execution`; when absent, resolved per **Registry targeting** in **Notes**.
-- **Registry targeting:** Resolve the target collab from `.collabs/registry.json`, using `tools/collab/registry.py` as the shared helper. When the first token after the route is present, treat it as a collab slug, id, or stable numeric position. Otherwise use `activeCollabId`. If the registry is unreadable or invalid, the token does not match any entry, or `activeCollabId` is empty, **ABORT**: registry target unavailable; name the registry field or token.
+- **Registry targeting:** Resolve the target collab from the resolved registry, using `tools/collab/registry.py` as the shared helper. When the first token after the route is present, treat it as a collab slug, id, or stable numeric position. Otherwise use `activeCollabId`. If the registry is unreadable or invalid, the token does not match any entry, or `activeCollabId` is empty, **ABORT**: registry target unavailable; name the registry field or token.
 - **Rewrite semantics:** `/collab rewrite execution` rewrites the last execution record in-place rather than appending a parallel success alongside a visible failure. The Completion section shows only the final execution state; prior failure is preserved in a collapsed history block, not deleted.
 - **Revision history shape:** Wrap the prior failed attempt (its `in progress` line when present and `failed` line, in original order) in `<details><summary>Revision history</summary>\n\nPrevious attempt, <attempt-timestamp>:\n\n<in-progress-line-if-present>\n<failed-line>\n\n</details>` placed immediately after the new success line in the execution history. If a revision history block already exists at that position (from an earlier retry), prepend the new attempt block inside the existing wrapper rather than nesting a second wrapper.
 - **Completion-only guard:** `/collab rewrite execution` must refuse all phases other than `Completion`.

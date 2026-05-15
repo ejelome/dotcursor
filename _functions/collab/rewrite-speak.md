@@ -14,7 +14,7 @@ Rewrite the calling role's last contribution in-place within the active collab p
 **This command rewrites text only. Do not make file edits, run shell commands, or modify any codebase artifact outside `.collabs/`.**
 
 1. Read [_invariants.md](_invariants.md) before executing; call the relevant helper fresh and do not trust prior reads from conversation context (Invariant #4). Resolve the target collab with **Registry targeting** in **Notes**.
-2. Read `.collabs/registry.json` and the resolved transcript path. If either is unreadable, **ABORT**: record unreadable; name the path.
+2. Read the resolved registry and the resolved transcript path. If either is unreadable, **ABORT**: record unreadable; name the path.
 3. If the registry status is `closed` or `archived`, **ABORT**: record is closed.
 4. Resolve the active phase from registry `activePhase`. If missing or unknown, **ABORT**: active phase missing in metadata.
 5. If the active phase is `Completion`, **ABORT**: `/collab rewrite speak` is not permitted in the `Completion` phase; use `/collab rewrite execution` to rewrite execution records.
@@ -28,7 +28,7 @@ Rewrite the calling role's last contribution in-place within the active collab p
 ## Notes
 
 - **Parameters:** target collab slug, id, or numeric `#N` as the first token after `rewrite speak`; when absent, resolved per **Registry targeting** in **Notes**.
-- **Registry targeting:** Resolve the target collab from `.collabs/registry.json`, using `tools/collab/registry.py` as the shared helper. When the first token after the route is present, treat it as a collab slug, id, or stable numeric position. Otherwise use `activeCollabId`. If the registry is unreadable or invalid, the token does not match any entry, or `activeCollabId` is empty, **ABORT**: registry target unavailable; name the registry field or token.
+- **Registry targeting:** Resolve the target collab from the resolved registry, using `tools/collab/registry.py` as the shared helper. When the first token after the route is present, treat it as a collab slug, id, or stable numeric position. Otherwise use `activeCollabId`. If the registry is unreadable or invalid, the token does not match any entry, or `activeCollabId` is empty, **ABORT**: registry target unavailable; name the registry field or token.
 - **Rewrite semantics:** `/collab rewrite speak` rewrites in-place rather than appending. The contribution count for the role in the phase does not change. One-speak phase limits are not re-checked; the intent is to update, not to add a second entry. Rewrite is role-scoped and does not advance phase state; turn-order enforcement adds no safety guarantee for this command.
 - **Handoff cleanup window:** Handoff is the last phase where rewrite obligations may be fulfilled; `/collab rewrite speak` aborts in Completion (step 5). Plan contribution cleanup before the Handoff→Completion transition.
 - **Revision history shape:** Wrap the prior content in `<details><summary>Revision history</summary>\n\nPrevious revision, <original-timestamp>:\n\n<prior-content>\n\n</details>` at the end of the contribution block, immediately before the closing `</details>` tag of the contribution. If a revision history block already exists, prepend the new prior-revision entry inside it rather than nesting a second wrapper.
