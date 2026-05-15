@@ -108,6 +108,7 @@ check_generated_freshness() {
   tools/cursor/sync-roles-roster.sh --check || failures=$((failures + 1))
   python3 tools/cursor/command-reference.py --check || failures=$((failures + 1))
   tools/collab/lifecycle-doc.py --check || failures=$((failures + 1))
+  tools/cursor/coverage-gate.sh || failures=$((failures + 1))
 }
 
 check_generated_boundary() {

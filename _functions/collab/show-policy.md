@@ -50,6 +50,7 @@ When an Action Plan item resolves a Drift deferral, the same completion path mus
 - **Spec/helper divergence:** `speak.md` and other route specs describe helper call shapes. When the helper evolves, the spec can silently contradict it. The gap only surfaces when a new contributor relies on the spec and gets an unexpected result.
 - **Reviewer-prose staleness:** The reviewer block in transcript headers is hand-written. A pending reviewer that joins late, or a reviewer block that is never updated, bakes inaccurate state into the audit trail. No route breaks; the record is simply wrong.
 - **Moderator-input transience:** Audit inputs cited as local paths become unresolvable when the file moves or the machine changes. The transcript remains parseable but its evidence base is gone. See **Provenance** above.
+- **Honor-system / helper drift:** A route stays marked `agent-honor-system` while the underlying helper begins enforcing the same abort path. The P9 coverage gate (`tools/cursor/coverage-gate.sh`) detects missing tests for helper-enforced paths but does not detect routes whose `agent-honor-system` marker is no longer accurate — the inverse drift remains invisible until a manual audit.
 
 **Resolved structural items (provenance retained):**
 

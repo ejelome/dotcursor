@@ -22,6 +22,10 @@ Route prose declares the contract. The helper enforces it. Every documented ABOR
 
 Free-text tokens are literal content. A route argument such as a title, label, message, or routing-only dispatch token is never work to execute unless the route explicitly defines an execution phase for that content.
 
+Inline marker form: `**ABORT** (agent-honor-system): ...` placed on the same line as the ABORT clause it exempts. The marker exempts only the ABORT clause on the line it appears in — it does not exempt subsequent or sibling clauses. This file is the single source of truth for this grammar; the detector enforces line-level binding.
+
+Anchor convention: each ABORT in `<route>.md` must carry a stable id anchor `<!-- abort: <id> -->` on the line immediately above it. The anchor id must start with the route stem followed by a hyphen (e.g., `speak-` in `speak.md`); the detector enforces this prefix and rejects anchors that omit it.
+
 Maintainer check: `git grep -rn 'agent-honor-system' cursor/_functions/collab/` shows every agent-honor-system clause. Any undocumented ABORT that has neither a helper check nor this marker is a defect.
 
 **2. Registry as source of truth; transcript as human ledger**
