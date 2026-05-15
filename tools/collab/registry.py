@@ -88,6 +88,7 @@ TIMESTAMP_RE = re.compile(r'^<p><em>(?P<timestamp>.+)</em></p>$')
 ACTION_CHECKLIST_RE = re.compile(
     r'^\s*-\s+\[(?P<mark>[ xX])\]\s+\*\*(?P<role>[A-Za-z0-9_-]+):\*\*(?P<text>.*)$'
 )
+ACTION_PLAN_SHAPE_RE = re.compile(r'^- \[[ x]\] \*\*[a-z]+:\*\*')
 ACTION_PLAN_EXEMPT_RE = re.compile(r'^\s*-\s+\[[ xX]\]\s+\*\*[A-Za-z0-9_-]+:\*\*')
 UNLABELED_ACTION_CHECKBOX_RE = re.compile(r'^\s*-\s+\[ \]\s+(?!\*\*[A-Za-z0-9_-]+:\*\*)\S')
 EFFORT_OVERRIDE_RE = re.compile(
@@ -119,6 +120,7 @@ OLD_ENTRY_KEYS = {
     'transcript_path',
     'turn_order',
 }
+ACTION_PLAN_SHAPE_EXAMPLE = '- [ ] **tw:** Update the route doc.'
 
 
 def die(message: str) -> None:
@@ -1226,6 +1228,15 @@ def transition_notice(from_phase: str, to_phase: str) -> dict | None:
             'transition': transition,
             'message': 'Run /compact before continuing to Conclusion.',
         }
+    if transition == 'Conclusion->Action Plan':
+        return {
+            'notice': 'action-plan-shape',
+            'transition': transition,
+            'message': (
+                'Action Plan entries must follow _invariants.md Invariant #9: '
+                r'^- \[[ x]\] \*\*[a-z]+:\*\*.'
+            ),
+        }
     if transition == 'Handoff->Completion':
         return {
             'notice': 'subagent',
@@ -1934,6 +1945,50 @@ def action_plan_label_advisory(content: str, phase: str) -> str | None:
     )
 
 
+def is_markdown_heading(line: str) -> bool:
+    return bool(re.match(r'^\s{0,3}#{1,6}(?:\s|$)', line))
+
+
+def action_plan_shape_abort(line_number: int, line: str) -> None:
+    die(
+        f"ABORT: line {line_number} does not match Action Plan shape '- [ ] **<role>:** ...' "
+        f"(Invariant #9, _invariants.md). Offending line: '{line}'. "
+        f"Example: '{ACTION_PLAN_SHAPE_EXAMPLE}'"
+    )
+
+
+def validate_action_plan_shape(content: str, phase: str) -> None:
+    if phase != 'Action Plan':
+        return
+    saw_assignment = False
+    in_html_comment = False
+    for line_number, line in enumerate(content.splitlines(), start=1):
+        stripped = line.strip()
+        if in_html_comment:
+            if '-->' in stripped:
+                in_html_comment = False
+            continue
+        if stripped.startswith('<!--'):
+            if '-->' not in stripped[stripped.find('<!--') + 4:]:
+                in_html_comment = True
+            continue
+        if not stripped:
+            continue
+        if line_number == 1 and EFFORT_OVERRIDE_RE.match(stripped):
+            continue
+        if is_markdown_heading(line):
+            continue
+        if ACTION_PLAN_SHAPE_RE.match(line):
+            saw_assignment = True
+            continue
+        action_plan_shape_abort(line_number, line)
+    if not saw_assignment:
+        die(
+            'ABORT: Action Plan body contains no assignment lines after exempt content is removed '
+            f"(Invariant #9, _invariants.md). Example: '{ACTION_PLAN_SHAPE_EXAMPLE}'"
+        )
+
+
 def validate_effort_override(content: str, phase: str, role: str, moderator_role: str) -> None:
     if role == moderator_role:
         return
@@ -2346,6 +2401,7 @@ def render_speak(
         if role == current_entry['moderatorRole'] and not verbatim:
             content = polish_moderator_content(content)
         validate_effort_override(content, phase, role, current_entry['moderatorRole'])
+        validate_action_plan_shape(content, phase)
         enforce_contribution_budget(content, phase, role, current_entry['moderatorRole'], verbatim)
         handoff_state = parse_handoff_content(content) if phase == 'Handoff' else None
 
@@ -2562,6 +2618,7 @@ def render_re_speak(
         if not transcript_path.exists():
             die(f'transcript missing: {transcript_path}')
         transcript = transcript_path.read_text()
+        validate_action_plan_shape(content, entry['activePhase'])
         reviewer_notice = reviewer_notice_for_rewrite(entry, transcript, role)
         rendered = replace_latest_contribution(
             transcript,
