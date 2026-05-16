@@ -6,22 +6,33 @@ TMPDIR="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR"' EXIT
 
 cd "$TMPDIR"
+export CURSOR_COLLAB_STATE_HOME="$TMPDIR/state-home"
 
 RUN_DATE="$(date +%Y-%m-%d)"
 TARGET="${RUN_DATE}-action-plan-shape-gate"
-TRANSCRIPT=".collabs/records/${TARGET}.md"
 
 "$ROOT/tools/collab/registry.py" init --agent-id codex "Action Plan Shape Gate" >/dev/null
+REGISTRY="$("$ROOT/tools/collab/registry.py" registry-path)"
+TRANSCRIPT="$(python3 - "$REGISTRY" "$TARGET" <<'PY'
+import json
+import sys
+from pathlib import Path
+registry = Path(sys.argv[1])
+target = sys.argv[2]
+entry = next(item for item in json.loads(registry.read_text())['collabs'] if item['id'] == target)
+print(registry.parent / entry['transcriptPath'])
+PY
+)"
 "$ROOT/tools/collab/registry.py" join-participants "$TARGET" pe --agent-id gpt >/dev/null
 "$ROOT/tools/collab/registry.py" set "$TARGET" turn-order pe --caller-role mod >/dev/null
 "$ROOT/tools/collab/registry.py" set "$TARGET" active-phase "Action Plan" --force --caller-role mod >/dev/null
 
 registry_value() {
-  python3 -c "import json,sys; data=json.load(open('.collabs/registry.json')); entry=next(item for item in data['collabs'] if item['id'] == '$TARGET'); print($1)"
+  python3 -c "import json,sys; data=json.load(open('$REGISTRY')); entry=next(item for item in data['collabs'] if item['id'] == '$TARGET'); print($1)"
 }
 
 revision() {
-  python3 -c "import json; print(json.load(open('.collabs/registry.json'))['revision'])"
+  python3 -c "import json; print(json.load(open('$REGISTRY'))['revision'])"
 }
 
 run_rejected_case() {

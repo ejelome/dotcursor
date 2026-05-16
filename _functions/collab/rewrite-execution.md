@@ -12,7 +12,7 @@ Rewrite the calling role's last execution record in-place within the Completion 
 ## Steps
 
 1. Read [_invariants.md](_invariants.md) before executing; call the relevant helper fresh and do not trust prior reads from conversation context (Invariant #4). Resolve the target collab with **Registry targeting** in **Notes**.
-2. Read `.collabs/registry.json` and the resolved transcript path. If either is unreadable, **ABORT**: record unreadable; name the path.
+2. Read the resolved registry and the resolved transcript path. If either is unreadable, **ABORT**: record unreadable; name the path.
 3. If the registry status is `closed` or `archived`, **ABORT**: closed collaboration records cannot be re-executed.
 4. Resolve the active phase from registry `activePhase`. If missing or unknown, **ABORT**: active phase missing in metadata.
 5. If the active phase is not `Completion`, **ABORT**: `/collab rewrite execution` is valid only when registry `activePhase` is `Completion`.
@@ -25,16 +25,17 @@ Rewrite the calling role's last execution record in-place within the Completion 
 12. On validation success: locate all execution-history lines belonging to the prior failed attempt — the `in progress` line, if present, and its subsequent `failed` line. Replace them with a single new success line: `<n>. **<role>:** completed YYYY-MM-DD HH:MM — validation passed; <scope>; <N> paths.` Move the removed lines into a collapsed history block using the **Revision history shape** in **Notes**, placed immediately after the new success line. Remove the "in progress" line written in step 9 as well; it belongs in the history block. Do not leave any failure or stale in-progress line visible.
 13. On validation failure: append `<n>. **<role>:** failed YYYY-MM-DD HH:MM — validation failed: <failed command>; <scope>; <N> paths.` after the in-progress line written in step 9; leave all prior entries unchanged.
 14. Check every completed role-scoped checklist item in `## Action Plan` as `[x]`.
-15. Mirror execution state in the registry `execution` object, including validation result, validation scope, and touched paths.
+15. Mirror execution state in the registry `execution` object, including validation result, validation scope, and touched paths. The helper rejects touched paths outside the role's structured Handoff `writeScope`.
 16. After mirroring completed execution, evaluate the **Auto-close on completion** rule in `/collab run plan` **Notes**. If every non-moderator assigned role has a completed execution entry, close the record.
 17. Report all changed files and validation results. Stop.
 
 ## Notes
 
 - **Parameters:** target collab slug, id, or numeric `#N` as the first token after `rewrite execution`; when absent, resolved per **Registry targeting** in **Notes**.
-- **Registry targeting:** Resolve the target collab from `.collabs/registry.json`, using `tools/collab/registry.py` as the shared helper. When the first token after the route is present, treat it as a collab slug, id, or stable numeric position. Otherwise use `activeCollabId`. If the registry is unreadable or invalid, the token does not match any entry, or `activeCollabId` is empty, **ABORT**: registry target unavailable; name the registry field or token.
+- **Registry targeting:** Resolve the target collab from the resolved registry, using `tools/collab/registry.py` as the shared helper. When the first token after the route is present, treat it as a collab slug, id, or stable numeric position. Otherwise use `activeCollabId`. If the registry is unreadable or invalid, the token does not match any entry, or `activeCollabId` is empty, **ABORT**: registry target unavailable; name the registry field or token.
 - **Rewrite semantics:** `/collab rewrite execution` rewrites the last execution record in-place rather than appending a parallel success alongside a visible failure. The Completion section shows only the final execution state; prior failure is preserved in a collapsed history block, not deleted.
 - **Revision history shape:** Wrap the prior failed attempt (its `in progress` line when present and `failed` line, in original order) in `<details><summary>Revision history</summary>\n\nPrevious attempt, <attempt-timestamp>:\n\n<in-progress-line-if-present>\n<failed-line>\n\n</details>` placed immediately after the new success line in the execution history. If a revision history block already exists at that position (from an earlier retry), prepend the new attempt block inside the existing wrapper rather than nesting a second wrapper.
 - **Completion-only guard:** `/collab rewrite execution` must refuse all phases other than `Completion`.
 - **Execution boundary:** This route implements only action-plan items assigned to the current role. Its only lifecycle side effect beyond implementation is the auto-close trigger when all assigned execution is complete.
+- **Touched-path enforcement:** When structured Handoff state exists for the executing role, the execution recorder rejects any touched path outside `handoff.roles.<role>.writeScope` with `"execution touched path outside declared writeScope: <path>"`. Recovery: reopen Handoff and revise scope, or remove/revert the out-of-scope change before rewriting execution.
 - **Known manual surface:** Unlike `speak-render`, `rewrite-speak-render`, and `rewrite-summary`, execution-history rewrite rendering is not yet centralized in `tools/collab/registry.py`; keep the manual revision-history edits constrained to the Completion execution-history lines described above until that helper surface lands.

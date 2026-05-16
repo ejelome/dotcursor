@@ -10,6 +10,7 @@ import json
 import os
 import re
 import sys
+import uuid
 import webbrowser
 from contextlib import contextmanager
 from collections.abc import Callable
@@ -52,6 +53,12 @@ DEFAULT_REVIEWER_MODE = 'last-in-convergent-phases'
 DEFAULT_REVIEWER_OPTIONAL_PHASES = ['Discussion']
 INVALID_AGENT_ID_ALTERNATIVES = {'n/a', 'unspecified'}
 DEFAULT_OPEN_ROSTER_EFFORT = 'medium'
+PROJECT_ID_FILENAME = '.collab.json'
+STATE_HOME_ENV = 'CURSOR_COLLAB_STATE_HOME'
+DEFAULT_STATE_HOME = Path.home() / '.collabs'
+PROJECT_ID_RE = re.compile(r'^[a-z0-9][a-z0-9-]{7,127}$')
+STALE_LOCK_SECONDS = 24 * 60 * 60
+RESOLVED_PROJECT_IDENTITY: dict | None = None
 def resolve_cursor_root() -> Path:
     configured = os.environ.get('CURSOR_CONFIG_ROOT')
     if configured:
@@ -131,6 +138,112 @@ def die(message: str) -> None:
     raise SystemExit(message)
 
 
+def find_project_identity_path(start: Path | None = None) -> Path | None:
+    current = (start or Path.cwd()).resolve()
+    for directory in [current, *current.parents]:
+        identity_path = directory / PROJECT_ID_FILENAME
+        if identity_path.exists():
+            return identity_path
+    return None
+
+
+def read_project_identity(path: Path) -> dict:
+    try:
+        data = json.loads(path.read_text())
+    except json.JSONDecodeError as exc:
+        die(f'project identity invalid JSON: {path}: {exc}')
+    if not isinstance(data, dict):
+        die(f'project identity must be an object: {path}')
+    schema_version = data.get('schemaVersion')
+    if schema_version != 1:
+        die(f'project identity schemaVersion must be 1: {path}')
+    project_id = data.get('projectId')
+    if not isinstance(project_id, str) or not PROJECT_ID_RE.match(project_id):
+        die(f'project identity projectId must be an opaque lowercase id: {path}')
+    label = data.get('label')
+    if label is not None and (not isinstance(label, str) or not label.strip()):
+        die(f'project identity label must be a non-empty string when present: {path}')
+    state = data.get('state')
+    if state is not None and not isinstance(state, dict):
+        die(f'project identity state must be an object when present: {path}')
+    return data
+
+
+def write_project_identity(project_root: Path, label: str | None = None) -> dict:
+    project_root.mkdir(parents=True, exist_ok=True)
+    identity_path = project_root / PROJECT_ID_FILENAME
+    if identity_path.exists():
+        return read_project_identity(identity_path)
+    project_id = uuid.uuid4().hex
+    data = {
+        'schemaVersion': 1,
+        'projectId': project_id,
+        'label': label or project_root.name or 'cursor-project',
+        'state': {
+            'mode': 'shared',
+            'isolation': 'opt-in',
+        },
+    }
+    identity_path.write_text(json.dumps(data, indent=2) + '\n')
+    return data
+
+
+def collab_state_home() -> Path:
+    configured = os.environ.get(STATE_HOME_ENV)
+    if configured:
+        return Path(configured).expanduser().resolve()
+    return DEFAULT_STATE_HOME
+
+
+def state_root_for_project(project_id: str) -> Path:
+    return collab_state_home() / project_id
+
+
+def project_metadata_from_identity(identity: dict | None = None) -> dict | None:
+    source = identity if identity is not None else RESOLVED_PROJECT_IDENTITY
+    if not isinstance(source, dict):
+        return None
+    project_id = source.get('projectId')
+    if not isinstance(project_id, str) or not project_id.strip():
+        return None
+    label = source.get('label')
+    if not isinstance(label, str) or not label.strip():
+        label = 'cursor-project'
+    return {'projectId': project_id, 'label': label.strip()}
+
+
+def sync_registry_project_metadata(data: dict) -> None:
+    metadata = project_metadata_from_identity()
+    if metadata is not None:
+        data['project'] = metadata
+
+
+def resolve_default_registry_path(command: str | None) -> tuple[Path, bool]:
+    global RESOLVED_PROJECT_IDENTITY
+    project_root = Path.cwd().resolve()
+    identity_path = find_project_identity_path(project_root)
+
+    if identity_path is None and command == 'init':
+        identity = write_project_identity(project_root)
+        identity_path = project_root / PROJECT_ID_FILENAME
+    elif identity_path is not None:
+        identity = read_project_identity(identity_path)
+        project_root = identity_path.parent
+    else:
+        die(f'project marker missing: {PROJECT_ID_FILENAME}; run /collab init from the project root')
+
+    RESOLVED_PROJECT_IDENTITY = identity
+    state_root = state_root_for_project(identity['projectId'])
+    label_path = state_root / 'label'
+    metadata = project_metadata_from_identity(identity)
+    if metadata:
+        current = metadata['label'] + '\n'
+        if not label_path.exists() or label_path.read_text() != current:
+            state_root.mkdir(parents=True, exist_ok=True)
+            label_path.write_text(current)
+    return state_root / 'registry.json', True
+
+
 def load_registry(path: Path) -> dict:
     if not path.exists():
         die(f'registry missing: {path}')
@@ -143,6 +256,7 @@ def load_registry(path: Path) -> dict:
 
 
 def save_registry(path: Path, data: dict) -> None:
+    sync_registry_project_metadata(data)
     bump_registry_revision(data)
     validate_registry(data, path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -178,6 +292,7 @@ def registry_lock(path: Path):
     lock_path = path.with_name(f'{path.name}.lock')
     with lock_path.open('a+') as lock_file:
         fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        os.utime(lock_path, None)
         try:
             yield
         finally:
@@ -186,8 +301,12 @@ def registry_lock(path: Path):
 
 def load_registry_or_bootstrap(path: Path) -> dict:
     if not path.exists():
-        return {'schemaVersion': 1, 'activeCollabId': None, 'collabs': []}
-    return load_registry(path)
+        data = {'schemaVersion': 1, 'activeCollabId': None, 'collabs': []}
+        sync_registry_project_metadata(data)
+        return data
+    data = load_registry(path)
+    sync_registry_project_metadata(data)
+    return data
 
 
 def format_timestamp(now: dt.datetime | None = None) -> str:
@@ -1003,6 +1122,16 @@ def validate_registry(data: dict, path: Path | None = None) -> None:
     revision = data.get('revision', 0)
     if not isinstance(revision, int) or revision < 0:
         die(f'{source}: revision must be a non-negative integer when present')
+    project = data.get('project')
+    if project is not None:
+        if not isinstance(project, dict):
+            die(f'{source}: project must be an object when present')
+        project_id = project.get('projectId')
+        if not isinstance(project_id, str) or not PROJECT_ID_RE.match(project_id):
+            die(f'{source}: project.projectId must be an opaque lowercase id when present')
+        label = project.get('label')
+        if not isinstance(label, str) or not label.strip():
+            die(f'{source}: project.label must be a non-empty string when present')
 
     collabs = data.get('collabs')
     if not isinstance(collabs, list):
@@ -1049,9 +1178,8 @@ def validate_registry(data: dict, path: Path | None = None) -> None:
 
         if not ID_RE.match(collab_id):
             die(f'{source}: collab id must use YYYY-MM-DD-<slug>')
-        expected_path = f'.collabs/records/{collab_id}.md'
-        if transcriptPath != expected_path:
-            die(f'{source}: transcriptPath must match .collabs/records/<id>.md')
+        if transcriptPath != f'records/{collab_id}.md':
+            die(f'{source}: transcriptPath must match records/<id>.md')
         if collab_id[11:] != slug:
             die(f'{source}: collab id suffix must match slug')
         if status not in ALLOWED_STATUSES:
@@ -1256,6 +1384,19 @@ def collab_date(entry: dict) -> str:
     return entry['id'][:10]
 
 
+def project_metadata_for_display(data: dict) -> dict | None:
+    metadata = project_metadata_from_identity()
+    if metadata is not None:
+        return metadata
+    project = data.get('project')
+    if isinstance(project, dict):
+        project_id = project.get('projectId')
+        label = project.get('label')
+        if isinstance(project_id, str) and project_id.strip() and isinstance(label, str) and label.strip():
+            return {'projectId': project_id, 'label': label.strip()}
+    return None
+
+
 def list_collabs(data: dict, status_filter: str | None = None) -> int:
     if status_filter is not None and status_filter not in ALLOWED_STATUSES:
         die(f'invalid status filter: {status_filter}')
@@ -1270,13 +1411,16 @@ def list_collabs(data: dict, status_filter: str | None = None) -> int:
         -item[1].get('sequence', item[0]),
         item[1]['slug'],
     ))
+    project = project_metadata_for_display(data)
+    if project is not None:
+        print(f"Project: {project['label']} · {project['projectId']}")
     for output_index, (index, entry) in enumerate(indexed):
         marker = '[*]' if entry['id'] == active_id else '[ ]'
         number = entry.get('sequence', index)
         title = display_title(entry['title'])
         phase = entry['activePhase'] if entry['activePhase'] else '—'
         participant_label = 'participant' if len(entry['participants']) == 1 else 'participants'
-        if output_index:
+        if output_index or project is not None:
             print()
         print(f"{marker} #{number} - {entry['slug']}    {title}")
         print(
@@ -1970,6 +2114,27 @@ def assert_disjoint_scopes(scopes: list[str]) -> None:
                 die(f'execute-spawn scopes must be disjoint: {left} {right}')
 
 
+def normalize_touched_paths(touched_paths: list[str]) -> list[str]:
+    normalized: list[str] = []
+    for item in touched_paths:
+        path = normalize_scope_path(item, 'touched-path')
+        if path not in normalized:
+            normalized.append(path)
+    return normalized
+
+
+def assert_touched_paths_inside_handoff(entry: dict, role: str, touched_paths: list[str]) -> None:
+    if not touched_paths:
+        return
+    handoff_state = handoff_state_for_role(entry, role)
+    if handoff_state is None:
+        return
+    declared_scopes = handoff_state['writeScope']
+    for touched_path in touched_paths:
+        if not any(scope_matches_declared(touched_path, declared) for declared in declared_scopes):
+            die(f'execution touched path outside declared writeScope: {touched_path}')
+
+
 def execute_spawn(
     path: Path,
     target: str,
@@ -2625,7 +2790,7 @@ def render_speak(
         advanced, notice = apply_speak_lifecycle_with_notice(next_entry, rendered_state['contributors'])
         rendered_text, header_changed = render_managed_header_text(rendered_text, next_entry, DEFAULT_ROLES_DIR)
         notice = add_completion_summary_notice(notice, rendered_text)
-        print('BOUNDARY: transcript write only; no shell commands or file edits outside .collabs/')
+        print('BOUNDARY: transcript write only; no shell commands or source edits outside the user-scope collab state root')
         print('SUCCINCTLY: stay within role concerns; do not pad or summarize other roles')
         print('RETRACT: use /collab retract speak to tombstone the latest active-phase contribution')
         print_header_overwrite(header_changed)
@@ -2909,6 +3074,7 @@ def record_execution(
         die(f'execution status must be one of {sorted(ALLOWED_EXECUTION_STATUSES)}')
     if validation_scope and validation_scope not in ALLOWED_VALIDATION_SCOPES:
         die(f'execution validation scope must be one of {sorted(ALLOWED_VALIDATION_SCOPES)}')
+    normalized_touched_paths = normalize_touched_paths(touched_paths)
     with registry_lock(path):
         data = load_registry(path)
         entry = resolve_collab(data, target)
@@ -2932,6 +3098,7 @@ def record_execution(
                     f'execution completed blocked for role {role}: '
                     f'{unchecked_count} unchecked assigned Action Plan item(s) remain'
                 )
+        assert_touched_paths_inside_handoff(entry, role, normalized_touched_paths)
 
         execution_state = {'status': status, 'date': date}
         execution_state['entryId'] = execution_identity(role, date)
@@ -2939,8 +3106,8 @@ def record_execution(
             execution_state['validationResult'] = validation_result
         if validation_scope:
             execution_state['validationScope'] = validation_scope
-        if touched_paths:
-            execution_state['touchedPaths'] = touched_paths
+        if normalized_touched_paths:
+            execution_state['touchedPaths'] = normalized_touched_paths
         previous_signature = execution_signature(entry)
         entry.setdefault('execution', {})[role] = execution_state
         if reviewer_backed(entry) and previous_signature != execution_signature(entry):
@@ -3090,7 +3257,7 @@ def rendered_reviewer_section(entry: dict, roles_dir: Path) -> str | None:
     if state['state'] == 'active':
         return (
             f'**{reviewer}** — registered in **Participants** and active as the '
-            f'convergent-phase reviewer per `.collabs/registry.json` '
+            f'convergent-phase reviewer per the user-scope collab state root `registry.json` '
             f'(`reviewerMode: {mode}`). Reviewer gating is now in effect for convergent phases. '
             f'Optional reviewer phases: {optional}.'
         )
@@ -3158,7 +3325,7 @@ def rendered_managed_header(title: str, entry: dict, roles_dir: Path, timestamp:
         '',
         'Moderated collaboration record for shared agent discussion.',
         '',
-        'Registry-backed collab state is authoritative. Metadata below mirrors `.collabs/registry.json` for human orientation only.',
+        'Registry-backed collab state is authoritative. Metadata below mirrors `$HOME/.collabs/<projectId>/registry.json` for human orientation only.',
         '',
         '**Status**',
         '',
@@ -3284,7 +3451,7 @@ def render_initial_transcript_legacy(title: str, entry: dict, roles_dir: Path, t
         '',
         'Moderated collaboration record for shared agent discussion.',
         '',
-        'Registry-backed collab state is authoritative. Metadata below mirrors `.collabs/registry.json` for human orientation only.',
+        'Registry-backed collab state is authoritative. Metadata below mirrors `$HOME/.collabs/<projectId>/registry.json` for human orientation only.',
         '',
         '**Status**',
         '',
@@ -3774,6 +3941,7 @@ def commit_registry_and_transcript(
     and reports which file may be inconsistent. This is a best-effort two-file
     transaction, not a filesystem-level atomic commit.
     """
+    sync_registry_project_metadata(data)
     bump_registry_revision(data)
     validate_registry(data, registry_path)
     if not transcript_path.exists():
@@ -3816,6 +3984,7 @@ def commit_new_registry_and_transcript(
     transcript_path: Path,
     transcript_text: str,
 ) -> None:
+    sync_registry_project_metadata(data)
     bump_registry_revision(data)
     validate_registry(data, registry_path)
     if transcript_path.exists():
@@ -3875,7 +4044,7 @@ def init_collab(
         date = dt.date.today().isoformat()
         slug = normalize_slug(title)
         collab_id = f'{date}-{slug}'
-        transcript_rel = f'.collabs/records/{collab_id}.md'
+        transcript_rel = f'records/{collab_id}.md'
         transcript_path = Path(transcript_rel)
 
         if transcript_path.exists():
@@ -3999,8 +4168,11 @@ def write_guard(route: str, paths: list[str]) -> int:
         normalized = Path(item).as_posix()
         if normalized.startswith('./'):
             normalized = normalized[2:]
-        if Path(item).is_absolute() or not (normalized == '.collabs' or normalized.startswith('.collabs/')):
-            die(f'route may only write under .collabs: {route}: {item}')
+        if Path(item).is_absolute() or not (
+            normalized in {'registry.json', 'registry.json.lock', 'records'}
+            or normalized.startswith('records/')
+        ):
+            die(f'route may only write under the user-scope collab state root: {route}: {item}')
     print('ok')
     return 0
 
@@ -4205,9 +4377,44 @@ def retract_latest_contribution(
     return 0
 
 
+def stale_registry_lock_message(path: Path, now: float | None = None) -> str | None:
+    lock_path = path.with_name(f'{path.name}.lock')
+    if not lock_path.exists():
+        return None
+    age = (now if now is not None else dt.datetime.now().timestamp()) - lock_path.stat().st_mtime
+    if age < STALE_LOCK_SECONDS:
+        return None
+    try:
+        with lock_path.open('a+') as lock_file:
+            try:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                return (
+                    f'stale registry lock: {lock_path}; a collab command has held it for '
+                    f'at least {STALE_LOCK_SECONDS} seconds. Confirm whether a collab command '
+                    'is stuck before terminating it.'
+                )
+            os.utime(lock_path, None)
+            try:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+            except OSError:
+                pass
+    except OSError as exc:
+        return f'stale registry lock check failed: {lock_path}: {exc}'
+    return None
+
+
 def validate_command(path: Path) -> int:
     load_registry(path)
+    stale_lock = stale_registry_lock_message(path)
+    if stale_lock:
+        die(stale_lock)
     print('registry OK')
+    return 0
+
+
+def registry_path_command(path: Path) -> int:
+    print(path)
     return 0
 
 
@@ -4255,12 +4462,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description='Shared collab registry helper.')
     parser.add_argument(
         '--registry',
-        default='.collabs/registry.json',
-        help='Path to the collab registry JSON file.',
+        default=None,
+        help='Path to the collab registry JSON file; bypasses the project-id state resolver.',
     )
     subparsers = parser.add_subparsers(dest='command', required=True)
 
     subparsers.add_parser('validate')
+    subparsers.add_parser('registry-path')
     list_parser = subparsers.add_parser('list')
     list_parser.add_argument('--status', choices=sorted(ALLOWED_STATUSES))
     flag_inventory_parser = subparsers.add_parser('flag-inventory')
@@ -4462,10 +4670,23 @@ def main(argv: list[str]) -> int:
                 if item.startswith('--'):
                     die(f'unknown flag: {item}')
         parser.error(f'unrecognized arguments: {" ".join(unknown_args)}')
-    path = Path(args.registry)
+    for path_arg in ('content_file', 'summary_file'):
+        if hasattr(args, path_arg) and getattr(args, path_arg):
+            setattr(args, path_arg, str(Path(getattr(args, path_arg)).resolve()))
+
+    if args.registry is None:
+        path, use_state_root = resolve_default_registry_path(args.command)
+        if use_state_root:
+            path = path.resolve()
+            path.parent.mkdir(parents=True, exist_ok=True)
+            os.chdir(path.parent)
+    else:
+        path = Path(args.registry)
 
     if args.command == 'validate':
         return validate_command(path)
+    if args.command == 'registry-path':
+        return registry_path_command(path)
     if args.command == 'list':
         return list_collabs(load_registry(path), args.status)
     if args.command == 'flag-inventory':

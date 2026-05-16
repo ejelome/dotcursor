@@ -23,6 +23,7 @@ Cursor reads `~/.cursor/rules/*.mdc` at startup. `auto.mdc` is `alwaysApply: tru
 ├── AGENTS.md          — other-harness adapter (routing only)
 ├── _CURSOR.md         — shared routing core; owns read order, ownership boundaries
 ├── README.md          — this file
+├── .collab.json         — checked-in collab repo marker
 ├── _core/             — cross-cutting invariants and contracts
 ├── _functions/        — slash command implementations
 ├── _generated/        — framework-generated catalogs (do not edit by hand)
@@ -47,7 +48,7 @@ Run `tools/cursor/install-git-hooks.sh` to install pre-commit and pre-push hooks
 
 Run `tools/cursor/audit.sh` to verify the framework surface. The audit exits 0 when:
 
-- Runtime paths (`.collabs/`, `.claude/`, `projects/`) are excluded from git
+- Runtime paths (`$HOME/.collabs/<projectId>/`, `.claude/`, `projects/`) are excluded from git
 - No accidental untracked payload
 - Every tracked file is reachable from an adapter, core, or catalog
 - Framework-generated output is distinguishable from IDE-produced output

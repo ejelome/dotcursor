@@ -179,7 +179,7 @@ Examples: `_functions/git/commit.md`, `_functions/quality/assess-game.md`, `_fun
 
 Owned internal JSON data files use `camelCase` property names. This rule applies to all repository-owned JSON data files. Tool-governed config files — any JSON file whose keys are consumed or required by an external tool or runtime (Cursor settings, markdownlint config, VS Code keybindings) — keep the key names required by that tool.
 
-Examples of owned internal JSON: `cursor/_roles/*.json` (`key`, `displayName`, `concerns`), `.collabs/registry.json` (`schemaVersion`, `activeCollabId`, `turnOrder`).
+Examples of owned internal JSON: `cursor/_roles/*.json` (`key`, `displayName`, `concerns`), `$HOME/.collabs/<projectId>/registry.json` (`schemaVersion`, `activeCollabId`, `turnOrder`).
 
 ## Related documents
 

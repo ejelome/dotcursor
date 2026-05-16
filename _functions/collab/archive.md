@@ -12,7 +12,7 @@ Soft-delete a collab by marking it archived so it is preserved on disk but exclu
 ## Steps
 
 1. Read [_invariants.md](_invariants.md) before executing; call the relevant helper fresh and do not trust prior reads from conversation context (Invariant #4). Resolve the target collab with **Registry targeting** in **Notes**.
-2. Read `.collabs/registry.json` and the resolved transcript path. If either is unreadable, **ABORT**: record unreadable; name the path.
+2. Read the resolved registry and the resolved transcript path. If either is unreadable, **ABORT**: record unreadable; name the path.
 3. If the registry status is already `archived`, report that the record is already archived and stop.
 4. Set registry status to `archived` and `archived` to `true`.
 5. If the archiving collab id matches `activeCollabId`, clear `activeCollabId`. Do not change the active pointer when it selects a different collab.
@@ -22,9 +22,9 @@ Soft-delete a collab by marking it archived so it is preserved on disk but exclu
 ## Notes
 
 - **Parameters:** target collab slug, id, or numeric `#N` as the first token after `archive`; when absent, resolved per **Registry targeting** in **Notes**.
-- **Registry targeting:** Resolve the target collab from `.collabs/registry.json`, using `tools/collab/registry.py` as the shared helper. When the first token after the route is present, treat it as a collab slug, id, or stable numeric position. Otherwise use `activeCollabId`. If the registry is unreadable or invalid, the token does not match any entry, or `activeCollabId` is empty, **ABORT**: registry target unavailable; name the registry field or token.
+- **Registry targeting:** Resolve the target collab from the resolved registry, using `tools/collab/registry.py` as the shared helper. When the first token after the route is present, treat it as a collab slug, id, or stable numeric position. Otherwise use `activeCollabId`. If the registry is unreadable or invalid, the token does not match any entry, or `activeCollabId` is empty, **ABORT**: registry target unavailable; name the registry field or token.
 - **Soft delete:** `archive` marks the record inactive without touching the transcript file. The record remains on disk for auditability and recovery. Use `/collab delete` for permanent removal.
-- **Status encoding:** Status is the authoritative source; do not encode archived state in the filesystem path. The transcript file stays at its original `.collabs/records/YYYY-MM-DD-<slug>.md` path after archival.
+- **Status encoding:** Status is the authoritative source; do not encode archived state in the filesystem path. The transcript file stays at its original `records/YYYY-MM-DD-<slug>.md` path after archival.
 - **Active cleanup:** Clearing `activeCollabId` means leaving the registry pointer empty. Subsequent routes must refuse target inference until the moderator runs `/collab activate <record>` or names a target explicitly.
 - **Clear notice:** The helper emits `{"message": "Run /clear before starting another collab.", "notice": "clear", "status": "archived"}` after archiving. Display this to the caller. Route docs describe the output; they do not reimplement it. See [_invariants.md](_invariants.md).
 

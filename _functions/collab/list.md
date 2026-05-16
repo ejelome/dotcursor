@@ -11,19 +11,21 @@ List the registry-backed collabs so the moderator can inspect status and active 
 
 ## Steps
 
-1. Read [_invariants.md](_invariants.md) before executing; call the relevant helper fresh and do not trust prior reads from conversation context (Invariant #4). Read `.collabs/registry.json`. If unreadable, **ABORT**: registry unreadable; name the path.
+1. Read [_invariants.md](_invariants.md) before executing; call the relevant helper fresh and do not trust prior reads from conversation context (Invariant #4). Read the resolved registry. If unreadable, **ABORT**: registry unreadable; name the path.
 2. Validate the registry structure and active pointer.
 3. Apply the `--status` filter when present: include only collabs whose `status` matches the given value. If the value is not one of `open`, `closed`, or `archived`, **ABORT**: invalid status filter; name the value.
 4. Sort the filtered list: active collab first, then by descending registry insertion order (`#N`), then alphabetically by slug as a tiebreaker.
-5. Emit one multi-line entry per collab in the **Output shape** in **Notes**.
+5. Emit the project label line when project metadata is present, then one multi-line entry per collab in the **Output shape** in **Notes**.
 6. Stop without mutating the registry or any transcript.
 
 ## Notes
 
 - **Parameters:** `--status <open|closed|archived>` — optional filter; when absent, all collabs are listed.
-- **Output shape:** Each entry spans two lines. Line 1: `[*]` (active) or `[ ]` (inactive), then `#N` (stable 1-based registry position), `-`, slug, title truncated to 20 characters followed by `…` if longer. Line 2: indented status, active phase (`—` when no phase applies), participant count, and `YYYY-MM-DD` init date. Example:
+- **Output shape:** If project metadata is available, the first line is `Project: <label> · <projectId>`; the label is display-only and never a resolver key. Each entry spans two lines. Line 1: `[*]` (active) or `[ ]` (inactive), then `#N` (stable 1-based registry position), `-`, slug, title truncated to 20 characters followed by `…` if longer. Line 2: indented status, active phase (`—` when no phase applies), participant count, and `YYYY-MM-DD` init date. Example:
 
 ```
+Project: dotcursor · a13dba4ca8714205b217dca31da96eee
+
 [*] #3 - payment-refactor    Refactor payment pipeli…
          open · Discussion · 3 participants · 2025-04-28
 

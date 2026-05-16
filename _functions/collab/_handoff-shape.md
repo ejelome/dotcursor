@@ -25,14 +25,14 @@ A v1 Handoff contribution declares two fields:
 
 | Field | Type | Description |
 |---|---|---|
-| `writeScope` | array of glob strings | Allowed-path globs for Completion execution; consumed by `execute-spawn --scope`. |
+| `writeScope` | array of glob strings | Allowed-path globs for Completion execution; consumed by `execute-spawn --scope` and `execution --touched-path`. |
 | `validationCommands` | array of argv arrays | Bounded commands to run after Completion; each entry is an argv array, not a shell string. |
 
 `schemaVersion: 1` is stored alongside these fields in registry state.
 
 **writeScope**
 
-Each entry is a glob string matching one or more repository paths. Entries must be as narrow as the intended Completion work; over-broad globs are rejected. `run-plan` passes declared `writeScope` to `execute-spawn`; parent agents must not translate Handoff prose into scope.
+Each entry is a glob string matching one or more repository paths. Entries must be as narrow as the intended Completion work; over-broad globs are rejected. `run-plan` passes declared `writeScope` to `execute-spawn`; parent agents must not translate Handoff prose into scope. When structured Handoff state exists for a role, the execution recorder also rejects any `--touched-path` outside that role's declared `writeScope`.
 
 **validationCommands format and trust boundary**
 
@@ -50,7 +50,7 @@ The transcript `## Handoff` section is generated from registry state. Repeated r
 
 **Failure recovery**
 
-When `execute-spawn` rejects a returned Completion patch (paths outside declared `writeScope`), do not widen scope ad hoc. Two recovery paths:
+When `execute-spawn` rejects a returned Completion patch or the execution recorder rejects a touched path outside declared `writeScope`, do not widen scope ad hoc. Two recovery paths:
 
 1. **Re-Handoff:** the assigned role issues a revised Handoff via `/collab speak` in a new or restored Handoff phase.
 2. **`/collab rewrite execution`:** when the patch is otherwise valid and scope widening is the only issue, use `/collab rewrite execution` to revise the execution record.

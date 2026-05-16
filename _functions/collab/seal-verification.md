@@ -13,7 +13,7 @@ Seal the `Completion.verification` sub-state after a reviewer pass, recording th
 
 1. Read [_invariants.md](_invariants.md) before executing; call the relevant helper fresh and do not trust prior reads from conversation context (Invariant #4). Resolve the target collab with **Registry targeting** in **Notes**.
 <!-- abort: seal-verification-record-unreadable -->
-2. Read `.collabs/registry.json` and the resolved transcript path. If either is unreadable, **ABORT**: record unreadable; name the path.
+2. Read the resolved registry and the resolved transcript path. If either is unreadable, **ABORT**: record unreadable; name the path.
 <!-- abort: seal-verification-record-closed -->
 3. If the registry status is `closed` or `archived`, **ABORT**: record is closed.
 <!-- abort: seal-verification-phase-not-completion -->
@@ -32,14 +32,17 @@ Seal the `Completion.verification` sub-state after a reviewer pass, recording th
     If invalid, **ABORT**: invalid cap-exit value `<action>`; must be one of: reopen-action-plan, reopen-handoff, archive.
 <!-- abort: seal-verification-cap-exceeded -->
 11. If `--cap-exit` is absent and `verificationRounds` is at or above `verificationCap`, **ABORT**: round cap reached; reissue with `--cap-exit reopen-action-plan`, `--cap-exit reopen-handoff`, or `--cap-exit archive`.
-12. Write the seal by calling `tools/collab/registry.py seal-render <target> <role> --observed-revision <registryRevision> [--cap-exit <action>]`. The helper writes `verificationSeal = { observedRevision, executionEntries, validationScopes, touchedPaths, sealedAt, sealedBy }` atomically to the registry and appends the seal record to the transcript `## Completion` section. If the helper exits non-zero, **ABORT**: seal write failed; name the helper error.
-13. Display the `NEXT:` guidance returned by `seal-render`. If a cap-exit action was declared, execute the named registered command after the seal is written. Stop.
+<!-- abort: seal-verification-uncommitted-paths -->
+12. Collect every path listed in `execution.<role>.touchedPaths` across all execution entries. For each path, verify it is staged or committed in git — not working-tree-only. A path present only in the working tree means the implementation has not reached git and cannot be sealed. **ABORT** (agent-honor-system): implementation not in git; list each path that is unstaged and uncommitted.
+13. Write the seal by calling `tools/collab/registry.py seal-render <target> <role> --observed-revision <registryRevision> [--cap-exit <action>]`. The helper writes `verificationSeal = { observedRevision, executionEntries, validationScopes, touchedPaths, sealedAt, sealedBy }` atomically to the registry and appends the seal record to the transcript `## Completion` section. If the helper exits non-zero, **ABORT**: seal write failed; name the helper error.
+14. Display the `NEXT:` guidance returned by `seal-render`. If a cap-exit action was declared, execute the named registered command after the seal is written. Stop.
 
 ## Notes
 
 - **Parameters:** target collab slug, id, or numeric `#N` as the first token after `seal verification`; when absent, resolved per **Registry targeting** in **Notes**. `--cap-exit <action>` — one of `reopen-action-plan`, `reopen-handoff`, or `archive`; required when the round cap is reached, optional when the reviewer chooses to end the loop before the cap.
-- **Registry targeting:** Resolve the target collab from `.collabs/registry.json`, using `tools/collab/registry.py` as the shared helper. When the first token after the route is present, treat it as a collab slug, id, or stable numeric position. Otherwise use `activeCollabId`. If the registry is unreadable or invalid, the token does not match any entry, or `activeCollabId` is empty, **ABORT** (agent-honor-system): registry target unavailable; name the registry field or token.
+- **Registry targeting:** Resolve the target collab from the resolved registry, using `tools/collab/registry.py` as the shared helper. When the first token after the route is present, treat it as a collab slug, id, or stable numeric position. Otherwise use `activeCollabId`. If the registry is unreadable or invalid, the token does not match any entry, or `activeCollabId` is empty, **ABORT** (agent-honor-system): registry target unavailable; name the registry field or token.
 - **Reviewer-only:** Only the `reviewerRole` participant may author the seal. Non-reviewer roles must not issue this command.
+- **Git-tracking gate (agent-honor-system):** Step 12 is agent-enforced; the helper does not currently check git state. Use `git diff --cached --name-only` and `git log --oneline -1 -- <path>` to determine whether a path is staged or committed. A path that appears only in `git diff --name-only` (working tree, unstaged) fails the gate. Sealing over uncommitted work records paths in `verificationSeal.touchedPaths` that do not exist in git history, making the seal unreproducible.
 - **Zero-round rule:** A seal over zero `verificationRounds` is a hard ABORT with no advisory or warning path. At least one complete reviewer-executor paired event must be recorded in `Completion.verification` before the seal is accepted.
 - **Round definition:** A round is a paired event unit — one reviewer verification event plus any executor patch events within the same `Completion.verification` cycle. Rounds are registry-countable; the helper increments the count, not transcript parsing.
 - **Cap exits:** When the round cap fires, the reviewer must choose one registered action: `reopen-action-plan` (transitions the collab to `Action Plan` phase), `reopen-handoff` (transitions to `Handoff` phase), or `archive` (closes with an accepted-risk summary). The cap-exit action is recorded on `verificationSeal`; no further rounds are accepted after a cap exit is recorded.

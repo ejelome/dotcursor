@@ -30,7 +30,7 @@ Maintainer check: `git grep -rn 'agent-honor-system' cursor/_functions/collab/` 
 
 **2. Registry as source of truth; transcript as human ledger**
 
-The registry (`.collabs/registry.json`) is the authoritative source for command state. The transcript (`.collabs/records/*.md`) mirrors selected metadata and captures human-readable context. Registry-only mutations — `/collab set`, `/collab unset`, moderator removal in `speak-lifecycle-live` — must remain reconcilable against transcript-readable state. No registry write may create state that cannot be explained or confirmed from the transcript.
+The resolved registry (`$HOME/.collabs/<projectId>/registry.json` by default, or the explicit `--registry` path) is the authoritative source for command state. The transcript (`records/*.md` inside the resolved state root by default) mirrors selected metadata and captures human-readable context. Registry-only mutations — `/collab set`, `/collab unset`, moderator removal in `speak-lifecycle-live` — must remain reconcilable against transcript-readable state. No registry write may create state that cannot be explained or confirmed from the transcript.
 
 **3. Phase-transition notices as structured helper output**
 
@@ -43,7 +43,7 @@ Structured notice shapes:
 
 **4. Disk-state authority**
 
-Conversation context is cache; disk state is truth. Registry (`.collabs/registry.json`) and transcript (`.collabs/records/*.md`) are the authoritative sources. Helpers recompute state from files, not from agent memory. This is the durability invariant that makes collabs survive `/compact`, `/clear`, agent swaps, and harness restarts equally.
+Conversation context is cache; disk state is truth. The resolved registry and transcript files are the authoritative sources. Helpers recompute state from files, not from agent memory. This is the durability invariant that makes collabs survive `/compact`, `/clear`, agent swaps, and harness restarts equally.
 
 **5. Context-changing events**
 

@@ -44,7 +44,7 @@ The result is the `slug` field. If the result is empty after trimming, abort wit
 ### Collab id and transcript path
 
 - `id`: `YYYY-MM-DD-<slug>` where the date is today in local time.
-- `transcriptPath`: `.collabs/records/YYYY-MM-DD-<slug>.md`
+- `transcriptPath`: `records/YYYY-MM-DD-<slug>.md`
 
 ### Sequence number
 
