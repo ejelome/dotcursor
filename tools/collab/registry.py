@@ -74,9 +74,11 @@ def resolve_cursor_root() -> Path:
 DEFAULT_CURSOR_ROOT = resolve_cursor_root()
 DEFAULT_ROLES_DIR = DEFAULT_CURSOR_ROOT / '_roles'
 DEFAULT_EFFORT_PATH = DEFAULT_CURSOR_ROOT / '_functions/collab/_agent-effort.json'
+DEFAULT_AGENT_MODEL_PATH = DEFAULT_CURSOR_ROOT / '_functions/collab/_agent-model.md'
 DEFAULT_BUDGET_PATH = DEFAULT_CURSOR_ROOT / '_functions/collab/_contribution-budget.md'
 DEFAULT_MODERATOR_POLISH_PATH = DEFAULT_CURSOR_ROOT / '_functions/collab/_moderator-polish.md'
 DEFAULT_FLAG_TAXONOMY_PATH = DEFAULT_CURSOR_ROOT / '_functions/collab/_flag-taxonomy.md'
+EFFORT_MODEL_MARKER = 'generated; do not edit'
 MODERATOR_ONLY_ACTIONS = {
     'advance',
     'archive',
@@ -1812,6 +1814,136 @@ def effort_state(path: Path, target: str, role: str, effort_defaults_path: Path)
     if effort is None:
         result['notOnRoster'] = True
     print(json.dumps(result, sort_keys=True))
+    return 0
+
+
+def normalize_rendered_effort_cell(value: str) -> str | None:
+    cleaned = re.sub(r'<[^>]+>', '', value).strip()
+    cleaned = re.sub(r'\s+', ' ', cleaned)
+    if cleaned in {'', '-', '\u2014'} or cleaned.startswith('\u2014 '):
+        return None
+    match = re.match(r'`?([A-Za-z][A-Za-z0-9_-]*)`?', cleaned)
+    if not match:
+        return cleaned
+    return match.group(1)
+
+
+def parse_markdown_table(lines: list[str], start_index: int) -> tuple[list[str], list[dict[str, str]], int]:
+    headers = [cell.strip() for cell in lines[start_index].strip().strip('|').split('|')]
+    separator_index = start_index + 1
+    if separator_index >= len(lines) or not re.match(
+        r'^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$',
+        lines[separator_index],
+    ):
+        die(f'effort matrix rendered table missing separator after line {start_index + 1}')
+    rows: list[dict[str, str]] = []
+    index = separator_index + 1
+    while index < len(lines) and lines[index].lstrip().startswith('|'):
+        cells = [cell.strip() for cell in lines[index].strip().strip('|').split('|')]
+        if len(cells) != len(headers):
+            die(f'effort matrix rendered table malformed at line {index + 1}')
+        rows.append(dict(zip(headers, cells)))
+        index += 1
+    return headers, rows, index
+
+
+def parse_agent_model_effort_table(model_path: Path) -> tuple[list[str], dict[str, dict[str, str]], bool]:
+    if not model_path.exists():
+        die(f'effort model projection missing: {model_path}')
+    lines = model_path.read_text().splitlines()
+    heading_index = None
+    for index, line in enumerate(lines):
+        if line.strip() == '## Per-speak-turn effort':
+            heading_index = index
+            break
+    if heading_index is None:
+        die('effort matrix rendered table missing heading: ## Per-speak-turn effort')
+
+    table_index = None
+    marker_found = False
+    for index in range(heading_index + 1, len(lines)):
+        stripped = lines[index].strip()
+        if table_index is None and EFFORT_MODEL_MARKER in stripped.lower():
+            marker_found = True
+        if stripped.startswith('|'):
+            table_index = index
+            break
+    if table_index is None:
+        die('effort matrix rendered table missing after heading: ## Per-speak-turn effort')
+
+    headers, rows, _ = parse_markdown_table(lines, table_index)
+    if not headers or headers[0] != 'Phase':
+        die('effort matrix rendered table first column must be Phase')
+    roles = headers[1:]
+    by_phase: dict[str, dict[str, str]] = {}
+    for row in rows:
+        phase = row.get('Phase', '').strip()
+        if not phase:
+            die('effort matrix rendered table contains row with blank Phase')
+        if phase in by_phase:
+            die(f'effort matrix rendered table duplicate phase/row: {phase}')
+        by_phase[phase] = {role: row.get(role, '') for role in roles}
+    return roles, by_phase, marker_found
+
+
+def rendered_effort_drift_items(defaults: dict, model_path: Path) -> list[str]:
+    roles, rendered_by_phase, marker_found = parse_agent_model_effort_table(model_path)
+    matrix = defaults['matrix']
+    failures: list[str] = []
+    if not marker_found:
+        failures.append(
+            f'header-missing: expected "{EFFORT_MODEL_MARKER}" before rendered effort table in {model_path}'
+        )
+
+    expected_roles: list[str] = []
+    for phase_defaults in matrix.values():
+        for role in phase_defaults:
+            if role not in expected_roles:
+                expected_roles.append(role)
+    for role in expected_roles:
+        if role not in roles:
+            failures.append(
+                f'role {role}, phase/row <header>: JSON value present, rendered value missing-column'
+            )
+
+    for phase, phase_defaults in matrix.items():
+        rendered_row = rendered_by_phase.get(phase)
+        if rendered_row is None:
+            failures.append(
+                'role <all>, phase/row '
+                f'{phase}: JSON value {json.dumps(phase_defaults, sort_keys=True)}, rendered value missing-row'
+            )
+            continue
+        for role, json_value in phase_defaults.items():
+            rendered_raw = rendered_row.get(role)
+            if rendered_raw is None:
+                failures.append(
+                    f'role {role}, phase/row {phase}: JSON value {json_value}, rendered value missing-column'
+                )
+                continue
+            rendered_value = normalize_rendered_effort_cell(rendered_raw)
+            if rendered_value != json_value:
+                failures.append(
+                    f'role {role}, phase/row {phase}: JSON value {json_value}, '
+                    f'rendered value {rendered_raw or "<blank>"}'
+                )
+
+    for phase in rendered_by_phase:
+        if phase not in matrix:
+            failures.append(
+                f'role <all>, phase/row {phase}: JSON value missing-row, rendered value present'
+            )
+    return failures
+
+
+def audit_effort_matrix(effort_defaults_path: Path, model_path: Path) -> int:
+    defaults = load_effort_defaults(effort_defaults_path)
+    failures = rendered_effort_drift_items(defaults, model_path)
+    if failures:
+        for failure in failures:
+            print(f'effort matrix drift: {failure}', file=sys.stderr)
+        return 1
+    print('OK: _agent-model.md effort projection matches _agent-effort.json')
     return 0
 
 
@@ -4534,6 +4666,10 @@ def build_parser() -> argparse.ArgumentParser:
     effort_state_parser.add_argument('role')
     effort_state_parser.add_argument('--effort-defaults', default=str(DEFAULT_EFFORT_PATH))
 
+    audit_effort_matrix_parser = subparsers.add_parser('audit-effort-matrix')
+    audit_effort_matrix_parser.add_argument('--effort-defaults', default=str(DEFAULT_EFFORT_PATH))
+    audit_effort_matrix_parser.add_argument('--agent-model', default=str(DEFAULT_AGENT_MODEL_PATH))
+
     advance_parser = subparsers.add_parser('advance')
     advance_parser.add_argument('target')
     advance_parser.add_argument('direction', choices=['next', 'prev'])
@@ -4726,6 +4862,8 @@ def main(argv: list[str]) -> int:
         return unset_field(path, args.target, args.field, Path(args.roles_dir), args.caller_role)
     if args.command == 'effort-state':
         return effort_state(path, args.target, args.role, Path(args.effort_defaults))
+    if args.command == 'audit-effort-matrix':
+        return audit_effort_matrix(Path(args.effort_defaults), Path(args.agent_model))
     if args.command == 'speak-lifecycle':
         return speak_lifecycle(path, args.target, args.contributors)
     if args.command == 'speak-state':

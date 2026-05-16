@@ -13,9 +13,9 @@
 
 ## Notes
 
-This document defines the join-time model and harness for each collab role, per-phase effort, and fallback. It supplements [`_agent-effort.md`](_agent-effort.md) (effort levels) and [`_agent-lifecycle.md`](_agent-lifecycle.md) (lifecycle command timing). For the role schema and roster, see [`cursor/_core/agent-role.md`](../../_core/agent-role.md); for agentId precedence and capture semantics, see [`join.md`](join.md).
+This document defines the join-time model and harness for each collab role, a generated effort projection, and fallback. It supplements [`_agent-effort.md`](_agent-effort.md) (effort levels) and [`_agent-lifecycle.md`](_agent-lifecycle.md) (lifecycle command timing). For the role schema and roster, see [`cursor/_core/agent-role.md`](../../_core/agent-role.md); for agentId precedence and capture semantics, see [`join.md`](join.md).
 
-**Authoritative source:** This file. Values sourced from the collab that produced these values.
+**Authoritative source:** This file is authoritative for join-time model and harness guidance. `_agent-effort.json` is authoritative for effort matrix values; the table below is a generated projection checked by `tools/collab/registry.py audit-effort-matrix`.
 
 ## Join-time model and harness
 
@@ -36,18 +36,21 @@ The table below captures recommended defaults. Identifiers name a model family o
 
 **pa fallback.** Use `sonnet` when Opus cap is exhausted or the collab is lightweight with no convergent-gate weight. Opus is cap-fragile under sustained use; Claude Max sustains roughly 2–3 pa-Opus collabs per rolling cap window.
 
-## Per-phase effort
+## Per-speak-turn effort
+
+> **generated; do not edit** — this table is a projection of `_agent-effort.json`; edit the JSON source instead.
 
 | Phase | mod | tw | pe | pa |
 |-------|-----|----|----|----|
 | Audit | low | medium | medium | xhigh |
-| Discussion | low | medium | high | high |
-| Conclusion | low | medium | high | xhigh |
-| Action Plan | low | medium | medium | high |
-| Handoff | low | high | xhigh | high |
-| Completion | low | high | high | xhigh |
+| Discussion | low | medium | high | high *(optional tail)* |
+| Conclusion | low | medium | medium | xhigh |
+| Action Plan | low | medium | high | — *(optional xhigh if admitted)* |
+| Handoff | low | high | xhigh | — *(optional xhigh if admitted)* |
+| Completion | low | high | high | xhigh *(reviewer gate; execution sub-state)* |
+| Completion.verification | low | high | high | xhigh *(reviewer seal; mandatory-declaration turn)* |
 
-Values should match the phase-role matrix in `_agent-effort.json`. When the two diverge, this file is authoritative for both join model and effort matrix values; update `_agent-effort.json` to match.
+Values must match the phase-role matrix in `_agent-effort.json`. When the two diverge, `_agent-effort.json` is authoritative; update this projection to match.
 
 ## Caveats
 

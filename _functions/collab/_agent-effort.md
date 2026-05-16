@@ -17,7 +17,7 @@ This document explains what effort levels mean, how to interpret the phase-role 
 
 **Authoritative source:** [`_agent-effort.json`](_agent-effort.json). The table below is a human-readable rendering of that file; if they diverge, the JSON is correct.
 
-**Cross-document authority:** When this file and [`_agent-model.md`](_agent-model.md) disagree on matrix values, `_agent-model.md` is authoritative. Update this file and `_agent-effort.json` to match `_agent-model.md` when divergence is found.
+**Cross-document authority:** When this file and [`_agent-model.md`](_agent-model.md) disagree on matrix values, `_agent-effort.json` is authoritative. `_agent-model.md` is a generated human-readable projection for the effort matrix; update the JSON source first, then regenerate or repair the projection. Drift is checked by `tools/collab/registry.py audit-effort-matrix`.
 
 **Change-motivation convention:** Every change to `_agent-effort.json` or to the escalation signal taxonomy in this file must cite the collab, signal, or rationale that motivated the change. This prevents invisible drift and gives reviewers an anchor for "this default is wrong" claims.
 
@@ -33,7 +33,7 @@ This document explains what effort levels mean, how to interpret the phase-role 
 
 ## Phase-role matrix
 
-This matrix is illustrative. The helper's `EFFORT:` advisory output is the runtime-authoritative recommendation; consult it rather than this table when the two diverge.
+This matrix is rendered from `_agent-effort.json`. The helper's `EFFORT:` advisory output and `audit-effort-matrix` check read the same JSON source.
 
 | Phase | mod | tw | pe | pa |
 |---|---|---|---|---|

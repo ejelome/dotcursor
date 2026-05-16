@@ -33,6 +33,10 @@ Run `/effort` (harness slash command, not a collab route) before every speak tur
 
 Effort changes per phase per role as defined in `_agent-effort.md` and `_agent-model.md`. The join-time model does not change; only effort adjusts between phases.
 
+## `/collab join`
+
+`/collab join` is metadata-only admission work. It does not produce a phase contribution and runs at `low` for any role. The per-phase effort matrix governs speak turns only.
+
 ## Subagents
 
 Subagents belong in the **Completion** phase only, after Handoff has declared disjoint write scopes and validation commands. Spawning is helper-driven (`execute-spawn`) under `/collab run plan`. Subagents never author a collab turn and must not mutate registry or transcript state independently.
