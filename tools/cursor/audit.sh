@@ -27,7 +27,7 @@ require_dir() {
 
 is_source_path() {
   case "$1" in
-    .gitignore|.collab-project.json|CLAUDE.md|AGENTS.md|_CURSOR.md|README.md|REPOSITORY.md) return 0 ;;
+    .gitignore|.collab.json|CLAUDE.md|AGENTS.md|_CURSOR.md|README.md|REPOSITORY.md) return 0 ;;
     .github/*) return 0 ;;
     _core/*|_functions/*|_generated/*|_mdc/*|_roles/*|_templates/*|_tests/*|commands/*|rules/*|tests/*|tools/*) return 0 ;;
     *) return 1 ;;
@@ -39,7 +39,7 @@ check_required_surface() {
   require_file AGENTS.md
   require_file _CURSOR.md
   require_file README.md
-  require_file .collab-project.json
+  require_file .collab.json
   require_file commands/commands.md
   require_file rules/auto.mdc
   require_file rules/shared.mdc
@@ -63,17 +63,114 @@ check_adapters() {
 
 check_runtime_boundary() {
   local path
-  for path in .collabs .claude projects extensions ide_state.json skills-cursor plugins skills plans subagents; do
+  for path in .claude projects extensions ide_state.json skills-cursor plugins skills plans subagents; do
     if [[ -e "$path" ]]; then
       git check-ignore -q "$path" || fail "runtime path is not ignored: $path"
     fi
   done
 
-  if grep -Eq '^!(\.collabs|\.claude|projects|extensions|ide_state\.json|skills-cursor|plugins|skills|plans|subagents)(/|$)' .gitignore; then
+  if grep -Eq '^!(\.claude|projects|extensions|ide_state\.json|skills-cursor|plugins|skills|plans|subagents)(/|$)' .gitignore; then
     fail ".gitignore un-ignores a runtime-only path"
   else
     ok "runtime-only paths remain ignored by policy"
   fi
+}
+
+check_collab_contract_terms() {
+  python3 - <<'PY'
+from __future__ import annotations
+
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+tracked = subprocess.run(['git', 'ls-files', '-z'], check=True, stdout=subprocess.PIPE).stdout.decode().split('\0')
+canonical = 'user-scope ' + 'collab ' + 'state root'
+checks = [
+    ('retired marker filename', '.collab-project' + '.json', set(), False),
+    ('retired repo-local stub path', '.collabs/project' + '.json', {'_functions/collab/_identity-contract.md'}, False),
+    ('retired collab phrase', 'global ' + 'home', {'_functions/collab/_glossary.md'}, False),
+    ('forbidden substitute for user-scope collab state root', 'state ' + 'directory', {'_functions/collab/_glossary.md'}, False),
+    ('forbidden substitute for user-scope collab state root', 'resolved state ' + 'directory', {'_functions/collab/_glossary.md'}, False),
+    ('forbidden substitute for user-scope collab state root', 'home ' + 'state root', {'_functions/collab/_glossary.md'}, False),
+    ('forbidden substitute for user-scope collab state root', 'collab ' + 'state root', {'_functions/collab/_glossary.md'}, True),
+    ('forbidden substitute for user-scope collab state root', 'resolved state root ' + 'path', {'_functions/collab/_glossary.md'}, False),
+]
+failures: list[str] = []
+
+for rel in filter(None, tracked):
+    path = Path(rel)
+    if not path.exists() or path.is_dir():
+        continue
+    try:
+        lines = path.read_text(errors='strict').splitlines()
+    except UnicodeDecodeError:
+        continue
+    for number, line in enumerate(lines, start=1):
+        for kind, phrase, allow, strip_canonical in checks:
+            haystack = line
+            if strip_canonical:
+                haystack = re.sub(re.escape(canonical), '', haystack, flags=re.IGNORECASE)
+            if phrase.lower() in haystack.lower() and rel not in allow:
+                failures.append(f'FAIL: {kind}: {rel}:{number}: {phrase}')
+
+if re.search(r'^!?\.collabs(/|$)', Path('.gitignore').read_text(), flags=re.MULTILINE):
+    failures.append('FAIL: .gitignore still has a repo-local .collabs entry')
+if Path('.collabs').exists():
+    failures.append('FAIL: repo-local .collabs/ exists; current collab state must resolve through the user-scope collab state root')
+
+if failures:
+    print('\n'.join(failures), file=sys.stderr)
+    sys.exit(1)
+PY
+  local status=$?
+  ((status == 0)) || failures=$((failures + 1))
+  ((status == 0)) && ok "collab retired vocabulary and topology stay contained"
+}
+
+check_collab_registry_lock() {
+  python3 - <<'PY'
+from __future__ import annotations
+
+import json
+import os
+import sys
+from pathlib import Path
+
+marker = Path('.collab.json')
+if not marker.exists():
+    print('OK: collab registry lock check skipped; .collab.json missing')
+    sys.exit(0)
+try:
+    identity = json.loads(marker.read_text())
+except json.JSONDecodeError as exc:
+    print(f'FAIL: .collab.json invalid JSON: {exc}', file=sys.stderr)
+    sys.exit(1)
+project_id = identity.get('projectId')
+if not isinstance(project_id, str) or not project_id:
+    print('FAIL: .collab.json missing projectId', file=sys.stderr)
+    sys.exit(1)
+state_home = Path(os.environ.get('CURSOR_COLLAB_STATE_HOME', Path.home() / '.collabs')).expanduser()
+registry = state_home / project_id / 'registry.json'
+if not registry.exists():
+    print('OK: collab registry lock check skipped; registry absent')
+    sys.exit(0)
+import subprocess
+
+result = subprocess.run(
+    [sys.executable, 'tools/collab/registry.py', 'validate'],
+    text=True,
+    stdout=subprocess.PIPE,
+    stderr=subprocess.STDOUT,
+)
+if result.returncode:
+    print(result.stdout, end='', file=sys.stderr)
+    sys.exit(result.returncode)
+print('OK: collab registry lock state is valid')
+PY
+  local status=$?
+  ((status == 0)) || failures=$((failures + 1))
 }
 
 check_untracked_payload() {
@@ -95,6 +192,7 @@ check_tracked_source_boundary() {
   local path bad=0
   while IFS= read -r path; do
     [[ -n "$path" ]] || continue
+    [[ -e "$path" ]] || continue
     if ! is_source_path "$path"; then
       printf 'FAIL: tracked file outside source boundary: %s\n' "$path" >&2
       bad=1
@@ -205,8 +303,10 @@ PY
 check_required_surface
 check_adapters
 check_runtime_boundary
+check_collab_contract_terms
 check_untracked_payload
 check_tracked_source_boundary
+check_collab_registry_lock
 check_generated_freshness
 check_generated_boundary
 check_links

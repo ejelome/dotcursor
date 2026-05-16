@@ -12,7 +12,7 @@ If any file in the bootstrap chain has not been read, stop and list the missing 
 
 ## Engine residency
 
-`tools/collab/` is shared infrastructure resident at `~/.cursor/tools/collab/`. Invoke the helper by absolute path from any project: `~/.cursor/tools/collab/registry.py <args>`. Each project carries a checked-in `.collab-project.json` identity file; by default the helper resolves runtime state to `$HOME/.collabs/<project-id>/` with `registry.json` and `records/` inside that state root. `--registry` remains an explicit override for tests and emergency recovery. `CURSOR_CONFIG_ROOT` is not required when working from `~/.cursor` as the runtime root.
+`tools/collab/` is shared infrastructure resident at `~/.cursor/tools/collab/`. Invoke the helper by absolute path from any project: `~/.cursor/tools/collab/registry.py <args>`. Each project carries a checked-in `.collab.json` repo marker; by default the helper resolves runtime state to the user-scope collab state root at `$HOME/.collabs/<projectId>/` with `registry.json` and `records/` inside that state root. `CURSOR_COLLAB_STATE_HOME` may override the base only for tests and emergency recovery; the helper still appends `<projectId>`. `--registry` remains an explicit registry-file override for tests and emergency recovery. `CURSOR_CONFIG_ROOT` is not required when working from `~/.cursor` as the runtime root.
 
 ## Resume contract
 

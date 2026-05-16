@@ -21,7 +21,6 @@ Deterministic QA for `~/.cursor/_core/*.md` canon documents.
 - `command-convention.md`
 - `command-standard.md`
 - `context-management.md`
-- `collab-project-identity-contract.md`
 - `document-standard.md`
 - `framework-boundaries.md`
 - `route-invariant.md`

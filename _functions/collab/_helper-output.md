@@ -44,7 +44,7 @@ Advisory lines are suppressed on failed eligibility checks, duplicate contributi
 `speak-render` emits two pre-write advisory lines before appending content:
 
 ```
-BOUNDARY: transcript write only; no shell commands or file edits outside .collabs/
+BOUNDARY: transcript write only; no shell commands or source edits outside the user-scope collab state root
 SUCCINCTLY: stay within role concerns; do not pad or summarize other roles
 ```
 
@@ -64,7 +64,7 @@ Successful exit emits in order:
 
 Pre-write (before appending):
 
-1. `BOUNDARY: transcript write only; no shell commands or file edits outside .collabs/`
+1. `BOUNDARY: transcript write only; no shell commands or source edits outside the user-scope collab state root`
 2. `SUCCINCTLY: stay within role concerns; do not pad or summarize other roles`
 3. `RETRACT: use /collab retract speak to tombstone the latest active-phase contribution`
 

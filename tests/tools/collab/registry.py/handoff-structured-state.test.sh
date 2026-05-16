@@ -116,6 +116,33 @@ cmp "$transcript_path" first-render.md
 "$ROOT/tools/collab/registry.py" execute-spawn "$TARGET" pe --scope tools/collab/registry.py --returned-path tools/collab/registry.py >/dev/null
 
 set +e
+execution_scope_output="$("$ROOT/tools/collab/registry.py" execution "$TARGET" pe completed "2026-05-16T03:00:00+02:00" \
+  --assigned-role pe \
+  --validation-result passed \
+  --validation-scope scoped \
+  --touched-path README.md \
+  --caller-role pe 2>&1)"
+execution_scope_status=$?
+set -e
+
+if [[ "$execution_scope_status" -eq 0 ]]; then
+  printf 'FAIL: execution accepted touched path outside declared writeScope\n' >&2
+  exit 1
+fi
+
+if [[ "$execution_scope_output" != *"execution touched path outside declared writeScope: README.md"* ]]; then
+  printf 'FAIL: execution touched-path scope message mismatch\n%s\n' "$execution_scope_output" >&2
+  exit 1
+fi
+
+"$ROOT/tools/collab/registry.py" execution "$TARGET" pe completed "2026-05-16T03:01:00+02:00" \
+  --assigned-role pe \
+  --validation-result passed \
+  --validation-scope scoped \
+  --touched-path tools/collab/registry.py \
+  --caller-role pe >/dev/null
+
+set +e
 scope_output="$("$ROOT/tools/collab/registry.py" execute-spawn "$TARGET" pe --scope tools --returned-path tools/collab/registry.py 2>&1)"
 scope_status=$?
 set -e
