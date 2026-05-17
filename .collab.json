@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "projectId": "a13dba4ca8714205b217dca31da96eee",
+  "label": "dotcursor",
+  "state": {
+    "mode": "shared",
+    "isolation": "opt-in"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "key": "tw",
+  "displayName": "Technical Writer",
+  "concerns": [
+    "clarity",
+    "conciseness",
+    "accuracy",
+    "developer experience"
+  ]
+}
