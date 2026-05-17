@@ -17,7 +17,7 @@ read_json_field() {
 init_target() {
   local title="$1"
   local slug="$2"
-  "$ROOT/tools/collab/registry.py" init --agent-id codex --reviewer pa "$title" >/dev/null
+  "$ROOT/tools/collab/registry.py" init --agent-id codex --reviewer pa --no-participant-verification "$title" >/dev/null
   "$ROOT/tools/collab/registry.py" join-participants "$RUN_DATE-$slug" pe --agent-id gpt >/dev/null
   "$ROOT/tools/collab/registry.py" join-participants "$RUN_DATE-$slug" pa --agent-id opus >/dev/null
   "$ROOT/tools/collab/registry.py" set "$RUN_DATE-$slug" turn-order pe --caller-role mod >/dev/null
@@ -40,7 +40,11 @@ python3 - "$REGISTRY" <<'PY'
 import json
 import sys
 from pathlib import Path
-entry = json.loads(Path(sys.argv[1]).read_text())['collabs'][0]
+path = Path(sys.argv[1])
+data = json.loads(path.read_text())
+entry = data['collabs'][0]
+entry['verification']['cap'] = 2
+path.write_text(json.dumps(data, indent=2) + '\n')
 assert entry['status'] == 'open'
 assert entry['completion']['subState'] == 'verification'
 assert entry['verification']['subState'] == 'seal'
@@ -136,7 +140,7 @@ path = Path(sys.argv[1])
 data = json.loads(path.read_text())
 entry = next(item for item in data['collabs'] if item['slug'] == 'verification-zero-round')
 entry['completion'] = {'subState': 'verification'}
-entry['verification'] = {'rounds': 0, 'cap': 3}
+entry['verification'] = {'rounds': 0, 'cap': 1}
 path.write_text(json.dumps(data, indent=2) + '\n')
 PY
 zero_revision="$(python3 - "$REGISTRY" <<'PY'

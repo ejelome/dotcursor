@@ -27,11 +27,20 @@ if [[ "$bad_reviewer_status" -eq 0 || "$bad_reviewer_output" != *'--reviewer req
 fi
 
 set +e
-cap_without_gate_output="$("$ROOT/tools/collab/registry.py" init --agent-id codex --verification-cap 2 "Argument Validation" 2>&1)"
-cap_without_gate_status=$?
+old_opt_in_output="$("$ROOT/tools/collab/registry.py" init --agent-id codex --participant-verification "Argument Validation" 2>&1)"
+old_opt_in_status=$?
 set -e
-if [[ "$cap_without_gate_status" -eq 0 || "$cap_without_gate_output" != *'--verification-cap requires --participant-verification'* ]]; then
-  printf 'FAIL: init accepted --verification-cap without --participant-verification\n%s\n' "$cap_without_gate_output" >&2
+if [[ "$old_opt_in_status" -eq 0 || "$old_opt_in_output" != *'unknown flag: --participant-verification'* ]]; then
+  printf 'FAIL: init accepted retired --participant-verification flag\n%s\n' "$old_opt_in_output" >&2
+  exit 1
+fi
+
+set +e
+retired_cap_output="$("$ROOT/tools/collab/registry.py" init --agent-id codex --verification-cap 2 "Argument Validation" 2>&1)"
+retired_cap_status=$?
+set -e
+if [[ "$retired_cap_status" -eq 0 || "$retired_cap_output" != *'unknown flag: --verification-cap'* ]]; then
+  printf 'FAIL: init accepted retired --verification-cap flag\n%s\n' "$retired_cap_output" >&2
   exit 1
 fi
 
@@ -44,4 +53,4 @@ if [[ "$slug_empty_status" -eq 0 || "$slug_empty_output" != *'slug is empty'* ]]
   exit 1
 fi
 
-printf 'OK: init argument validation rejects missing names, invalid reviewer values, unbound verification caps, and empty slugs\n'
+printf 'OK: init argument validation rejects missing names, invalid reviewer values, retired verification flags, and empty slugs\n'

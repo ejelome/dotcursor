@@ -11,7 +11,7 @@ export CURSOR_COLLAB_STATE_HOME="$TMPDIR/state-home"
 RUN_DATE="$(date +%Y-%m-%d)"
 TARGET="$RUN_DATE-participant-verify-flow"
 
-"$ROOT/tools/collab/registry.py" init --agent-id codex --reviewer pa --participant-verification --verification-cap 2 "Participant Verify Flow" >/dev/null
+"$ROOT/tools/collab/registry.py" init --agent-id codex --reviewer pa "Participant Verify Flow" >/dev/null
 "$ROOT/tools/collab/registry.py" join-participants "$TARGET" pe --agent-id gpt >/dev/null
 "$ROOT/tools/collab/registry.py" join-participants "$TARGET" pa --agent-id opus >/dev/null
 "$ROOT/tools/collab/registry.py" set "$TARGET" turn-order pe --caller-role mod >/dev/null

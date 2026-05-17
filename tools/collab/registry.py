@@ -46,7 +46,7 @@ ACTIVE_PARTICIPANT_VERIFICATION_STAGES = {'audit', 'remediation', 'final-audit'}
 ALLOWED_VERDICT_OUTCOMES = {'success', 'incomplete', 'failed'}
 ALLOWED_VERDICT_RESTORE_TARGETS = {'Action Plan', 'Handoff'}
 ALLOWED_CAP_EXITS = {'reopen-action-plan', 'reopen-handoff', 'follow-up-collab', 'archive'}
-DEFAULT_VERIFICATION_CAP = 3
+DEFAULT_VERIFICATION_CAP = 1
 HANDOFF_SCHEMA_VERSION = 1
 VERIFICATION_SEAL_SCHEMA_VERSION = 1
 MAX_HANDOFF_SCOPE_COUNT = 32
@@ -375,13 +375,12 @@ def next_sequence(data: dict) -> int:
     return max(sequences, default=0) + 1
 
 
-def parse_init_tokens(tokens: list[str]) -> tuple[str, str, str | None, bool, bool, int | None]:
+def parse_init_tokens(tokens: list[str]) -> tuple[str, str, str | None, bool, bool]:
     name_tokens: list[str] = []
     agent_id: str | None = None
     reviewer: str | None = None
     open_requested = False
-    participant_verification = False
-    verification_cap: int | None = None
+    participant_verification = True
     index = 0
     while index < len(tokens):
         token = tokens[index]
@@ -405,22 +404,10 @@ def parse_init_tokens(tokens: list[str]) -> tuple[str, str, str | None, bool, bo
             if open_requested:
                 die('duplicate flag: --preview')
             open_requested = True
-        elif token == '--participant-verification':
-            if participant_verification:
-                die('duplicate flag: --participant-verification')
-            participant_verification = True
-        elif token == '--verification-cap':
-            if verification_cap is not None:
-                die('duplicate flag: --verification-cap')
-            index += 1
-            if index >= len(tokens) or tokens[index].startswith('--'):
-                die('--verification-cap requires a positive integer')
-            try:
-                verification_cap = int(tokens[index])
-            except ValueError:
-                die('--verification-cap requires a positive integer')
-            if verification_cap < 1:
-                die('--verification-cap requires a positive integer')
+        elif token == '--no-participant-verification':
+            if not participant_verification:
+                die('duplicate flag: --no-participant-verification')
+            participant_verification = False
         elif token.startswith('--'):
             die(f'unknown flag: {token}')
         else:
@@ -431,9 +418,7 @@ def parse_init_tokens(tokens: list[str]) -> tuple[str, str, str | None, bool, bo
     if not raw_title:
         die('<name> is required')
     title = normalize_title(raw_title)
-    if verification_cap is not None and not participant_verification:
-        die('--verification-cap requires --participant-verification')
-    return title, normalize_join_agent_id(agent_id), reviewer, open_requested, participant_verification, verification_cap
+    return title, normalize_join_agent_id(agent_id), reviewer, open_requested, participant_verification
 
 
 def summary_role(line: str) -> str | None:
@@ -3658,10 +3643,13 @@ def record_execution(
                     if data.get('activeCollabId') == entry['id']:
                         data['activeCollabId'] = None
             else:
-                if all(
-                    entry.get('execution', {}).get(assigned_role, {}).get('status') == 'completed'
-                    for assigned_role in assigned_roles
-                    if assigned_role != entry['moderatorRole']
+                effective_assigned = assigned_roles if assigned_roles else [
+                    r for r in effective_turn_order(entry)
+                    if r != entry['moderatorRole']
+                ]
+                if effective_assigned and all(
+                    entry.get('execution', {}).get(r, {}).get('status') == 'completed'
+                    for r in effective_assigned
                 ):
                     initialize_completion_state(entry, 'verification', reset_rounds=True)
                 else:
@@ -5009,7 +4997,7 @@ def init_collab(
     roles_dir: Path,
     opener: Callable[[str], bool] = webbrowser.open_new_tab,
 ) -> int:
-    title, agent_id, reviewer, open_requested, participant_verification, verification_cap = parse_init_tokens(tokens)
+    title, agent_id, reviewer, open_requested, participant_verification = parse_init_tokens(tokens)
     with registry_lock(path):
         data = load_registry_or_bootstrap(path)
         date = dt.date.today().isoformat()
@@ -5055,7 +5043,7 @@ def init_collab(
         if participant_verification:
             entry['verification'] = {
                 'rounds': 0,
-                'cap': verification_cap or DEFAULT_VERIFICATION_CAP,
+                'cap': DEFAULT_VERIFICATION_CAP,
                 'subState': 'participant',
                 'participantVerification': True,
                 'participants': {},
@@ -5482,13 +5470,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     init_parser = subparsers.add_parser(
         'init',
-        usage='%(prog)s --agent-id <agentId> [--reviewer <role>] [--participant-verification [--verification-cap <N>]] [--preview] <name>',
+        usage='%(prog)s --agent-id <agentId> [--reviewer <role>] [--no-participant-verification] [--preview] <name>',
         description='Create a registry-backed collab record.',
     )
     init_parser.add_argument('--agent-id', action='append')
     init_parser.add_argument('--reviewer', action='append')
-    init_parser.add_argument('--participant-verification', action='store_true')
-    init_parser.add_argument('--verification-cap')
+    init_parser.add_argument('--no-participant-verification', dest='participant_verification', action='store_false', default=True)
     init_parser.add_argument('--preview', action='store_true')
     init_parser.add_argument('name', nargs='*')
 
@@ -5732,10 +5719,8 @@ def main(argv: list[str]) -> int:
             tokens.extend(['--agent-id', agent_id])
         for reviewer in args.reviewer or []:
             tokens.extend(['--reviewer', reviewer])
-        if args.participant_verification:
-            tokens.append('--participant-verification')
-        if args.verification_cap:
-            tokens.extend(['--verification-cap', args.verification_cap])
+        if not args.participant_verification:
+            tokens.append('--no-participant-verification')
         if args.preview:
             tokens.append('--preview')
         tokens.extend(args.name)

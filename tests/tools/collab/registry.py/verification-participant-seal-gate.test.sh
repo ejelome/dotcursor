@@ -10,7 +10,7 @@ trap 'rm -rf "$TMPDIR"' EXIT
 cd "$TMPDIR"
 export CURSOR_COLLAB_STATE_HOME="$TMPDIR/state-home"
 
-"$ROOT/tools/collab/registry.py" init --agent-id codex --reviewer pa --participant-verification "Verification Participant Seal Gate" >/dev/null
+"$ROOT/tools/collab/registry.py" init --agent-id codex --reviewer pa "Verification Participant Seal Gate" >/dev/null
 TARGET="$RUN_DATE-verification-participant-seal-gate"
 "$ROOT/tools/collab/registry.py" join-participants "$TARGET" pe --agent-id gpt >/dev/null
 "$ROOT/tools/collab/registry.py" join-participants "$TARGET" pa --agent-id opus >/dev/null
@@ -31,7 +31,7 @@ entry = next(item for item in data['collabs'] if item['slug'] == 'verification-p
 entry['completion'] = {'subState': 'verification'}
 entry['verification'] = {
     'rounds': 1,
-    'cap': 3,
+    'cap': 1,
     'subState': 'seal',
     'participantVerification': True,
     'participants': {

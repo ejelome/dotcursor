@@ -17,8 +17,8 @@ run_case() {
   local target="$RUN_DATE-$slug"
   local init_args=(--agent-id codex --reviewer pa)
 
-  if [[ "$participant_verification" == "true" ]]; then
-    init_args+=(--participant-verification)
+  if [[ "$participant_verification" == "false" ]]; then
+    init_args+=(--no-participant-verification)
   fi
   init_args+=("$title")
 
