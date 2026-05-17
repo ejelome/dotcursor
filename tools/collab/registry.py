@@ -30,6 +30,8 @@ PHASES = ['Audit', 'Discussion', 'Conclusion', 'Action Plan', 'Handoff', 'Comple
 CONTENT_ONLY_GUARD = '<!-- collab:content-only; do-not-execute -->'
 HEADER_MANAGED_BEGIN = '<!-- collab:header-managed -->'
 HEADER_MANAGED_END = '<!-- collab:header-end -->'
+FULL_BODY_SUMMARY = 'Full contribution'
+FULL_BODY_SUMMARY_LINE = f'<summary>{FULL_BODY_SUMMARY}</summary>'
 ONE_SPEAK_PHASES = {'Audit', 'Conclusion', 'Action Plan', 'Handoff'}
 AUTO_ADVANCE_EXEMPT_PHASES = {'Discussion', 'Completion'}
 CONVERGENT_REVIEWER_PHASES = {'Audit', 'Conclusion'}
@@ -538,6 +540,74 @@ def contribution_body_lines(block: list[str]) -> list[str]:
     if marker_index is None:
         return []
     return block[marker_index + 1:len(block) - 1]
+
+
+def details_block_end(lines: list[str], start: int, context: str) -> int:
+    depth = 1
+    cursor = start + 1
+    while cursor < len(lines):
+        stripped = lines[cursor].strip()
+        if DETAILS_OPEN_RE.match(stripped):
+            depth += 1
+        elif DETAILS_CLOSE_RE.match(stripped):
+            depth -= 1
+            if depth == 0:
+                return cursor + 1
+        cursor += 1
+    die(f'transcript details block not closed in {context}')
+
+
+def is_full_body_block_start(lines: list[str], index: int) -> bool:
+    return (
+        DETAILS_OPEN_RE.match(lines[index].strip()) is not None
+        and index + 1 < len(lines)
+        and lines[index + 1].strip() == FULL_BODY_SUMMARY_LINE
+    )
+
+
+def reject_hand_authored_excerpt_details(content: str) -> None:
+    for line_number, line in enumerate(content.splitlines(), start=1):
+        if DETAILS_OPEN_RE.match(line.strip()):
+            die(
+                'excerpt must not contain hand-authored <details> blocks; '
+                f'use --full-body-file for {FULL_BODY_SUMMARY}; line {line_number}'
+            )
+
+
+def strip_managed_full_body_lines(lines: list[str], context: str) -> list[str]:
+    stripped_lines: list[str] = []
+    index = 0
+    while index < len(lines):
+        if is_full_body_block_start(lines, index):
+            index = details_block_end(lines, index, context)
+            continue
+        stripped_lines.append(lines[index])
+        index += 1
+    return stripped_lines
+
+
+def managed_full_body_blocks(transcript: str) -> list[str]:
+    lines = transcript.splitlines()
+    blocks: list[str] = []
+    index = 0
+    while index < len(lines):
+        if is_full_body_block_start(lines, index):
+            end = details_block_end(lines, index, 'managed full-body block')
+            blocks.append('\n'.join(lines[index:end]))
+            index = end
+            continue
+        index += 1
+    return blocks
+
+
+def full_body_signature_for_transcript(transcript: str) -> str:
+    payload = json.dumps(managed_full_body_blocks(transcript), ensure_ascii=True, separators=(',', ':'))
+    return hashlib.sha256(payload.encode()).hexdigest()
+
+
+def rendered_transcript_without_full_bodies(transcript: str) -> str:
+    lines = strip_managed_full_body_lines(transcript.splitlines(), 'rendered transcript')
+    return '\n'.join(lines) + ('\n' if transcript.endswith('\n') else '')
 
 
 def contribution_is_retracted(block: list[str]) -> bool:
@@ -1217,6 +1287,17 @@ def invalidate_verification_seal(entry: dict, reason: str) -> None:
         if reviewer_backed(entry):
             set_verification_review_substate(entry, 'assessment')
         clear_verdict(entry)
+
+
+def invalidate_seal_on_full_body_drift(entry: dict, transcript: str) -> None:
+    seal = entry.get('verificationSeal')
+    if not isinstance(seal, dict) or seal.get('stale'):
+        return
+    sealed_signature = seal.get('fullBodySignature')
+    if not isinstance(sealed_signature, str):
+        return
+    if full_body_signature_for_transcript(transcript) != sealed_signature:
+        invalidate_verification_seal(entry, 'full body content changed')
 
 
 def pending_reviewer_role(entry: dict) -> str | None:
@@ -2721,6 +2802,19 @@ def out_of_scope_patch(
     return 0
 
 
+def transcript_view(path: Path, target: str, phase: str, raw: bool = False) -> int:
+    if phase not in PHASES:
+        die(f'phase must be one of: {", ".join(PHASES)}')
+    data = load_registry(path)
+    entry = resolve_collab(data, target)
+    transcript = read_transcript_for_entry(entry)
+    if raw or phase == 'Audit':
+        sys.stdout.write(transcript)
+    else:
+        sys.stdout.write(rendered_transcript_without_full_bodies(transcript))
+    return 0
+
+
 def speak_lifecycle_live(path: Path, target: str) -> int:
     with registry_lock(path):
         data = load_registry(path)
@@ -2749,6 +2843,12 @@ def read_content_file(path: Path) -> str:
     return content.rstrip('\n')
 
 
+def read_optional_content_file(path: Path | None) -> str | None:
+    if path is None:
+        return None
+    return read_content_file(path)
+
+
 def read_budget_spec(path: Path = DEFAULT_BUDGET_PATH) -> dict:
     if not path.exists():
         die(f'contribution budget spec missing: {path}')
@@ -2757,7 +2857,13 @@ def read_budget_spec(path: Path = DEFAULT_BUDGET_PATH) -> dict:
     if not limit_match:
         die(f'contribution budget spec missing word limit: {path}')
     classes = set(re.findall(r'\|\s*`([a-z0-9-]+)`\s*\|', text))
-    required = {'action-plan-checklist', 'conclusion-ratification', 'moderator-verbatim', 'effort-override-line'}
+    required = {
+        'action-plan-checklist',
+        'conclusion-ratification',
+        'moderator-verbatim',
+        'effort-override-line',
+        'contribution-full-body',
+    }
     missing = required - classes
     if missing:
         die(f'contribution budget spec missing exempt class: {sorted(missing)[0]}')
@@ -2775,7 +2881,8 @@ def is_conclusion_ratification_line(line: str) -> bool:
 
 def budget_countable_lines(content: str, phase: str) -> list[str]:
     countable: list[str] = []
-    for line in content.splitlines():
+    lines = strip_managed_full_body_lines(content.splitlines(), 'contribution body')
+    for line in lines:
         stripped = line.strip()
         if stripped == '<!-- collab:content-only; do-not-execute -->':
             continue
@@ -2960,6 +3067,24 @@ def render_content_for_transcript(content: str) -> list[str]:
             rendered.append(effort_override_metadata_comment(stripped))
         else:
             rendered.append(line)
+    return rendered
+
+
+def render_full_body_block(full_body: str) -> list[str]:
+    return [
+        '<details>',
+        FULL_BODY_SUMMARY_LINE,
+        '',
+        *full_body.rstrip('\n').splitlines(),
+        '',
+        '</details>',
+    ]
+
+
+def render_contribution_body(content: str, full_body: str | None = None) -> list[str]:
+    rendered = render_content_for_transcript(content)
+    if full_body is not None:
+        rendered.extend(['', *render_full_body_block(full_body)])
     return rendered
 
 
@@ -3211,7 +3336,14 @@ def polish_moderator_content(content: str, spec_path: Path = DEFAULT_MODERATOR_P
     return '\n'.join(rendered).rstrip('\n')
 
 
-def render_contribution_block(phase: str, role: str, counter: int, content: str, timestamp: str) -> tuple[str, list[str]]:
+def render_contribution_block(
+    phase: str,
+    role: str,
+    counter: int,
+    content: str,
+    timestamp: str,
+    full_body: str | None = None,
+) -> tuple[str, list[str]]:
     anchor = f'{phase_slug(phase)}-{role}-{counter}'
     lines = [
         f'<a name="{anchor}"></a>',
@@ -3220,7 +3352,7 @@ def render_contribution_block(phase: str, role: str, counter: int, content: str,
         f'<p><em>{timestamp}</em></p>',
         CONTENT_ONLY_GUARD,
         '',
-        *render_content_for_transcript(content),
+        *render_contribution_body(content, full_body),
         '',
         '</details>',
     ]
@@ -3232,6 +3364,7 @@ def render_speak(
     target: str,
     role: str,
     content_file: Path,
+    full_body_file: Path | None = None,
     observed_revision: int | None = None,
     timestamp: str | None = None,
     emit_json: bool = False,
@@ -3239,6 +3372,7 @@ def render_speak(
     verbatim: bool = False,
 ) -> int:
     content = read_content_file(content_file)
+    full_body = read_optional_content_file(full_body_file)
     with registry_lock(path):
         data = load_registry(path)
         current_entry = resolve_collab(data, target)
@@ -3279,6 +3413,7 @@ def render_speak(
             die(f'duplicate phase contribution: {role} in {phase}\n{resume}')
         if role == current_entry['moderatorRole'] and not verbatim:
             content = polish_moderator_content(content)
+        reject_hand_authored_excerpt_details(content)
         validate_effort_override(content, phase, role, current_entry['moderatorRole'])
         validate_action_plan_shape(content, phase)
         enforce_contribution_budget(content, phase, role, current_entry['moderatorRole'], verbatim)
@@ -3286,7 +3421,14 @@ def render_speak(
 
         lines = transcript.splitlines()
         counter = next_anchor_counter(lines, phase, role)
-        anchor, block = render_contribution_block(phase, role, counter, content, timestamp or format_timestamp())
+        anchor, block = render_contribution_block(
+            phase,
+            role,
+            counter,
+            content,
+            timestamp or format_timestamp(),
+            full_body,
+        )
         rendered_lines = append_phase_block(lines, phase, block)
 
         next_data = deepcopy(data)
@@ -3406,6 +3548,7 @@ def replace_latest_contribution(
     role: str,
     content: str,
     timestamp: str,
+    full_body: str | None = None,
 ) -> str:
     lines = transcript.splitlines()
     bounds = contribution_block_bounds(lines, phase, role)
@@ -3438,7 +3581,7 @@ def replace_latest_contribution(
     replacement = (
         block[:marker_index + 1]
         + ['']
-        + render_content_for_transcript(content)
+        + render_contribution_body(content, full_body)
         + ['']
         + history
         + [block[-1]]
@@ -3479,10 +3622,12 @@ def render_re_speak(
     target: str,
     role: str,
     content_file: Path,
+    full_body_file: Path | None = None,
     timestamp: str | None = None,
     caller_role: str | None = None,
 ) -> int:
     content = read_content_file(content_file)
+    full_body = read_optional_content_file(full_body_file)
     with registry_lock(path):
         data = load_registry(path)
         entry = resolve_collab(data, target)
@@ -3493,6 +3638,8 @@ def render_re_speak(
             die('rewrite-speak-render is not permitted in Completion')
         if not has_participant(entry, role):
             die(f'role must already be a participant: {role}')
+        reject_hand_authored_excerpt_details(content)
+        enforce_contribution_budget(content, entry['activePhase'], role, entry['moderatorRole'], False)
         transcript_path = Path(entry['transcriptPath'])
         if not transcript_path.exists():
             die(f'transcript missing: {transcript_path}')
@@ -3506,6 +3653,7 @@ def render_re_speak(
             role,
             content,
             timestamp or format_timestamp(),
+            full_body,
         )
         if handoff_state is not None:
             rendered_lines = rendered.splitlines()
@@ -4198,6 +4346,7 @@ def seal_snapshot(
     entry: dict,
     observed_revision: int,
     role: str,
+    transcript: str,
     cap_exit: str | None = None,
     follow_up: dict | None = None,
 ) -> dict:
@@ -4210,6 +4359,7 @@ def seal_snapshot(
         'sealedAt': dt.datetime.now().astimezone().isoformat(timespec='seconds'),
         'sealedBy': role,
         'executionSignature': execution_signature(entry),
+        'fullBodySignature': full_body_signature_for_transcript(transcript),
         'stale': False,
     }
     if cap_exit:
@@ -4275,6 +4425,8 @@ def seal_state(path: Path, target: str, role: str | None = None, resume: bool = 
             if verification.get('pairedExecutionSignature') != signature:
                 verification['rounds'] = verification.get('rounds', 0) + 1
                 verification['pairedExecutionSignature'] = signature
+        if isinstance(entry.get('verificationSeal'), dict):
+            invalidate_seal_on_full_body_drift(entry, read_transcript_for_entry(entry))
         save_registry(path, data)
         data = load_registry(path)
         entry = resolve_collab(data, target)
@@ -4671,6 +4823,8 @@ def render_seal(
         if not transcript_path.exists():
             die(f'transcript missing: {transcript_path}')
         transcript = transcript_path.read_text()
+        invalidate_seal_on_full_body_drift(entry, transcript)
+        review_substate = verification_review_substate(entry)
 
         if has_verdict_args:
             if cap_exit is not None:
@@ -4736,7 +4890,7 @@ def render_seal(
             if not all_execution_completed(entry):
                 die('verification seal requires all execution entries to be completed')
             clear_verdict(entry)
-            seal = seal_snapshot(entry, observed_revision, role, cap_exit, follow_up)
+            seal = seal_snapshot(entry, observed_revision, role, transcript, cap_exit, follow_up)
             entry['verificationSeal'] = seal
             notice = apply_cap_exit(entry, data, cap_exit)
             number = next_completion_history_number(transcript)
@@ -5532,6 +5686,7 @@ def build_parser() -> argparse.ArgumentParser:
     speak_render_parser.add_argument('target')
     speak_render_parser.add_argument('role')
     speak_render_parser.add_argument('--content-file', required=True)
+    speak_render_parser.add_argument('--full-body-file')
     speak_render_parser.add_argument('--observed-revision', type=int, required=True)
     speak_render_parser.add_argument('--timestamp')
     speak_render_parser.add_argument('--json', action='store_true')
@@ -5542,6 +5697,7 @@ def build_parser() -> argparse.ArgumentParser:
     re_speak_render_parser.add_argument('target')
     re_speak_render_parser.add_argument('role')
     re_speak_render_parser.add_argument('--content-file', required=True)
+    re_speak_render_parser.add_argument('--full-body-file')
     re_speak_render_parser.add_argument('--timestamp')
     re_speak_render_parser.add_argument('--caller-role')
 
@@ -5583,6 +5739,11 @@ def build_parser() -> argparse.ArgumentParser:
     out_of_scope_patch_parser.add_argument('role')
     out_of_scope_patch_parser.add_argument('--path', required=True)
     out_of_scope_patch_parser.add_argument('--caller-role')
+
+    transcript_view_parser = subparsers.add_parser('transcript-view')
+    transcript_view_parser.add_argument('target')
+    transcript_view_parser.add_argument('phase', choices=PHASES)
+    transcript_view_parser.add_argument('--raw', action='store_true')
 
     participant_verify_state_parser = subparsers.add_parser('participant-verify-state')
     participant_verify_state_parser.add_argument('target')
@@ -5676,7 +5837,7 @@ def main(argv: list[str]) -> int:
                 if item.startswith('--'):
                     die(f'unknown flag: {item}')
         parser.error(f'unrecognized arguments: {" ".join(unknown_args)}')
-    for path_arg in ('content_file', 'summary_file'):
+    for path_arg in ('content_file', 'full_body_file', 'summary_file'):
         if hasattr(args, path_arg) and getattr(args, path_arg):
             setattr(args, path_arg, str(Path(getattr(args, path_arg)).resolve()))
 
@@ -5748,6 +5909,7 @@ def main(argv: list[str]) -> int:
             args.target,
             args.role,
             Path(args.content_file),
+            Path(args.full_body_file) if args.full_body_file else None,
             args.observed_revision,
             args.timestamp,
             args.json,
@@ -5755,7 +5917,15 @@ def main(argv: list[str]) -> int:
             args.verbatim,
         )
     if args.command == 'rewrite-speak-render':
-        return render_re_speak(path, args.target, args.role, Path(args.content_file), args.timestamp, args.caller_role)
+        return render_re_speak(
+            path,
+            args.target,
+            args.role,
+            Path(args.content_file),
+            Path(args.full_body_file) if args.full_body_file else None,
+            args.timestamp,
+            args.caller_role,
+        )
     if args.command == 'retract-speak':
         return retract_latest_contribution(path, args.target, args.role, args.reason, args.timestamp, args.caller_role)
     if args.command == 'advance':
@@ -5782,6 +5952,8 @@ def main(argv: list[str]) -> int:
         return transcript_repair(path, args.target, args.touch_execution_evidence, args.caller_role)
     if args.command == 'out-of-scope-patch':
         return out_of_scope_patch(path, args.target, args.role, args.path, args.caller_role)
+    if args.command == 'transcript-view':
+        return transcript_view(path, args.target, args.phase, args.raw)
     if args.command == 'participant-verify-state':
         return participant_verify_state(path, args.target, args.role, args.resume)
     if args.command == 'participant-verify-render':

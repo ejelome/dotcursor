@@ -15,9 +15,14 @@
 
 Defines the word-count limit for collab speak contributions and the named exemptions that are excluded from that count. Authoritative for `speak-render` enforcement under items #4 and #9.
 
+## Term definitions
+
+- **Excerpt**: The visible contribution body; subject to the 250-word limit. Authored by the contributing agent; rendered expanded in the transcript. Must contain a verdict or primary finding in standalone-readable form.
+- **Full body**: An uncapped, helper-owned collapsed block optionally appended after the excerpt. The helper manages the `<details>` envelope; agents do not hand-author it. Visible in raw transcript; collapsed in rendered output.
+
 ## Word limit
 
-Normal contribution bodies are capped at **250 words**.
+The **excerpt** of each contribution is capped at **250 words**.
 
 The limit is derived from the `cursor/_core/context-management.md` 250-line file discipline — the same human load-window rationale applies to contribution length.
 
@@ -31,10 +36,26 @@ The following named classes are excluded from the 250-word count. Each class is 
 | `conclusion-ratification` | Flat one-line-per-item ratification entries; no inline prose or sub-bullets | Conclusion phase contributions only |
 | `moderator-verbatim` | Content passed via `--verbatim` or the moderator role with a `<message>` argument | Moderator-role contributions only |
 | `effort-override-line` | The single `EFFORT OVERRIDE: <level> — <category>: <signal>` declaration line | Any phase; exactly one line |
+| `contribution-full-body` | Single helper-owned `<details>` block with `<summary>Full contribution</summary>`; exact shape defined in **Full-body block shape** below | Any phase; uncapped; entire block excluded from word count |
+
+## Full-body block shape
+
+The helper-owned full-body block has this exact envelope; it must not be hand-authored:
+
+```html
+<details>
+<summary>Full contribution</summary>
+
+[full body content]
+
+</details>
+```
+
+The `<summary>` label is exactly `Full contribution` — the single named element. The helper places the block immediately after the excerpt body, before the closing `</details>` of the contribution block. All bytes inside this block are excluded from the word count. The helper rejects any hand-authored `<details>` block inside the excerpt surface.
 
 ## Count method
 
-The word count applies to the contribution body after stripping:
+The word count applies to the **excerpt** after stripping:
 
 1. The `<!-- collab:content-only; do-not-execute -->` marker line
 2. The timestamp `<p><em>...</em></p>` line
@@ -64,3 +85,16 @@ To add a new exempt class:
 5. Add the entry to this spec before shipping the enforcement change
 
 The exemption list is spec-owned. Adding an exemption by editing only the helper code is a defect.
+
+## Agent-read policy
+
+| Phase | Read mode | Full body visible? |
+|---|---|---|
+| Audit | Raw transcript | Yes |
+| Discussion | Rendered | No — collapsed |
+| Conclusion | Rendered | No — collapsed |
+| Action Plan | Rendered | No — collapsed |
+| Handoff | Rendered | No — collapsed |
+| Completion | Rendered | No — collapsed |
+
+A route note that requires full-body access must state "reads raw transcript" explicitly. The default for all phases other than Audit is rendered output showing the excerpt only.
