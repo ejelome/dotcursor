@@ -66,7 +66,7 @@ set +e
 cap_output="$("$ROOT/tools/collab/registry.py" seal-render "$TARGET" pa --observed-revision "$revision" --caller-role pa 2>&1)"
 cap_status=$?
 set -e
-if [[ "$cap_status" -eq 0 || "$cap_output" != *"round cap reached; reissue with --cap-exit reopen-action-plan, --cap-exit reopen-handoff, or --cap-exit archive"* ]]; then
+if [[ "$cap_status" -eq 0 || "$cap_output" != *"round cap reached; reissue with --cap-exit reopen-action-plan, --cap-exit reopen-handoff, --cap-exit follow-up-collab, or --cap-exit archive"* ]]; then
   printf 'FAIL: seal-render did not enforce cap before cap-exit\n%s\n' "$cap_output" >&2
   exit 1
 fi

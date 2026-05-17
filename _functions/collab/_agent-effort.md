@@ -46,6 +46,7 @@ This matrix is rendered from `_agent-effort.json`. The helper's `EFFORT:` adviso
 | Handoff | low | high | xhigh | — |
 | Completion | low | high | high | xhigh *(reviewer gate; execution sub-state)* |
 | Completion.verification | low | high | high | xhigh *(reviewer seal; mandatory-declaration turn)* |
+| Completion.verification.participant | low | xhigh | xhigh | — |
 
 **`—`** means the role is not on the turn-order roster for that phase by default. Optional admission is available via `reviewerOptionalPhases` in the registry (defaults to `["Discussion"]`; extended via `/collab set reviewer-optional-phases`); when admitted to a non-Discussion phase, the effort level is `xhigh`. Implemented by `reviewer_optional_phases` in `tools/collab/registry.py`.
 

@@ -49,6 +49,7 @@ The table below captures recommended defaults. Identifiers name a model family o
 | Handoff | low | high | xhigh | — *(optional xhigh if admitted)* |
 | Completion | low | high | high | xhigh *(reviewer gate; execution sub-state)* |
 | Completion.verification | low | high | high | xhigh *(reviewer seal; mandatory-declaration turn)* |
+| Completion.verification.participant | low | xhigh | xhigh | — |
 
 Values must match the phase-role matrix in `_agent-effort.json`. When the two diverge, `_agent-effort.json` is authoritative; update this projection to match.
 

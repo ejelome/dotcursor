@@ -15,20 +15,35 @@ Standalone reference for `Completion.verification` sub-state semantics. Loaded b
 | Sub-state | Description |
 |-----------|-------------|
 | `Completion.execution` | `/collab run plan` execution for all assigned roles, resulting in `execution.<role>` registry entries. |
-| `Completion.verification` | Reviewer passes over executed scope and calls `/collab seal verification` to issue the seal, then evaluates whether discussion goals were met. |
+| `Completion.verification` | Assigned participants run `/collab participant verify` (if configured); reviewer then issues `/collab seal verification` and evaluates whether discussion goals were met. |
 
 Execution precedes verification. Close is blocked until a current non-stale `verificationSeal` exists and the reviewer has emitted a `verdict` with `outcome == success`.
 
 ## verification.subState
 
-Within `Completion.verification`, two ordered sub-states apply for reviewer-backed collabs:
+Within `Completion.verification`, three ordered sub-states apply for reviewer-backed collabs:
 
 | Sub-state | Description |
 |-----------|-------------|
+| `verification.participant` | Assigned participants run `/collab participant verify`; per-role three-turn sequence (audit → remediation → final-audit). Precedes `verification.seal`. |
 | `verification.seal` | Reviewer issues `/collab seal verification`; mechanical execution-truth check. Existing seal contract unchanged. |
 | `verification.assessment` | Reviewer evaluates whether discussion goals were met and emits a `verdict`. |
 
-`verification.seal` precedes `verification.assessment`. Assessment opens after a successful seal. Assessment also re-opens when the seal becomes stale or a cap-exit is recorded, which invalidates the prior seal. Assessment is budget-exempt when a cap-exit trigger opened it.
+`verification.participant` precedes `verification.seal`, which precedes `verification.assessment`. Assessment opens after a successful seal. Assessment also re-opens when the seal becomes stale or a cap-exit is recorded, which invalidates the prior seal. Assessment is budget-exempt when a cap-exit trigger opened it.
+
+### Per-role stage: `verification.participants[role].stage`
+
+Within `verification.participant`, each assigned role's progress is tracked independently under `verification.participants[role].stage`:
+
+| Stage | Description |
+|-------|-------------|
+| `audit` | Turn 1 is active; the role's executed writeScope is being inspected. |
+| `remediation` | Turn 2 is active; findings from audit are being resolved. |
+| `final-audit` | Turn 3 is active; the scope is being re-inspected against Turn 1 criteria. |
+| `completed` | All three turns passed; this role's participant verification is done. |
+| `failed` | Final-audit found unresolved issues; the sequence ended with failures. |
+
+`verification.participants[role].stage` is absent when participant verification is not configured or the role has not yet begun its sequence. `verification.subState` remains `"participant"` across all roles during this sub-state; per-turn labels are stored per-role, not as additional global sub-state transitions.
 
 ### Assessment verdict
 
@@ -89,11 +104,14 @@ A stale seal blocks close. The seal must be re-issued after any stale trigger fi
 
 A round cap is set at collab initialization (default: 3). When the cap fires, the reviewer must choose one registered cap-exit action recorded on the seal; no further rounds are accepted after a cap exit is recorded.
 
+The participant-verification attempt budget is bound to the active Handoff `writeScope` hash. A reopen via `reopen-handoff` that introduces a different `writeScope` signature opens a new attempt budget for participant verification. A reopen that preserves the same `writeScope` signature consumes budget against the same counter.
+
 | Cap-exit action | Effect |
 |-----------------|--------|
 | `reopen-action-plan` | Transitions the collab to `Action Plan` phase |
 | `reopen-handoff` | Transitions the collab to `Handoff` phase |
 | `archive` | Closes with an accepted-risk summary |
+| `follow-up-collab` | Ends the verification loop and opens a new linked collab for unresolved findings; `seal-render` emits structured `NEXT:` guidance with `restoreReason`, open `evidence` anchors, and `failureCategory`. |
 
 The cap-exit action is passed to `seal-render` as `--cap-exit <action>`. The reviewer may also declare a cap exit before the cap fires when they choose to end the loop early.
 
@@ -113,6 +131,7 @@ For reviewer-backed collabs, auto-close from `/collab run plan` alone is removed
 
 ## Related routes
 
+- [`participant-verify.md`](participant-verify.md) — invocable route spec for `/collab participant verify`
 - [`seal-verification.md`](seal-verification.md) — invocable route spec for `/collab seal verification`
 - [`_registry.md`](_registry.md) — `verificationSeal` field schema and `completion.subState` field ownership
 - [`show-policy.md`](show-policy.md) — gate policy and phase-presence overview

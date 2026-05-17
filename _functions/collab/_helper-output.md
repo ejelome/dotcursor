@@ -96,9 +96,24 @@ Exit 0 always.
 
 Exit 0 when the declared scope does not conflict with sibling scopes. Exit 1 with conflict message naming the overlapping paths.
 
+### `participant-verify-state`
+
+Emits JSON object with fields: `target`, `activePhase`, `registryRevision`, `completionSubState`, `verificationReviewSubState`, `assignedRoles`, `nextRole`, `role`, `roleAgentId`, `roleState`, `readyToVerify`, `freshRegistryRead`. When the role is next, the helper persists `verification.participants[role].stage = "audit"` before emitting the JSON so the following `participant-verify-render` call has a registry-visible active lock. When `--resume` is supplied, also emits `resume`.
+
+Exit 0 on valid input. Exit 1 when the collab is closed, the phase is not `Completion`, participant verification is not the active sub-state, or the role is not assigned.
+
+### `participant-verify-render`
+
+Writes one atomic three-turn participant-verification sequence. Successful exit emits:
+
+1. `participant verification <completed|failed> for <role>`
+2. `NEXT: Run /collab participant verify for role <role>.` when another participant remains, otherwise `NEXT: Run /collab seal verification for role <reviewer>.`
+
+Exit 0 on success. Exit 1 when the observed revision is stale, no active participant-verification lock exists for the role, another participant role is next, the attempt cap is reached, or touched paths fall outside the role's declared `writeScope`.
+
 ### `seal-state`
 
-Emits JSON object with fields: `target`, `activePhase`, `registryRevision`, `reviewerRole`, `reviewerState`, `verificationSubState`, `completionSubState`, `verificationReviewSubState`, `verificationRounds`, `verificationCap`, `executionEntries`, `validationScopes`, `touchedPaths`, `sealStale`, `verdict`, `freshRegistryRead`. When a `<role>` argument is provided, also emits `roleAgentId`, `readyToSeal`, and `readyToAssess`. When `--resume` is supplied, also emits `resume`.
+Emits JSON object with fields: `target`, `activePhase`, `registryRevision`, `reviewerRole`, `reviewerState`, `verificationSubState`, `completionSubState`, `verificationReviewSubState`, `verificationRounds`, `verificationCap`, `executionEntries`, `validationScopes`, `touchedPaths`, `participantVerification`, `participantVerificationRoles`, `participantVerificationParticipants`, `nextParticipantVerificationRole`, `sealStale`, `verdict`, `freshRegistryRead`. When a `<role>` argument is provided, also emits `roleAgentId`, `readyToSeal`, and `readyToAssess`. When `--resume` is supplied, also emits `resume`.
 
 Exit 0 on valid input. Exit 1 when the collab is closed, the phase is not `Completion`, or the target is unresolvable.
 
@@ -116,7 +131,7 @@ Post-write advisories in order:
 4. `<status>` — registry status after the write
 5. Phase-transition notice JSON when a cap-exit transitions the phase; assessment-transition notice `{"notice": "assessment", "transition": "Completion.verification.seal->Completion.verification.assessment", "message": "Verification seal recorded; reviewer assessment required."}` when no cap-exit is applied
 
-When `--cap-exit` is provided, the `NEXT:` line reflects the new state after the transition rather than prompting for an assessment verdict.
+When `--cap-exit` is provided, the `NEXT:` line reflects the new state after the transition rather than prompting for an assessment verdict. For `--cap-exit follow-up-collab`, it requires `--restore-reason`, `--evidence`, and `--failure-category`, records them on `verificationSeal.followUp`, and emits `NEXT: Open a follow-up collab {"evidence":...,"failureCategory":...,"restoreReason":...}.`
 
 **Assessment verdict path** (with `--outcome`; `verificationReviewSubState` must be `assessment`):
 
