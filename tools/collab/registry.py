@@ -2369,7 +2369,7 @@ def next_line_after_execution(entry: dict, assigned_roles: list[str]) -> str:
     if entry['status'] in {'closed', 'archived'}:
         return next_line_for_state(entry)
     execution = entry.get('execution', {})
-    for assigned_role in assigned_roles:
+    for assigned_role in effective_turn_order(entry):
         if assigned_role == entry['moderatorRole']:
             continue
         if execution.get(assigned_role, {}).get('status') != 'completed':
