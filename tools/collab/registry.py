@@ -41,6 +41,7 @@ ALLOWED_VALIDATION_SCOPES = {'scoped', 'full', 'deferred'}
 ALLOWED_COMPLETION_SUBSTATES = {'execution', 'verification'}
 ALLOWED_VERIFICATION_SUBSTATES = {'seal', 'assessment'}
 ALLOWED_VERDICT_OUTCOMES = {'success', 'incomplete', 'failed'}
+ALLOWED_VERDICT_RESTORE_TARGETS = {'Action Plan', 'Handoff'}
 ALLOWED_CAP_EXITS = {'reopen-action-plan', 'reopen-handoff', 'archive'}
 DEFAULT_VERIFICATION_CAP = 3
 HANDOFF_SCHEMA_VERSION = 1
@@ -86,6 +87,7 @@ MODERATOR_ONLY_ACTIONS = {
     'archive',
     'close',
     'delete',
+    'reopen',
     'restore',
     'set',
     'unset',
@@ -927,6 +929,8 @@ def normalize_restore_target(value: str | None, current_phase: str) -> str | Non
     target = by_token.get(normalized)
     if target is None:
         die(f'verdict restoreTarget must be one of {PHASES}')
+    if target not in ALLOWED_VERDICT_RESTORE_TARGETS:
+        die('verdict restoreTarget must be one of: Action Plan, Handoff')
     if PHASES.index(target) > PHASES.index(current_phase):
         die(f'verdict restoreTarget must not be later than current phase {current_phase}')
     return target
@@ -3282,6 +3286,7 @@ def render_re_speak(
             die(f'transcript missing: {transcript_path}')
         transcript = transcript_path.read_text()
         validate_action_plan_shape(content, entry['activePhase'])
+        handoff_state = parse_handoff_content(content) if entry['activePhase'] == 'Handoff' else None
         reviewer_notice = reviewer_notice_for_rewrite(entry, transcript, role)
         rendered = replace_latest_contribution(
             transcript,
@@ -3290,6 +3295,16 @@ def render_re_speak(
             content,
             timestamp or format_timestamp(),
         )
+        if handoff_state is not None:
+            rendered_lines = rendered.splitlines()
+            bounds = contribution_block_bounds(rendered_lines, entry['activePhase'], role)
+            if bounds is None:
+                die('no prior contribution to rewrite; use /collab speak to create the first contribution')
+            start, end = bounds
+            handoff_state['body'] = '\n'.join(contribution_body_lines(rendered_lines[start:end])).rstrip('\n')
+            set_handoff_state(entry, role, handoff_state)
+            rendered, header_changed = render_managed_header_text(rendered, entry, DEFAULT_ROLES_DIR)
+            print_header_overwrite(header_changed)
         commit_registry_and_transcript(path, data, transcript_path, rendered)
     if reviewer_notice:
         print(reviewer_notice)
@@ -4098,7 +4113,8 @@ def assessment_next_line(entry: dict, verdict: dict) -> str:
     if verdict.get('outcome') == 'success':
         return next_line_for_state(entry)
     target = verdict.get('restoreTarget', 'Action Plan')
-    return f'NEXT: Moderator should run /collab set active-phase {target} --force.'
+    phase_token = 'handoff' if target == 'Handoff' else 'action-plan'
+    return f'NEXT: Moderator should run /collab reopen {phase_token} {entry["id"]}.'
 
 
 def assessment_notice(verdict: dict) -> dict | None:
@@ -4284,9 +4300,18 @@ def reopen_collab(
     with registry_lock(path):
         data = load_registry(path)
         entry = resolve_collab(data, target)
-        assert_caller_role(entry, caller_role, 'set')
+        assert_caller_role(entry, caller_role, 'reopen')
         if entry['status'] == 'archived':
             die('record is archived')
+        if entry['activePhase'] != 'Completion':
+            die('/collab reopen is valid only after a non-success Completion verdict')
+        verdict = entry.get('verdict')
+        if not isinstance(verdict, dict) or verdict.get('outcome') not in {'incomplete', 'failed'}:
+            die('/collab reopen requires a non-success Completion verdict')
+        restore_target = verdict.get('restoreTarget')
+        if restore_target != phase:
+            expected_token = 'handoff' if restore_target == 'Handoff' else 'action-plan'
+            die(f'/collab reopen phase mismatch: verdict restoreTarget is {restore_target}; expected {expected_token}')
         entry['status'] = 'open'
         entry['archived'] = False
         entry['activePhase'] = phase
@@ -4303,6 +4328,35 @@ def reopen_collab(
         commit_registry_and_transcript(path, data, transcript_path, rendered)
     print_post_action_advisories(entry, None, None, None, next_line_for_state(entry))
     print(entry['id'])
+    return 0
+
+
+def show_verdict(path: Path, target: str) -> int:
+    data = load_registry(path)
+    entry = resolve_collab(data, target)
+    verdict = entry.get('verdict')
+    if not isinstance(verdict, dict):
+        die('verdict unavailable for target')
+    seal = entry.get('verificationSeal')
+    output = {
+        'target': entry['id'],
+        'status': entry['status'],
+        'activePhase': entry['activePhase'],
+        'completionSubState': verification_substate(entry),
+        'verificationReviewSubState': verification_review_substate(entry),
+        'verdict': verdict,
+    }
+    if isinstance(seal, dict):
+        output['verificationSeal'] = {
+            'schemaVersion': seal.get('schemaVersion'),
+            'observedRevision': seal.get('observedRevision'),
+            'sealedAt': seal.get('sealedAt'),
+            'sealedBy': seal.get('sealedBy'),
+            'stale': seal.get('stale'),
+            'staleReason': seal.get('staleReason'),
+            'capExit': seal.get('capExit'),
+        }
+    print(json.dumps(output, sort_keys=True))
     return 0
 
 
@@ -5061,6 +5115,9 @@ def build_parser() -> argparse.ArgumentParser:
     reopen_parser.add_argument('phase', choices=['action-plan', 'handoff'])
     reopen_parser.add_argument('--caller-role')
 
+    show_verdict_parser = subparsers.add_parser('show-verdict')
+    show_verdict_parser.add_argument('target')
+
     re_summarize_parser = subparsers.add_parser('rewrite-summary')
     re_summarize_parser.add_argument('target')
     re_summarize_parser.add_argument('--summary-file', required=True)
@@ -5229,6 +5286,8 @@ def main(argv: list[str]) -> int:
         )
     if args.command == 'reopen':
         return reopen_collab(path, args.target, args.phase, args.caller_role)
+    if args.command == 'show-verdict':
+        return show_verdict(path, args.target)
     if args.command == 'rewrite-summary':
         return re_summarize_collab(path, args.target, Path(args.summary_file), args.date)
     if args.command == 'close':

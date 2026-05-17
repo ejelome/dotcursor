@@ -5,9 +5,9 @@ Seal the `Completion.verification` sub-state after a reviewer pass, recording th
 ## Trigger
 
 **Slash:** `/collab seal verification`
-**Signature:** `/collab seal verification [--cap-exit <action>]`
+**Signature:** `/collab seal verification [--cap-exit <action>] [--outcome <outcome>] [--restore-target <target>] [--restore-reason <reason>] [--evidence <json>] [--failure-category <category>]`
 **Prose dispatch:** `(collab seal verification [--cap-exit <action>])` — for non-Cursor agents; not terminal-executable in Cursor.
-**Search phrases:** collab seal, verification seal, reviewer seal, close verification loop, seal-with-cap
+**Search phrases:** collab seal, verification seal, reviewer seal, close verification loop, seal-with-cap, assessment verdict, verdict flags, --outcome, --restore-target, failureCategory
 
 ## Steps
 
@@ -52,10 +52,15 @@ Seal the `Completion.verification` sub-state after a reviewer pass, recording th
 - **Auto-close after seal:** For reviewer-backed collabs, `seal-render` triggers close when all assigned `execution.<role>` entries are `completed` and a current non-stale `verificationSeal` exists. Auto-close from `/collab run plan` alone is removed for reviewer-backed collabs; the seal is required.
 - **Post-seal assessment:** After a successful seal, `Completion.verification` transitions to `verification.assessment`. The reviewer evaluates whether discussion goals were met and emits a `verdict: { outcome, restoreTarget?, restoreReason?, evidence?, failureCategory? }`. Assessment also re-opens when the seal becomes stale or a cap-exit is recorded. On `outcome == success`, the helper may close and summarize. On `incomplete` or `failed`, the helper prompts the next responsible role and exact command without auto-executing; the moderator confirms the restore route. Assessment must emit even when no actionable cause is identifiable (`nullResult: true` with a one-line justification); silent non-emission is not permitted.
 - **Post-state resume signal:** After `/collab seal verification` completes, re-establish context with `tools/collab/registry.py seal-state --resume <target> <role>` after any `/compact`, agent swap, or subagent return before the next command.
-- **writeScope reopen advisory:** When the reviewer surfaces out-of-scope work during verification, the legal exit is `/collab reopen handoff` (with `--cap-exit reopen-handoff`). The reviewer must not widen the scope informally; the registered command creates the audit trail. Registry field `handoff.roles.<role>.writeScope` is the reopen boundary source.
+- **writeScope reopen advisory:** When the reviewer surfaces out-of-scope work during verification, the legal exit is `/collab seal verification --cap-exit reopen-handoff`. The `seal-render` helper applies the cap-exit and transitions the collab to `Handoff` phase directly; no separate reopen command is needed for this path. The reviewer must not widen the scope informally; the cap-exit creates the audit trail. Registry field `handoff.roles.<role>.writeScope` is the reopen boundary source.
 - **Effort matrix:** This route's reviewer turn is `xhigh` and is a mandatory-declaration turn. See [`_agent-effort.md`](_agent-effort.md) (`Completion.verification` row).
 
 ```cursor-arg
-dispatch: (collab seal verification [--cap-exit <action>])
+dispatch: (collab seal verification [--cap-exit <action>] [--outcome <outcome>] [--restore-target <target>] [--restore-reason <reason>] [--evidence <json>] [--failure-category <category>])
 param: name=--cap-exit; required=optional; placeholder=<action>; class=literal; values=reopen-action-plan | reopen-handoff | archive
+param: name=--outcome; required=optional; placeholder=<outcome>; class=literal; values=success | incomplete | failed
+param: name=--restore-target; required=optional; placeholder=<target>; class=dynamic; rule=registered phase name; one of action-plan or handoff
+param: name=--restore-reason; required=optional; placeholder=<reason>; class=dynamic; rule=causal justification; required when outcome is incomplete or failed
+param: name=--evidence; required=optional; placeholder=<json>; class=dynamic; rule=JSON object of read-only anchors (transcript ids, revision, committed paths, entry ids)
+param: name=--failure-category; required=optional; placeholder=<category>; class=dynamic; rule=causal label; optional
 ```

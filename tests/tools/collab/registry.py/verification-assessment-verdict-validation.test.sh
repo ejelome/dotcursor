@@ -42,6 +42,11 @@ assert_rejected "registry: verdict.restoreTarget must be absent when outcome is 
   --outcome success \
   --restore-target Handoff
 
+assert_rejected "verdict restoreTarget must be one of: Action Plan, Handoff" \
+  --outcome failed \
+  --restore-target Audit \
+  --restore-reason "Audit is not a routed restore phase."
+
 assert_rejected "verdict evidence contains non-anchor fields: ['commandOutput']" \
   --outcome failed \
   --restore-target Handoff \

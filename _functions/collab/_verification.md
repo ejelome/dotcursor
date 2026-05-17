@@ -6,7 +6,7 @@ Standalone reference for `Completion.verification` sub-state semantics. Loaded b
 
 **Slash:** (reference only — not an invocable route)
 **Prose dispatch:** (reference only — not an invocable route)
-**Search phrases:** collab verification semantics, Completion.verification, verification round, seal object, stale seal, cap exit
+**Search phrases:** collab verification semantics, Completion.verification, verification round, seal object, stale seal, cap exit, assessment flags, verdict outcome, restoreTarget, restoreReason, evidence, failureCategory, nullResult
 
 ## Sub-states
 
@@ -38,7 +38,7 @@ The reviewer emits a verdict during `verification.assessment`:
 verdict: { outcome, restoreTarget?, restoreReason?, evidence?, failureCategory? }
 ```
 
-- `outcome`: `success | incomplete | failed`. On `success`, helper may close and summarize. On `incomplete` or `failed`, helper prompts the next responsible role and exact command; does not auto-execute. Moderator confirms restore route.
+- `outcome`: `success | incomplete | failed`. On `success`, helper closes and summarizes. On `incomplete` or `failed`, the helper emits the restore command as a `NEXT:` advisory; moderator runs `/collab reopen <restoreTarget>` to perform the full phase reset. The helper does not auto-execute the restore.
 - `evidence`: read-only anchors only — transcript ids, registry revision, committed paths, execution entry ids. The reviewer does not write implementation steps, command output, or replacement content.
 - `restoreTarget`: required when `outcome != success`; must be ≤ current phase in lifecycle order; restricted to registered phases with route support.
 - `restoreReason`: required when `outcome != success`; explains the causal determination.
@@ -47,6 +47,8 @@ verdict: { outcome, restoreTarget?, restoreReason?, evidence?, failureCategory? 
 Assessment must emit even when no actionable cause is identifiable: `nullResult: true` with a one-line justification. Silent non-emission is not permitted.
 
 > **Drift (collab #8):** Authorship-bias disclosure (§4.7, verificationSeal.observedRevision 251, verdict revision 253) — see the commit introducing this note.
+
+> **Drift (collab #10):** `assessment_next_line` (was at `registry.py:4097–4101`) previously emitted `NEXT: Moderator should run /collab set active-phase {target} --force.` for non-success verdicts — the wrong primitive. This document reflects the corrected target behavior (`/collab reopen <restoreTarget>`); the implementation fix landed in collab #10's platform-engineer scope.
 
 ## Round definition
 
@@ -115,3 +117,4 @@ For reviewer-backed collabs, auto-close from `/collab run plan` alone is removed
 - [`_registry.md`](_registry.md) — `verificationSeal` field schema and `completion.subState` field ownership
 - [`show-policy.md`](show-policy.md) — gate policy and phase-presence overview
 - [`_agent-effort.md`](_agent-effort.md) — effort matrix row for `Completion.verification`
+- [`show-verdict.md`](show-verdict.md) — forthcoming route for verdict introspection over closed-collab metadata; surfaces `outcome`, `restoreTarget`, `evidence`, `failureCategory`, and `nullResult` without requiring direct registry JSON access
