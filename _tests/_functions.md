@@ -30,7 +30,6 @@ Private function files under `~/.cursor/_functions/`:
 - `collab/_agent-model.md`
 - `collab/_contribution-annex.md`
 - `collab/_contribution-budget.md`
-- `collab/_flag-taxonomy.md`
 - `collab/_helper-output.md`
 - `collab/_registry.md`
 - `collab/_role-prohibitions.md`

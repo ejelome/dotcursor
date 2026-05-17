@@ -86,7 +86,7 @@ DEFAULT_EFFORT_PATH = DEFAULT_CURSOR_ROOT / '_functions/collab/_agent-effort.jso
 DEFAULT_AGENT_MODEL_PATH = DEFAULT_CURSOR_ROOT / '_functions/collab/_agent-model.md'
 DEFAULT_BUDGET_PATH = DEFAULT_CURSOR_ROOT / '_functions/collab/_contribution-budget.md'
 DEFAULT_MODERATOR_POLISH_PATH = DEFAULT_CURSOR_ROOT / '_functions/collab/_moderator-polish.md'
-DEFAULT_FLAG_TAXONOMY_PATH = DEFAULT_CURSOR_ROOT / '_functions/collab/_flag-taxonomy.md'
+DEFAULT_FLAG_TAXONOMY_PATH = DEFAULT_CURSOR_ROOT / '_core/flag-taxonomy.md'
 EFFORT_MODEL_MARKER = 'generated; do not edit'
 MODERATOR_ONLY_ACTIONS = {
     'advance',
@@ -5534,8 +5534,36 @@ def validate_command(path: Path) -> int:
     stale_lock = stale_registry_lock_message(path)
     if stale_lock:
         die(stale_lock)
+    validate_source_contracts()
     print('registry OK')
     return 0
+
+
+def require_source_text(path: Path, needle: str, label: str) -> None:
+    if not path.exists():
+        die(f'source contract missing {label}: {path.relative_to(DEFAULT_CURSOR_ROOT)}')
+    if needle not in path.read_text():
+        die(f'source contract missing {label}: {path.relative_to(DEFAULT_CURSOR_ROOT)}')
+
+
+def validate_source_contracts() -> None:
+    old_flag_taxonomy = DEFAULT_CURSOR_ROOT / '_functions/collab/_flag-taxonomy.md'
+    if not DEFAULT_FLAG_TAXONOMY_PATH.exists():
+        die(f'source contract missing flag taxonomy: {DEFAULT_FLAG_TAXONOMY_PATH.relative_to(DEFAULT_CURSOR_ROOT)}')
+    if old_flag_taxonomy.exists():
+        die(f'source contract retired flag taxonomy path still exists: {old_flag_taxonomy.relative_to(DEFAULT_CURSOR_ROOT)}')
+
+    seal_verification = DEFAULT_CURSOR_ROOT / '_functions/collab/seal-verification.md'
+    require_source_text(seal_verification, 'restore-route-recovery', 'restore-route recovery anchor')
+    require_source_text(seal_verification, '/collab show verdict', 'restore-route verdict inspection')
+    require_source_text(seal_verification, '/collab reopen action-plan', 'restore-route action-plan reopen')
+    require_source_text(seal_verification, '/collab reopen handoff', 'restore-route handoff reopen')
+    require_source_text(seal_verification, '/collab run plan', 'restore-route rerun step')
+    require_source_text(seal_verification, '/collab seal verification', 'restore-route reseal step')
+
+    invariants = DEFAULT_CURSOR_ROOT / '_functions/collab/_invariants.md'
+    require_source_text(invariants, 'Rollback triggers', 'rollback trigger section')
+    require_source_text(invariants, 'Observation backlog', 'observation backlog section')
 
 
 def registry_path_command(path: Path) -> int:

@@ -22,7 +22,9 @@ Deterministic QA for `~/.cursor/_core/*.md` canon documents.
 - `command-standard.md`
 - `context-management.md`
 - `document-standard.md`
+- `flag-taxonomy.md`
 - `framework-boundaries.md`
+- `helper-subcommands.md`
 - `route-invariant.md`
 - `route-sufficiency.md`
 - `style-guide.md`
