@@ -58,6 +58,7 @@ ALLOWED_REVIEWER_MODES = {'last-in-convergent-phases'}
 DEFAULT_REVIEWER_MODE = 'last-in-convergent-phases'
 DEFAULT_REVIEWER_OPTIONAL_PHASES = ['Discussion']
 INVALID_AGENT_ID_ALTERNATIVES = {'n/a', 'unspecified'}
+CALLER_DECLINED_AGENT_ID = 'caller-declined'
 DEFAULT_OPEN_ROSTER_EFFORT = 'medium'
 PROJECT_ID_FILENAME = '.collab.json'
 STATE_HOME_ENV = 'CURSOR_COLLAB_STATE_HOME'
@@ -1428,6 +1429,13 @@ def validate_registry(data: dict, path: Path | None = None) -> None:
     revision = data.get('revision', 0)
     if not isinstance(revision, int) or revision < 0:
         die(f'{source}: revision must be a non-negative integer when present')
+    identity_metrics = data.get('identityMetrics')
+    if identity_metrics is not None:
+        if not isinstance(identity_metrics, dict):
+            die(f'{source}: identityMetrics must be an object when present')
+        caller_declined_writes = identity_metrics.get('callerDeclinedAgentIdWrites', 0)
+        if not isinstance(caller_declined_writes, int) or caller_declined_writes < 0:
+            die(f'{source}: identityMetrics.callerDeclinedAgentIdWrites must be a non-negative integer when present')
     project = data.get('project')
     if project is not None:
         if not isinstance(project, dict):
@@ -1828,9 +1836,23 @@ def normalize_join_agent_id(agent_id: str | None) -> str:
         die('agent-id is required')
     if normalized.lower() == 'unknown' and normalized != 'unknown':
         die('agent-id unknown token must be lowercase: unknown')
+    if normalized.lower() == CALLER_DECLINED_AGENT_ID and normalized != CALLER_DECLINED_AGENT_ID:
+        die(f'agent-id caller-declined token must be lowercase: {CALLER_DECLINED_AGENT_ID}')
     if normalized.lower() in INVALID_AGENT_ID_ALTERNATIVES:
         die('agent-id must use the literal unknown when identity is unavailable')
     return normalized
+
+
+def count_caller_declined_agent_id_write(data: dict, agent_id: str) -> None:
+    if agent_id != CALLER_DECLINED_AGENT_ID:
+        return
+    metrics = data.setdefault('identityMetrics', {})
+    if not isinstance(metrics, dict):
+        die('registry: identityMetrics must be an object when present')
+    count = metrics.get('callerDeclinedAgentIdWrites', 0)
+    if not isinstance(count, int) or count < 0:
+        die('registry: identityMetrics.callerDeclinedAgentIdWrites must be a non-negative integer when present')
+    metrics['callerDeclinedAgentIdWrites'] = count + 1
 
 
 def assert_caller_role(entry: dict, caller_role: str | None, action: str, subject_role: str | None = None) -> None:
@@ -5040,6 +5062,7 @@ def init_collab(
             }
 
         next_data = deepcopy(data)
+        count_caller_declined_agent_id_write(next_data, agent_id)
         next_data['collabs'].append(entry)
         next_data['activeCollabId'] = collab_id
         rendered = render_initial_transcript(title, entry, roles_dir, format_banner_timestamp())
@@ -5082,7 +5105,8 @@ def join_participants(
 
         next_data = deepcopy(data)
         next_entry = resolve_collab(next_data, target)
-        add_participant_to_entry(next_entry, role, normalized_agent_id)
+        if add_participant_to_entry(next_entry, role, normalized_agent_id):
+            count_caller_declined_agent_id_write(next_data, normalized_agent_id)
         validate_registry(next_data, path)
 
         transcript_path = Path(next_entry['transcriptPath'])

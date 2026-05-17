@@ -107,7 +107,17 @@ Primary collab state lives outside the repository at the user-scope collab state
 
 The `git clean -Xdf` data-loss risk that applied to repo-local `.collabs/` storage is retired: primary collab state is at `$HOME/.collabs/<projectId>/`, outside the repository tree.
 
-## 8) Reporting Contract
+## 8) No-Deprecation Principle
+
+Every contract surface in `~/.cursor` is authored as a fresh feature. There is no support for deprecation paths, legacy behavior, or backwards compatibility shims.
+
+**Rule:** When a contract changes, write the new contract from scratch. Do not frame the change as a patch, replacement, or upgrade of prior behavior. Do not retain old behavior alongside new behavior for migration purposes. Do not add `deprecated`, `legacy`, or compatibility notes to route prose, schema blocks, or helper interfaces.
+
+**Corollary:** Removal of a flag, parameter, token, or route is a contract rewrite, not a deprecation. The new contract is the complete specification; the old form simply does not exist.
+
+This principle applies to every layer: public routers (`commands/*.md`), private route functions (`_functions/**/*.md`), core invariants (`_core/*.md`), schema blocks (`cursor-flag`, `cursor-arg`, `cursor-gate`), and helper interfaces (`tools/collab/registry.py`, `tools/cursor/*`).
+
+## 9) Reporting Contract
 
 When work completes, report:
 

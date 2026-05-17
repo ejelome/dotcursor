@@ -58,10 +58,10 @@ Seal the `Completion.verification` sub-state after a reviewer pass, recording th
 
 ```cursor-arg
 dispatch: (collab seal verification [--cap-exit <action>] [--outcome <outcome>] [--restore-target <target>] [--restore-reason <reason>] [--evidence <json>] [--failure-category <category>])
-param: name=--cap-exit; required=optional; placeholder=<action>; class=literal; values=reopen-action-plan | reopen-handoff | follow-up-collab | archive
-param: name=--outcome; required=optional; placeholder=<outcome>; class=literal; values=success | incomplete | failed
-param: name=--restore-target; required=optional; placeholder=<target>; class=dynamic; rule=registered phase name; one of action-plan or handoff
-param: name=--restore-reason; required=optional; placeholder=<reason>; class=dynamic; rule=causal justification; required when outcome is incomplete or failed
-param: name=--evidence; required=optional; placeholder=<json>; class=dynamic; rule=JSON object of read-only anchors (transcript ids, revision, committed paths, entry ids)
-param: name=--failure-category; required=optional; placeholder=<category>; class=dynamic; rule=causal label; optional
+param: name=--cap-exit; required=optional; placeholder=<action>; class=literal; values=reopen-action-plan | reopen-handoff | follow-up-collab | archive; default=literal:absent
+param: name=--outcome; required=optional; placeholder=<outcome>; class=literal; values=success | incomplete | failed; default=literal:absent
+param: name=--restore-target; required=optional; placeholder=<target>; class=dynamic; rule=registered phase name; one of action-plan or handoff; default=literal:absent
+param: name=--restore-reason; required=optional; placeholder=<reason>; class=dynamic; rule=causal justification; required when outcome is incomplete or failed; default=literal:absent
+param: name=--evidence; required=optional; placeholder=<json>; class=dynamic; rule=JSON object of read-only anchors (transcript ids, revision, committed paths, entry ids); default=literal:absent
+param: name=--failure-category; required=optional; placeholder=<category>; class=dynamic; rule=causal label; optional; default=literal:absent
 ```

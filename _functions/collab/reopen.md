@@ -32,5 +32,5 @@ Restore a collaboration from a non-success `Completion.verification` verdict to 
 ```cursor-arg
 dispatch: (collab reopen <action-plan | handoff> [<target>])
 param: name=<action-plan | handoff>; required=required; placeholder=<action-plan | handoff>; class=literal; values=action-plan | handoff
-param: name=<target>; required=optional; placeholder=<target>; class=dynamic; rule=collab slug, id, or #N; defaults to active collab
+param: name=<target>; required=optional; placeholder=<target>; class=dynamic; rule=collab slug, id, or #N; defaults to active collab; default=derived:active-collab
 ```

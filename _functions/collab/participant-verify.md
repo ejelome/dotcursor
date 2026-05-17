@@ -54,5 +54,5 @@ Execute the participant-verification sequence for an assigned role within `Compl
 
 ```cursor-arg
 dispatch: (collab participant verify [<role>])
-param: name=<role>; required=optional; placeholder=<role>; class=dynamic; rule=registered participant role key in the active collab
+param: name=<role>; required=optional; placeholder=<role>; class=dynamic; rule=registered participant role key in the active collab; default=derived:next-participant-verification-role
 ```
