@@ -15,9 +15,38 @@ Standalone reference for `Completion.verification` sub-state semantics. Loaded b
 | Sub-state | Description |
 |-----------|-------------|
 | `Completion.execution` | `/collab run plan` execution for all assigned roles, resulting in `execution.<role>` registry entries. |
-| `Completion.verification` | Reviewer passes over executed scope and calls `/collab seal verification` to issue the seal. |
+| `Completion.verification` | Reviewer passes over executed scope and calls `/collab seal verification` to issue the seal, then evaluates whether discussion goals were met. |
 
-Execution precedes sealing. Close is blocked until a current non-stale `verificationSeal` exists.
+Execution precedes verification. Close is blocked until a current non-stale `verificationSeal` exists and the reviewer has emitted a `verdict` with `outcome == success`.
+
+## verification.subState
+
+Within `Completion.verification`, two ordered sub-states apply for reviewer-backed collabs:
+
+| Sub-state | Description |
+|-----------|-------------|
+| `verification.seal` | Reviewer issues `/collab seal verification`; mechanical execution-truth check. Existing seal contract unchanged. |
+| `verification.assessment` | Reviewer evaluates whether discussion goals were met and emits a `verdict`. |
+
+`verification.seal` precedes `verification.assessment`. Assessment opens after a successful seal. Assessment also re-opens when the seal becomes stale or a cap-exit is recorded, which invalidates the prior seal. Assessment is budget-exempt when a cap-exit trigger opened it.
+
+### Assessment verdict
+
+The reviewer emits a verdict during `verification.assessment`:
+
+```
+verdict: { outcome, restoreTarget?, restoreReason?, evidence?, failureCategory? }
+```
+
+- `outcome`: `success | incomplete | failed`. On `success`, helper may close and summarize. On `incomplete` or `failed`, helper prompts the next responsible role and exact command; does not auto-execute. Moderator confirms restore route.
+- `evidence`: read-only anchors only — transcript ids, registry revision, committed paths, execution entry ids. The reviewer does not write implementation steps, command output, or replacement content.
+- `restoreTarget`: required when `outcome != success`; must be ≤ current phase in lifecycle order; restricted to registered phases with route support.
+- `restoreReason`: required when `outcome != success`; explains the causal determination.
+- `failureCategory`: optional causal label; does not require writing remediation.
+
+Assessment must emit even when no actionable cause is identifiable: `nullResult: true` with a one-line justification. Silent non-emission is not permitted.
+
+> **Drift (collab #8):** Authorship-bias disclosure (§4.7, verificationSeal.observedRevision 251, verdict revision 253) — see the commit introducing this note.
 
 ## Round definition
 

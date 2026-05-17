@@ -18,7 +18,8 @@ Authority is strict and ordered:
 
 1. Repo-owned executable checks and scripts:
    - `./tests/run.sh` (runs `./tools/cursor/audit.sh` then every `tests/**/*.test.sh`)
-   - `./tools/cursor/audit.sh` (adapter routing, `_CURSOR.md` discovery, runtime ignore rules)
+   - `./tools/cursor/audit.sh` (adapter routing, `_CURSOR.md` discovery, runtime ignore rules, role-key prose drift guard)
+   - `./tools/cursor/audit-role-prose.sh` (role-key prose drift guard for Markdown and MDC prose surfaces)
    - `./tools/cursor/sync-commands-catalog.sh --check` (commands roster integrity)
    - `./tools/cursor/sync-framework-boundaries.sh` (framework boundary projections)
    - `./tools/cursor/sync-roles-roster.sh` (roles roster projection)
@@ -69,11 +70,14 @@ This repo projects the following root outputs, with deepest dependency chains an
 
 - `./tests/run.sh`
 
+`./tests/run.sh` includes `./tools/cursor/audit-role-prose.sh` through the repository audit path and as an explicit guard before the shell-test sweep.
+
 ### Runtime Mode (required if the repo projects runtime state)
 
 This repo projects runtime state under `~/.cursor/*` and generated mirrors under `_generated/`. Required validation:
 
 - `./tools/cursor/audit.sh`
+  - includes `./tools/cursor/audit-role-prose.sh`
 - `./tools/cursor/sync-commands-catalog.sh --check`
 - `./tools/cursor/sync-framework-boundaries.sh` (run and diff `_generated/` if a `--check` flag is not supported)
 - `./tools/cursor/sync-roles-roster.sh` (run and diff `_generated/` if a `--check` flag is not supported)

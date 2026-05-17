@@ -16,7 +16,7 @@ Quick-reference table: the commands each role invokes in each collaboration phas
 
 ## Notes
 
-**Setup (before Audit):** Every role runs `/collab join --role <role>` on entry, then `/collab show policy` before the first contribution (`join.md` step 10 — advisory output; `show-policy.md` step 1). The moderator also runs `/collab init <name>` to create the collab and auto-join as `mod` (`init.md` step 3).
+**Setup (before Audit):** Every role runs `/collab join --role <role>` on entry, then `/collab show policy` before the first contribution (`join.md` step 10 — advisory output; `show-policy.md` step 1). The moderator also runs `/collab init <name>` to create the collab and auto-join as the moderator role (`init.md` step 3).
 
 ## Phase commands
 
@@ -31,9 +31,10 @@ Quick-reference table: the commands each role invokes in each collaboration phas
 
 **Notes**
 
-- **`mod` advance:** `mod` must call `/collab advance` to exit Discussion (required — Discussion does not auto-advance; `speak.md` step 13, Discussion/Completion exemptions). All other phase transitions auto-advance via `speak-lifecycle-live` after the last required contributor speaks.
-- **`mod` in Conclusion–Handoff:** `mod` is removed from `turnOrder` when Conclusion is entered (`advance.md` step 7). Moderator contributions from Conclusion onward are optional and require human-authored text (`speak.md` step 9).
-- **`pa` (reviewer):** speaks last in Audit and Conclusion per `last-in-convergent-phases` (`join.md` step 8). Optional in Discussion (`speak.md` step 8, optional-reviewer tail-slot in `allowedRoles`). Absent from Action Plan and Handoff (`join.md` step 8, reviewer excluded from non-convergent-phase `turnOrder`; `speak.md` step 8, pa absent from `allowedRoles`). Owns the terminal full-suite run in Completion (`run-plan.md` step 13).
+- **Moderator advance:** The moderator role must call `/collab advance` to exit Discussion (required — Discussion does not auto-advance; `speak.md` step 13, Discussion/Completion exemptions). All other phase transitions auto-advance via `speak-lifecycle-live` after the last required contributor speaks.
+- **Moderator in Conclusion–Handoff:** The moderator role is removed from `turnOrder` when Conclusion is entered (`advance.md` step 7). Moderator contributions from Conclusion onward are optional and require human-authored text (`speak.md` step 9).
+- **Reviewer:** speaks last in Audit and Conclusion per `last-in-convergent-phases` (`join.md` step 8). Optional in Discussion (`speak.md` step 8, optional-reviewer tail-slot in `allowedRoles`). Absent from Action Plan and Handoff (`join.md` step 8, reviewer excluded from non-convergent-phase `turnOrder`; `speak.md` step 8, reviewer absent from `allowedRoles`). Owns the terminal full-suite run in Completion (`run-plan.md` step 13).
+- **`Completion.verification` sub-phases:** Within `Completion.verification`, the reviewer executes two ordered sub-phases: `verification.seal` (issues `/collab seal verification`; mechanical execution-truth check) followed by `verification.assessment` (evaluates whether discussion goals were met; emits a `verdict`). Assessment also re-opens when the seal becomes stale or a cap-exit is recorded. See [`_verification.md`](_verification.md) for the verdict schema and trigger conditions.
 - **Internal gate:** `/collab speak` calls `speak-state` before `speak-render` to validate turn eligibility and capture `registryRevision` for the stale-write guard (`speak.md` step 8). This gate applies to every speak-phase cell above.
 - **`—`:** role has no assigned turn in this phase.
 

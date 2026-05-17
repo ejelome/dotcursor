@@ -51,6 +51,19 @@ seal_target() {
   "$ROOT/tools/collab/registry.py" seal-render "$target" pa --observed-revision "$revision" --caller-role pa "$@" >/dev/null
 }
 
+start_assessment() {
+  local target="$1"
+  complete_execution "$target"
+  seal_target "$target"
+}
+
+assessment_revision() {
+  local target="$1"
+  local state
+  state="$("$ROOT/tools/collab/registry.py" seal-state "$target" pa)"
+  read_json_field registryRevision <<<"$state"
+}
+
 seed_handoff_scope() {
   local slug="$1"
   local registry

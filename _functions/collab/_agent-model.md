@@ -32,9 +32,9 @@ The table below captures recommended defaults. Identifiers name a model family o
 
 **Moderator harness.** Moderator turns are human-authored. `codex-spark` with `/fast` applies `_moderator-polish.md` by default and `--verbatim` bypasses that transform. Spark runs on a separate pool from `codex`, is scoped to moderator speed and transcript hygiene only, and must not be used for implementation judgment, convergence review, or action-plan ownership. If Spark is unavailable, use the fastest low-cost Codex CLI helper that preserves the moderator boundary; `mini` is the current fallback example.
 
-**pe join-model variants.** Use `gpt` by default. Use `gpt-mini` for light advisory collabs where cap preservation matters. Use `codex` only when joining narrowly for implementation execution in Completion. Do not use Spark models as the join model for a full pe collab.
+**Platform-engineer join-model variants.** Use the default join model (see table above) for standard collabs. Use the light-advisory variant when cap preservation matters. Use the implementation-only harness variant only when joining narrowly for execution in Completion. Do not use the moderator-speed model pool as the join model for a full platform-engineer collab.
 
-**pa fallback.** Use `sonnet` when Opus cap is exhausted or the collab is lightweight with no convergent-gate weight. Opus is cap-fragile under sustained use; Claude Max sustains roughly 2–3 pa-Opus collabs per rolling cap window.
+**Reviewer fallback.** Use the lower-tier join model when the reviewer cap is exhausted or the collab is lightweight with no convergent-gate weight. The reviewer join model is cap-fragile under sustained use; Claude Max sustains roughly 2–3 reviewer-role collabs per rolling cap window.
 
 ## Per-speak-turn effort
 
@@ -51,6 +51,15 @@ The table below captures recommended defaults. Identifiers name a model family o
 | Completion.verification | low | high | high | xhigh *(reviewer seal; mandatory-declaration turn)* |
 
 Values must match the phase-role matrix in `_agent-effort.json`. When the two diverge, `_agent-effort.json` is authoritative; update this projection to match.
+
+## Reviewer at `Completion.verification`
+
+At `Completion.verification`, the reviewer operates in two ordered modes:
+
+1. **seal** — Issues `/collab seal verification`; mechanical execution-truth check. Existing seal contract unchanged.
+2. **assessment** — Evaluates whether discussion goals were met; emits a `verdict: { outcome, restoreTarget?, restoreReason?, evidence?, failureCategory? }`. Opens after a successful seal or when the seal becomes stale or a cap-exit is recorded.
+
+Both modes are part of the reviewer's `Completion.verification` turn (`xhigh`, mandatory-declaration). Assessment is budget-exempt when opened by a cap-exit trigger. The reviewer writes verdict fields only (evaluation); all correction work at the restored phase belongs to participants.
 
 ## Caveats
 

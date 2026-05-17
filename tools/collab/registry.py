@@ -39,6 +39,8 @@ ALLOWED_STATUSES = {'open', 'closed', 'archived'}
 ALLOWED_EXECUTION_STATUSES = {'in_progress', 'completed', 'failed'}
 ALLOWED_VALIDATION_SCOPES = {'scoped', 'full', 'deferred'}
 ALLOWED_COMPLETION_SUBSTATES = {'execution', 'verification'}
+ALLOWED_VERIFICATION_SUBSTATES = {'seal', 'assessment'}
+ALLOWED_VERDICT_OUTCOMES = {'success', 'incomplete', 'failed'}
 ALLOWED_CAP_EXITS = {'reopen-action-plan', 'reopen-handoff', 'archive'}
 DEFAULT_VERIFICATION_CAP = 3
 HANDOFF_SCHEMA_VERSION = 1
@@ -874,12 +876,18 @@ def verification_state(entry: dict) -> dict:
         die('registry: verification must be an object when present')
     rounds = verification.get('rounds', 0)
     cap = verification.get('cap', DEFAULT_VERIFICATION_CAP)
+    substate = verification.get('subState')
     if not isinstance(rounds, int) or rounds < 0:
         die('registry: verification.rounds must be a non-negative integer when present')
     if not isinstance(cap, int) or cap < 1:
         die('registry: verification.cap must be a positive integer when present')
+    if substate is None:
+        substate = 'seal'
+    if substate not in ALLOWED_VERIFICATION_SUBSTATES:
+        die(f'registry: verification.subState must be one of {sorted(ALLOWED_VERIFICATION_SUBSTATES)}')
     verification['rounds'] = rounds
     verification['cap'] = cap
+    verification['subState'] = substate
     return verification
 
 
@@ -893,7 +901,149 @@ def initialize_completion_state(entry: dict, substate: str = 'execution', reset_
     verification = verification_state(entry)
     if reset_rounds:
         verification['rounds'] = 0
+        verification['subState'] = 'seal'
+    elif substate == 'verification' and verification.get('subState') not in ALLOWED_VERIFICATION_SUBSTATES:
+        verification['subState'] = 'seal'
     verification.setdefault('cap', DEFAULT_VERIFICATION_CAP)
+
+
+def verification_review_substate(entry: dict) -> str:
+    if not reviewer_backed(entry):
+        return 'none'
+    return verification_state(entry).get('subState', 'seal')
+
+
+def set_verification_review_substate(entry: dict, substate: str) -> None:
+    if substate not in ALLOWED_VERIFICATION_SUBSTATES:
+        die(f'verification.subState must be one of {sorted(ALLOWED_VERIFICATION_SUBSTATES)}')
+    verification_state(entry)['subState'] = substate
+
+
+def normalize_restore_target(value: str | None, current_phase: str) -> str | None:
+    if value is None:
+        return None
+    normalized = re.sub(r'[\s_-]+', '-', value.strip().lower()).strip('-')
+    by_token = {re.sub(r'[\s_-]+', '-', phase.lower()).strip('-'): phase for phase in PHASES}
+    target = by_token.get(normalized)
+    if target is None:
+        die(f'verdict restoreTarget must be one of {PHASES}')
+    if PHASES.index(target) > PHASES.index(current_phase):
+        die(f'verdict restoreTarget must not be later than current phase {current_phase}')
+    return target
+
+
+def assert_one_line_nonempty(value: str | None, field: str) -> str | None:
+    if value is None:
+        return None
+    stripped = value.strip()
+    if not stripped:
+        die(f'verdict {field} must be a non-empty string when present')
+    if '\n' in stripped or '\r' in stripped:
+        die(f'verdict {field} must be one line')
+    return stripped
+
+
+def parse_verdict_evidence(raw: str | None) -> dict | None:
+    if raw is None:
+        return None
+    try:
+        evidence = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        die(f'verdict evidence must be a JSON object: {exc}')
+    validate_verdict_evidence(evidence, 'verdict evidence')
+    return evidence
+
+
+def validate_verdict_evidence(evidence: object, source: str) -> None:
+    if not isinstance(evidence, dict):
+        die(f'{source} must be an object')
+    allowed_keys = {'transcriptIds', 'registryRevision', 'committedPaths', 'executionEntryIds'}
+    unknown = sorted(set(evidence) - allowed_keys)
+    if unknown:
+        die(f'{source} contains non-anchor fields: {unknown}')
+    if 'registryRevision' in evidence and (
+        not isinstance(evidence['registryRevision'], int) or evidence['registryRevision'] < 0
+    ):
+        die(f'{source}.registryRevision must be a non-negative integer')
+    for key in ('transcriptIds', 'committedPaths', 'executionEntryIds'):
+        if key not in evidence:
+            continue
+        values = evidence[key]
+        if not isinstance(values, list) or any(not isinstance(item, str) or not item.strip() for item in values):
+            die(f'{source}.{key} must be a list of non-empty strings')
+
+
+def validate_verdict(verdict: object, source: str, current_phase: str = 'Completion') -> None:
+    if not isinstance(verdict, dict):
+        die(f'{source}: verdict must be an object when present')
+    outcome = verdict.get('outcome')
+    if outcome not in ALLOWED_VERDICT_OUTCOMES:
+        die(f'{source}: verdict.outcome must be one of {sorted(ALLOWED_VERDICT_OUTCOMES)}')
+    restore_target = verdict.get('restoreTarget')
+    restore_reason = verdict.get('restoreReason')
+    if outcome == 'success':
+        if restore_target is not None:
+            die(f'{source}: verdict.restoreTarget must be absent when outcome is success')
+        if restore_reason is not None:
+            die(f'{source}: verdict.restoreReason must be absent when outcome is success')
+    else:
+        if not isinstance(restore_target, str) or not restore_target.strip():
+            die(f'{source}: verdict.restoreTarget is required when outcome is not success')
+        normalize_restore_target(restore_target, current_phase)
+        if not isinstance(restore_reason, str) or not restore_reason.strip():
+            die(f'{source}: verdict.restoreReason is required when outcome is not success')
+        assert_one_line_nonempty(restore_reason, 'restoreReason')
+    evidence = verdict.get('evidence')
+    if evidence is not None:
+        validate_verdict_evidence(evidence, f'{source}: verdict.evidence')
+    failure_category = verdict.get('failureCategory')
+    if failure_category is not None:
+        if not isinstance(failure_category, str):
+            die(f'{source}: verdict.failureCategory must be a string when present')
+        assert_one_line_nonempty(failure_category, 'failureCategory')
+    null_result = verdict.get('nullResult')
+    if null_result is not None and not isinstance(null_result, bool):
+        die(f'{source}: verdict.nullResult must be a boolean when present')
+    if null_result is True and not isinstance(restore_reason, str):
+        die(f'{source}: verdict.nullResult requires restoreReason as the one-line justification')
+
+
+def build_verdict(
+    outcome: str,
+    restore_target: str | None,
+    restore_reason: str | None,
+    evidence: dict | None,
+    failure_category: str | None,
+    null_result: bool,
+    current_phase: str,
+) -> dict:
+    if outcome not in ALLOWED_VERDICT_OUTCOMES:
+        die('verdict outcome must be one of: success, incomplete, failed')
+    verdict: dict = {'outcome': outcome}
+    target = normalize_restore_target(restore_target, current_phase)
+    reason = assert_one_line_nonempty(restore_reason, 'restoreReason')
+    category = assert_one_line_nonempty(failure_category, 'failureCategory')
+    if target is not None:
+        verdict['restoreTarget'] = target
+    if reason is not None:
+        verdict['restoreReason'] = reason
+    if evidence is not None:
+        verdict['evidence'] = evidence
+    if category is not None:
+        verdict['failureCategory'] = category
+    if null_result:
+        verdict['nullResult'] = True
+    validate_verdict(verdict, 'registry', current_phase)
+    return verdict
+
+
+def successful_verdict(entry: dict) -> bool:
+    verdict = entry.get('verdict')
+    return isinstance(verdict, dict) and verdict.get('outcome') == 'success'
+
+
+def clear_verdict(entry: dict) -> None:
+    entry.pop('verdict', None)
 
 
 def execution_identity(role: str, date: str) -> str:
@@ -949,6 +1099,9 @@ def invalidate_verification_seal(entry: dict, reason: str) -> None:
     if isinstance(seal, dict):
         seal['stale'] = True
         seal['staleReason'] = reason
+        if reviewer_backed(entry):
+            set_verification_review_substate(entry, 'assessment')
+        clear_verdict(entry)
 
 
 def pending_reviewer_role(entry: dict) -> str | None:
@@ -1284,10 +1437,13 @@ def validate_registry(data: dict, path: Path | None = None) -> None:
                 die(f'{source}: verification must be an object when present')
             rounds = verification.get('rounds', 0)
             cap = verification.get('cap', DEFAULT_VERIFICATION_CAP)
+            verification_substate = verification.get('subState')
             if not isinstance(rounds, int) or rounds < 0:
                 die(f'{source}: verification.rounds must be a non-negative integer when present')
             if not isinstance(cap, int) or cap < 1:
                 die(f'{source}: verification.cap must be a positive integer when present')
+            if verification_substate is not None and verification_substate not in ALLOWED_VERIFICATION_SUBSTATES:
+                die(f'{source}: verification.subState must be one of {sorted(ALLOWED_VERIFICATION_SUBSTATES)}')
 
         verification_seal = entry.get('verificationSeal')
         if verification_seal is not None:
@@ -1316,6 +1472,10 @@ def validate_registry(data: dict, path: Path | None = None) -> None:
             cap_exit = verification_seal.get('capExit')
             if cap_exit is not None and cap_exit not in ALLOWED_CAP_EXITS:
                 die(f'{source}: verificationSeal.capExit must be one of {sorted(ALLOWED_CAP_EXITS)}')
+
+        verdict = entry.get('verdict')
+        if verdict is not None:
+            validate_verdict(verdict, source, activePhase)
 
         handoff = entry.get('handoff')
         if handoff is not None:
@@ -1996,7 +2156,7 @@ def close_eligible_after_execution(entry: dict, assigned_roles: list[str]) -> bo
         return False
     if reviewer_backed(entry):
         seal = entry.get('verificationSeal')
-        return isinstance(seal, dict) and not seal.get('stale')
+        return isinstance(seal, dict) and not seal.get('stale') and successful_verdict(entry)
     return True
 
 
@@ -3297,6 +3457,10 @@ def rendered_status_table(entry: dict) -> str:
         completion = entry.get('completion')
         if isinstance(completion, dict) and completion.get('subState') in ALLOWED_COMPLETION_SUBSTATES:
             active_phase = f"Completion.{completion['subState']}"
+            if completion['subState'] == 'verification':
+                verification = entry.get('verification')
+                if isinstance(verification, dict) and verification.get('subState') in ALLOWED_VERIFICATION_SUBSTATES:
+                    active_phase = f"{active_phase}.{verification['subState']}"
     return '\n'.join([
         '| Status | Active phase | Turn order | Reviewer |',
         '|--------|--------------|------------|----------|',
@@ -3845,9 +4009,16 @@ def seal_state(path: Path, target: str, role: str | None = None, resume: bool = 
             completion = completion_state(entry)
             if completion['subState'] == 'execution':
                 completion['subState'] = 'verification'
-                verification_state(entry)['rounds'] = 0
+                verification = verification_state(entry)
+                verification['rounds'] = 0
+                verification['subState'] = 'seal'
         verification = verification_state(entry) if reviewer_backed(entry) else {'rounds': 0, 'cap': DEFAULT_VERIFICATION_CAP}
-        if reviewer_backed(entry) and verification_substate(entry) == 'verification' and all_execution_completed(entry):
+        if (
+            reviewer_backed(entry)
+            and verification_substate(entry) == 'verification'
+            and verification_review_substate(entry) == 'seal'
+            and all_execution_completed(entry)
+        ):
             signature = execution_signature(entry)
             if verification.get('pairedExecutionSignature') != signature:
                 verification['rounds'] = verification.get('rounds', 0) + 1
@@ -3864,17 +4035,29 @@ def seal_state(path: Path, target: str, role: str | None = None, resume: bool = 
         'reviewerRole': reviewer_role(entry),
         'reviewerState': reviewer_state(entry),
         'verificationSubState': verification_substate(entry),
+        'completionSubState': verification_substate(entry),
+        'verificationReviewSubState': verification_review_substate(entry),
         'verificationRounds': verification_state(entry).get('rounds', 0) if reviewer_backed(entry) else 0,
         'verificationCap': verification_state(entry).get('cap', DEFAULT_VERIFICATION_CAP) if reviewer_backed(entry) else DEFAULT_VERIFICATION_CAP,
         'executionEntries': active_execution_entries(entry),
         'validationScopes': validation_scopes_for_execution(entry),
         'touchedPaths': touched_paths_for_execution(entry),
         'sealStale': bool(isinstance(seal, dict) and seal.get('stale')),
+        'verdict': entry.get('verdict') if isinstance(entry.get('verdict'), dict) else None,
         'freshRegistryRead': True,
     }
     if role:
         result['roleAgentId'] = participant_agent_id(entry, role)
-        result['readyToSeal'] = role == reviewer_role(entry) and result['verificationSubState'] == 'verification'
+        result['readyToSeal'] = (
+            role == reviewer_role(entry)
+            and result['verificationSubState'] == 'verification'
+            and result['verificationReviewSubState'] == 'seal'
+        )
+        result['readyToAssess'] = (
+            role == reviewer_role(entry)
+            and result['verificationSubState'] == 'verification'
+            and result['verificationReviewSubState'] == 'assessment'
+        )
     if resume:
         result['resume'] = f'tools/collab/registry.py seal-state --resume {entry["id"]} {role or reviewer_role(entry) or "<role>"}'
     print(json.dumps(result, sort_keys=True))
@@ -3883,13 +4066,16 @@ def seal_state(path: Path, target: str, role: str | None = None, resume: bool = 
 
 def apply_cap_exit(entry: dict, data: dict, cap_exit: str | None) -> dict | None:
     if cap_exit is None:
-        entry['status'] = 'closed'
-        if data.get('activeCollabId') == entry['id']:
-            data['activeCollabId'] = None
-        return terminal_notice('closed')
+        set_verification_review_substate(entry, 'assessment')
+        return {
+            'notice': 'assessment',
+            'transition': 'Completion.verification.seal->Completion.verification.assessment',
+            'message': 'Verification seal recorded; reviewer assessment required.',
+        }
     if cap_exit == 'archive':
         entry['status'] = 'archived'
         entry['archived'] = True
+        set_verification_review_substate(entry, 'assessment')
         if data.get('activeCollabId') == entry['id']:
             data['activeCollabId'] = None
         return terminal_notice('archived')
@@ -3897,13 +4083,53 @@ def apply_cap_exit(entry: dict, data: dict, cap_exit: str | None) -> dict | None
         entry['activePhase'] = 'Action Plan'
         normalize_turn_order_for_phase(entry, 'Action Plan')
         initialize_completion_state(entry, 'execution', reset_rounds=True)
+        set_verification_review_substate(entry, 'assessment')
         return {'notice': 'reopen', 'transition': 'Completion.verification->Action Plan', 'message': 'Verification cap exit reopened Action Plan.'}
     if cap_exit == 'reopen-handoff':
         entry['activePhase'] = 'Handoff'
         normalize_turn_order_for_phase(entry, 'Handoff')
         initialize_completion_state(entry, 'execution', reset_rounds=True)
+        set_verification_review_substate(entry, 'assessment')
         return {'notice': 'reopen', 'transition': 'Completion.verification->Handoff', 'message': 'Verification cap exit reopened Handoff.'}
     die(f'invalid cap-exit value {cap_exit}; must be one of: reopen-action-plan, reopen-handoff, archive')
+
+
+def assessment_next_line(entry: dict, verdict: dict) -> str:
+    if verdict.get('outcome') == 'success':
+        return next_line_for_state(entry)
+    target = verdict.get('restoreTarget', 'Action Plan')
+    return f'NEXT: Moderator should run /collab set active-phase {target} --force.'
+
+
+def assessment_notice(verdict: dict) -> dict | None:
+    outcome = verdict.get('outcome')
+    if outcome == 'success':
+        return terminal_notice('closed')
+    target = verdict.get('restoreTarget', 'Action Plan')
+    return {
+        'notice': 'assessment',
+        'outcome': outcome,
+        'restoreTarget': target,
+        'message': f'Assessment verdict recorded; restore target is {target}.',
+    }
+
+
+def verdict_args_present(
+    outcome: str | None,
+    restore_target: str | None,
+    restore_reason: str | None,
+    evidence: str | None,
+    failure_category: str | None,
+    null_result: bool,
+) -> bool:
+    return any([
+        outcome is not None,
+        restore_target is not None,
+        restore_reason is not None,
+        evidence is not None,
+        failure_category is not None,
+        null_result,
+    ])
 
 
 def render_seal(
@@ -3912,6 +4138,12 @@ def render_seal(
     role: str,
     observed_revision: int,
     cap_exit: str | None = None,
+    outcome: str | None = None,
+    restore_target: str | None = None,
+    restore_reason: str | None = None,
+    evidence: str | None = None,
+    failure_category: str | None = None,
+    null_result: bool = False,
     emit_json: bool = False,
     caller_role: str | None = None,
 ) -> int:
@@ -3941,38 +4173,97 @@ def render_seal(
         if verification_substate(entry) != 'verification':
             die(f'Completion.verification sub-state is not active; current sub-state: {verification_substate(entry)}')
         verification = verification_state(entry)
-        rounds = verification.get('rounds', 0)
-        cap = verification.get('cap', DEFAULT_VERIFICATION_CAP)
-        if rounds == 0:
-            die('zero verification rounds; at least one reviewer-executor paired event is required before sealing')
-        if cap_exit is None and rounds >= cap:
-            die(
-                'round cap reached; reissue with --cap-exit reopen-action-plan, '
-                '--cap-exit reopen-handoff, or --cap-exit archive'
-            )
-        if not all_execution_completed(entry):
-            die('verification seal requires all execution entries to be completed')
-        seal = seal_snapshot(entry, observed_revision, role, cap_exit)
-        entry['verificationSeal'] = seal
-        notice = apply_cap_exit(entry, data, cap_exit)
-
+        review_substate = verification_review_substate(entry)
+        has_verdict_args = verdict_args_present(
+            outcome,
+            restore_target,
+            restore_reason,
+            evidence,
+            failure_category,
+            null_result,
+        )
         transcript_path = Path(entry['transcriptPath'])
         if not transcript_path.exists():
             die(f'transcript missing: {transcript_path}')
         transcript = transcript_path.read_text()
-        number = next_completion_history_number(transcript)
-        scope_label = 'cap-exit' if cap_exit else 'seal'
-        seal_line = (
-            f"{number}. **{role}:** sealed {format_timestamp()} — verification passed; "
-            f"{scope_label}; {len(seal['touchedPaths'])} paths."
-        )
-        rendered = append_completion_history_line(transcript, seal_line)
-        rendered, header_changed = render_managed_header_text(rendered, entry, DEFAULT_ROLES_DIR)
-        if entry['status'] == 'closed' and completion_summary_empty(rendered):
-            rendered = append_completion_summary(rendered, default_close_summary(entry), summary_date_from_iso(seal['sealedAt']))
+
+        if has_verdict_args:
+            if cap_exit is not None:
+                die('verification assessment cannot mutate seal cap-exit; omit --cap-exit when writing a verdict')
+            if review_substate != 'assessment':
+                die(f'verification assessment is not active; current verification.subState: {review_substate}')
+            if outcome is None:
+                die('verdict outcome is required when writing assessment fields')
+            seal = entry.get('verificationSeal')
+            if not isinstance(seal, dict):
+                die('assessment verdict requires verificationSeal')
+            if outcome == 'success' and seal.get('stale'):
+                reason = seal.get('staleReason') or 'unknown'
+                die(f'success verdict requires current non-stale verificationSeal; stale: {reason}')
+            verdict = build_verdict(
+                outcome,
+                restore_target,
+                restore_reason,
+                parse_verdict_evidence(evidence),
+                failure_category,
+                null_result,
+                entry['activePhase'],
+            )
+            entry['verdict'] = verdict
+            notice = assessment_notice(verdict)
+            if outcome == 'success':
+                entry['status'] = 'closed'
+                if data.get('activeCollabId') == entry['id']:
+                    data['activeCollabId'] = None
+            number = next_completion_history_number(transcript)
+            if outcome == 'success':
+                verdict_detail = 'verdict success'
+            else:
+                verdict_detail = f"verdict {outcome}; restore {verdict['restoreTarget']}"
+            assessment_line = (
+                f"{number}. **{role}:** assessed {format_timestamp()} \u2014 "
+                f"{verdict_detail}; assessment; {len(touched_paths_for_execution(entry))} paths."
+            )
+            rendered = append_completion_history_line(transcript, assessment_line)
+            rendered, header_changed = render_managed_header_text(rendered, entry, DEFAULT_ROLES_DIR)
+            if entry['status'] == 'closed' and completion_summary_empty(rendered):
+                rendered = append_completion_summary(rendered, default_close_summary(entry), summary_date_from_timestamp(format_timestamp()))
+            next_line = assessment_next_line(entry, verdict)
+        else:
+            if review_substate != 'seal':
+                die('verification assessment is active; seal block is immutable; provide --outcome to record a verdict')
+            rounds = verification.get('rounds', 0)
+            cap = verification.get('cap', DEFAULT_VERIFICATION_CAP)
+            if rounds == 0:
+                die('zero verification rounds; at least one reviewer-executor paired event is required before sealing')
+            if cap_exit is None and rounds >= cap:
+                die(
+                    'round cap reached; reissue with --cap-exit reopen-action-plan, '
+                    '--cap-exit reopen-handoff, or --cap-exit archive'
+                )
+            if not all_execution_completed(entry):
+                die('verification seal requires all execution entries to be completed')
+            clear_verdict(entry)
+            seal = seal_snapshot(entry, observed_revision, role, cap_exit)
+            entry['verificationSeal'] = seal
+            notice = apply_cap_exit(entry, data, cap_exit)
+            number = next_completion_history_number(transcript)
+            scope_label = 'cap-exit' if cap_exit else 'seal'
+            seal_line = (
+                f"{number}. **{role}:** sealed {format_timestamp()} \u2014 verification passed; "
+                f"{scope_label}; {len(seal['touchedPaths'])} paths."
+            )
+            rendered = append_completion_history_line(transcript, seal_line)
+            rendered, header_changed = render_managed_header_text(rendered, entry, DEFAULT_ROLES_DIR)
+            next_line = (
+                f'NEXT: Run /collab seal verification for role {role} with --outcome <success|incomplete|failed>.'
+                if cap_exit is None
+                else next_line_for_state(entry)
+            )
+
         print_header_overwrite(header_changed)
         commit_registry_and_transcript(path, data, transcript_path, rendered)
-    print_post_action_advisories(entry, role, 'Completion', notice, next_line_for_state(entry))
+    print_post_action_advisories(entry, role, 'Completion', notice, next_line)
     print(entry['status'])
     print_notice_diagnostic(notice, emit_json)
     return 0
@@ -4003,6 +4294,7 @@ def reopen_collab(
         normalize_turn_order_for_phase(entry, phase)
         initialize_completion_state(entry, 'execution', reset_rounds=True)
         invalidate_verification_seal(entry, f'reopened {phase}')
+        clear_verdict(entry)
         transcript_path = Path(entry['transcriptPath'])
         if not transcript_path.exists():
             die(f'transcript missing: {transcript_path}')
@@ -4366,6 +4658,8 @@ def close_collab(
             if seal.get('stale'):
                 reason = seal.get('staleReason') or 'unknown'
                 die(f'close blocked: verificationSeal is stale: {reason}')
+            if not successful_verdict(entry):
+                die('close blocked: reviewer-backed Completion requires verdict outcome success')
         entry['status'] = 'closed'
         if data.get('activeCollabId') == entry['id']:
             data['activeCollabId'] = None
@@ -4753,6 +5047,12 @@ def build_parser() -> argparse.ArgumentParser:
     seal_render_parser.add_argument('role')
     seal_render_parser.add_argument('--observed-revision', type=int, required=True)
     seal_render_parser.add_argument('--cap-exit')
+    seal_render_parser.add_argument('--outcome')
+    seal_render_parser.add_argument('--restore-target')
+    seal_render_parser.add_argument('--restore-reason')
+    seal_render_parser.add_argument('--evidence')
+    seal_render_parser.add_argument('--failure-category')
+    seal_render_parser.add_argument('--null-result', action='store_true')
     seal_render_parser.add_argument('--json', action='store_true')
     seal_render_parser.add_argument('--caller-role')
 
@@ -4918,6 +5218,12 @@ def main(argv: list[str]) -> int:
             args.role,
             args.observed_revision,
             args.cap_exit,
+            args.outcome,
+            args.restore_target,
+            args.restore_reason,
+            args.evidence,
+            args.failure_category,
+            args.null_result,
             args.json,
             args.caller_role,
         )

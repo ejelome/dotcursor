@@ -37,6 +37,13 @@ Effort changes per phase per role as defined in `_agent-effort.md` and `_agent-m
 
 `/collab join` is metadata-only admission work. It does not produce a phase contribution and runs at `low` for any role. The per-phase effort matrix governs speak turns only.
 
+## `Completion.verification`
+
+`Completion.verification` has two ordered sub-phases:
+
+1. **`verification.seal`** — Reviewer calls `/collab seal verification`; mechanical execution-truth check. Run at the current effort level for `Completion.verification` (`xhigh` for the reviewer role).
+2. **`verification.assessment`** — Reviewer evaluates goal achievement and records a verdict. Opens after a successful seal; also re-enters when the seal becomes stale or a cap-exit is recorded. Assessment is budget-exempt when a cap-exit trigger opened it.
+
 ## Subagents
 
 Subagents belong in the **Completion** phase only, after Handoff has declared disjoint write scopes and validation commands. Spawning is helper-driven (`execute-spawn`) under `/collab run plan`. Subagents never author a collab turn and must not mutate registry or transcript state independently.

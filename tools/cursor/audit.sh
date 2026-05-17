@@ -209,6 +209,7 @@ check_generated_freshness() {
   python3 tools/cursor/command-reference.py --check || failures=$((failures + 1))
   tools/collab/lifecycle-doc.py --check || failures=$((failures + 1))
   tools/cursor/coverage-gate.sh || failures=$((failures + 1))
+  tools/cursor/audit-role-prose.sh || failures=$((failures + 1))
 }
 
 check_generated_boundary() {

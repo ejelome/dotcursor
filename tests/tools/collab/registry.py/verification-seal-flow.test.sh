@@ -43,6 +43,7 @@ from pathlib import Path
 entry = json.loads(Path(sys.argv[1]).read_text())['collabs'][0]
 assert entry['status'] == 'open'
 assert entry['completion']['subState'] == 'verification'
+assert entry['verification']['subState'] == 'seal'
 assert entry['verification']['rounds'] == 0
 assert 'verificationSeal' not in entry
 PY
@@ -90,10 +91,39 @@ from pathlib import Path
 registry = Path(sys.argv[1])
 entry = json.loads(registry.read_text())['collabs'][0]
 transcript = (registry.parent / entry['transcriptPath']).read_text()
-assert entry['status'] == 'closed'
+assert entry['status'] == 'open'
 assert entry['verificationSeal']['sealedBy'] == 'pa'
 assert entry['verificationSeal']['stale'] is False
+assert entry['verification']['subState'] == 'assessment'
 assert '**pa:** sealed' in transcript
+PY
+
+set +e
+assessment_close_output="$("$ROOT/tools/collab/registry.py" close "$TARGET" --caller-role mod 2>&1)"
+assessment_close_status=$?
+set -e
+if [[ "$assessment_close_status" -eq 0 || "$assessment_close_output" != *"close blocked: reviewer-backed Completion requires verdict outcome success"* ]]; then
+  printf 'FAIL: close did not require a successful assessment verdict\n%s\n' "$assessment_close_output" >&2
+  exit 1
+fi
+
+assessment_state="$("$ROOT/tools/collab/registry.py" seal-state "$TARGET" pa)"
+assessment_revision="$(read_json_field registryRevision <<<"$assessment_state")"
+"$ROOT/tools/collab/registry.py" seal-render "$TARGET" pa \
+  --observed-revision "$assessment_revision" \
+  --outcome success \
+  --evidence '{"registryRevision":1,"executionEntryIds":["pe-2026-05-15t21-00-00-02-00"],"committedPaths":["tools/collab/registry.py"]}' \
+  --caller-role pa >/dev/null
+python3 - "$REGISTRY" <<'PY'
+import json
+import sys
+from pathlib import Path
+registry = Path(sys.argv[1])
+entry = json.loads(registry.read_text())['collabs'][0]
+transcript = (registry.parent / entry['transcriptPath']).read_text()
+assert entry['status'] == 'closed'
+assert entry['verdict']['outcome'] == 'success'
+assert '**pa:** assessed' in transcript
 PY
 
 init_target "Verification Zero Round" "verification-zero-round"
@@ -163,6 +193,7 @@ assert entry['status'] == 'open'
 assert entry['activePhase'] == 'Handoff'
 assert entry['verificationSeal']['capExit'] == 'reopen-handoff'
 assert entry['completion']['subState'] == 'execution'
+assert entry['verification']['subState'] == 'assessment'
 PY
 
-printf 'OK: verification seal flow enforces reviewer gating, seal state, cap exits, and close blocking\n'
+printf 'OK: verification seal flow enforces reviewer gating, seal state, assessment verdicts, cap exits, and close blocking\n'
