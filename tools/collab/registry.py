@@ -11,7 +11,6 @@ import json
 import os
 import re
 import sys
-import uuid
 import webbrowser
 from contextlib import contextmanager
 from collections.abc import Callable
@@ -24,6 +23,13 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from tools.cursor.roles import load_role, participant_row, roles_command
+from tools.collab.registry_state import (
+    PROJECT_ID_RE,
+    assert_registry_project_binding,
+    project_metadata_from_identity,
+    resolve_default_registry_path,
+    sync_registry_project_metadata,
+)
 
 
 PHASES = ['Audit', 'Discussion', 'Conclusion', 'Action Plan', 'Handoff', 'Completion']
@@ -62,12 +68,9 @@ DEFAULT_REVIEWER_OPTIONAL_PHASES = ['Discussion']
 INVALID_AGENT_ID_ALTERNATIVES = {'n/a', 'unspecified'}
 CALLER_DECLINED_AGENT_ID = 'caller-declined'
 DEFAULT_OPEN_ROSTER_EFFORT = 'medium'
-PROJECT_ID_FILENAME = '.collab.json'
-STATE_HOME_ENV = 'CURSOR_COLLAB_STATE_HOME'
-DEFAULT_STATE_HOME = Path.home() / '.collabs'
-PROJECT_ID_RE = re.compile(r'^[a-z0-9][a-z0-9-]{7,127}$')
 STALE_LOCK_SECONDS = 24 * 60 * 60
-RESOLVED_PROJECT_IDENTITY: dict | None = None
+
+
 def resolve_cursor_root() -> Path:
     configured = os.environ.get('CURSOR_CONFIG_ROOT')
     if configured:
@@ -151,112 +154,6 @@ def die(message: str) -> None:
     raise SystemExit(message)
 
 
-def find_project_identity_path(start: Path | None = None) -> Path | None:
-    current = (start or Path.cwd()).resolve()
-    for directory in [current, *current.parents]:
-        identity_path = directory / PROJECT_ID_FILENAME
-        if identity_path.exists():
-            return identity_path
-    return None
-
-
-def read_project_identity(path: Path) -> dict:
-    try:
-        data = json.loads(path.read_text())
-    except json.JSONDecodeError as exc:
-        die(f'project identity invalid JSON: {path}: {exc}')
-    if not isinstance(data, dict):
-        die(f'project identity must be an object: {path}')
-    schema_version = data.get('schemaVersion')
-    if schema_version != 1:
-        die(f'project identity schemaVersion must be 1: {path}')
-    project_id = data.get('projectId')
-    if not isinstance(project_id, str) or not PROJECT_ID_RE.match(project_id):
-        die(f'project identity projectId must be an opaque lowercase id: {path}')
-    label = data.get('label')
-    if label is not None and (not isinstance(label, str) or not label.strip()):
-        die(f'project identity label must be a non-empty string when present: {path}')
-    state = data.get('state')
-    if state is not None and not isinstance(state, dict):
-        die(f'project identity state must be an object when present: {path}')
-    return data
-
-
-def write_project_identity(project_root: Path, label: str | None = None) -> dict:
-    project_root.mkdir(parents=True, exist_ok=True)
-    identity_path = project_root / PROJECT_ID_FILENAME
-    if identity_path.exists():
-        return read_project_identity(identity_path)
-    project_id = uuid.uuid4().hex
-    data = {
-        'schemaVersion': 1,
-        'projectId': project_id,
-        'label': label or project_root.name or 'cursor-project',
-        'state': {
-            'mode': 'shared',
-            'isolation': 'opt-in',
-        },
-    }
-    identity_path.write_text(json.dumps(data, indent=2) + '\n')
-    return data
-
-
-def collab_state_home() -> Path:
-    configured = os.environ.get(STATE_HOME_ENV)
-    if configured:
-        return Path(configured).expanduser().resolve()
-    return DEFAULT_STATE_HOME
-
-
-def state_root_for_project(project_id: str) -> Path:
-    return collab_state_home() / project_id
-
-
-def project_metadata_from_identity(identity: dict | None = None) -> dict | None:
-    source = identity if identity is not None else RESOLVED_PROJECT_IDENTITY
-    if not isinstance(source, dict):
-        return None
-    project_id = source.get('projectId')
-    if not isinstance(project_id, str) or not project_id.strip():
-        return None
-    label = source.get('label')
-    if not isinstance(label, str) or not label.strip():
-        label = 'cursor-project'
-    return {'projectId': project_id, 'label': label.strip()}
-
-
-def sync_registry_project_metadata(data: dict) -> None:
-    metadata = project_metadata_from_identity()
-    if metadata is not None:
-        data['project'] = metadata
-
-
-def resolve_default_registry_path(command: str | None) -> tuple[Path, bool]:
-    global RESOLVED_PROJECT_IDENTITY
-    project_root = Path.cwd().resolve()
-    identity_path = find_project_identity_path(project_root)
-
-    if identity_path is None and command == 'init':
-        identity = write_project_identity(project_root)
-        identity_path = project_root / PROJECT_ID_FILENAME
-    elif identity_path is not None:
-        identity = read_project_identity(identity_path)
-        project_root = identity_path.parent
-    else:
-        die(f'project marker missing: {PROJECT_ID_FILENAME}; run /collab init from the project root')
-
-    RESOLVED_PROJECT_IDENTITY = identity
-    state_root = state_root_for_project(identity['projectId'])
-    label_path = state_root / 'label'
-    metadata = project_metadata_from_identity(identity)
-    if metadata:
-        current = metadata['label'] + '\n'
-        if not label_path.exists() or label_path.read_text() != current:
-            state_root.mkdir(parents=True, exist_ok=True)
-            label_path.write_text(current)
-    return state_root / 'registry.json', True
-
-
 def load_registry(path: Path) -> dict:
     if not path.exists():
         die(f'registry missing: {path}')
@@ -265,6 +162,7 @@ def load_registry(path: Path) -> dict:
     except json.JSONDecodeError as exc:
         die(f'registry invalid JSON: {path}: {exc}')
     validate_registry(data, path)
+    assert_registry_project_binding(data, path)
     return data
 
 
@@ -5578,6 +5476,64 @@ def require_source_text(path: Path, needle: str, label: str) -> None:
         die(f'source contract missing {label}: {path.relative_to(DEFAULT_CURSOR_ROOT)}')
 
 
+def source_text(path: Path) -> str:
+    if not path.exists():
+        return ''
+    return path.read_text()
+
+
+def issue_bridge_declared(cursor_root: Path = DEFAULT_CURSOR_ROOT) -> bool:
+    if (cursor_root / '_functions/collab/export-issues.md').exists():
+        return True
+    command_text = '\n'.join([
+        source_text(cursor_root / 'commands/collab.md'),
+        source_text(cursor_root / 'commands/commands.md'),
+    ])
+    return '/collab export-issues' in command_text or 'export issues' in command_text
+
+
+def issue_bridge_prerequisite_gaps(cursor_root: Path = DEFAULT_CURSOR_ROOT) -> list[str]:
+    gaps: list[str] = []
+    helper_output = source_text(cursor_root / '_functions/collab/_helper-output.md')
+    helper_required = {
+        'helper-output abort families': '## Abort families',
+        'full-body envelope rejection': 'Full-body envelope rejection',
+        'paired-execution-signature double-increment guard': 'Paired-execution-signature double-increment guard',
+        'archive protocol violation': 'seal-verification-archive-protocol-violation',
+        'logical module annotations': 'logical module',
+    }
+    helper_lower = helper_output.lower()
+    for label, needle in helper_required.items():
+        haystack = helper_lower if label == 'logical module annotations' else helper_output
+        expected = needle.lower() if label == 'logical module annotations' else needle
+        if expected not in haystack:
+            gaps.append(label)
+
+    rebinding_test = cursor_root / 'tests/tools/collab/registry.py/rebinding-invariants.test.sh'
+    rebinding_text = source_text(rebinding_test)
+    rebinding_required = {
+        'rebinding invariant test file': '#!/usr/bin/env bash',
+        'projectId rebinding coverage': 'projectId rebinding',
+        'participant agentId rebinding coverage': 'agentId rebinding',
+        'issue bridge gate coverage': 'issue bridge',
+    }
+    for label, needle in rebinding_required.items():
+        if needle not in rebinding_text:
+            gaps.append(label)
+    return gaps
+
+
+def validate_issue_bridge_block(cursor_root: Path = DEFAULT_CURSOR_ROOT) -> None:
+    if not issue_bridge_declared(cursor_root):
+        return
+    gaps = issue_bridge_prerequisite_gaps(cursor_root)
+    if gaps:
+        die(
+            'issue bridge blocked until TW helper-output drift work and PE rebinding '
+            f'tests are present: missing {", ".join(gaps)}'
+        )
+
+
 def validate_source_contracts() -> None:
     old_flag_taxonomy = DEFAULT_CURSOR_ROOT / '_functions/collab/_flag-taxonomy.md'
     if not DEFAULT_FLAG_TAXONOMY_PATH.exists():
@@ -5596,6 +5552,7 @@ def validate_source_contracts() -> None:
     invariants = DEFAULT_CURSOR_ROOT / '_functions/collab/_invariants.md'
     require_source_text(invariants, 'Rollback triggers', 'rollback trigger section')
     require_source_text(invariants, 'Observation backlog', 'observation backlog section')
+    validate_issue_bridge_block()
 
 
 def registry_path_command(path: Path) -> int:

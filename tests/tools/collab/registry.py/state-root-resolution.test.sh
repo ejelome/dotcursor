@@ -10,6 +10,18 @@ export CURSOR_COLLAB_STATE_HOME="$TMPDIR/state-home"
 
 RUN_DATE="$(date +%Y-%m-%d)"
 
+python3 - "$ROOT" <<'PY'
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(sys.argv[1])))
+from tools.collab import registry_state
+
+assert registry_state.STATE_ROOT_PROOF_COMMAND == './tests/tools/collab/registry.py/state-root-resolution.test.sh'
+assert callable(registry_state.resolve_default_registry_path)
+assert callable(registry_state.assert_registry_project_binding)
+PY
+
 "$ROOT/tools/collab/registry.py" init --agent-id codex "Home State Init" >/dev/null
 REGISTRY="$("$ROOT/tools/collab/registry.py" registry-path)"
 LIST_OUTPUT="$("$ROOT/tools/collab/registry.py" list)"

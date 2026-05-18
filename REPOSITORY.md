@@ -89,7 +89,7 @@ No project-local `.cursor/` overlay is owned by this repo. Consumer repos that c
 
 ## 6) Contract Versioning
 
-Contract version: `0.2.0`.
+Contract version: `0.3.0`.
 
 - **Patch:** wording or validation tightening with no behavioral change.
 - **Minor:** additive contract surface; backward compatible.

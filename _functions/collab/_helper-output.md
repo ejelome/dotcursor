@@ -169,6 +169,33 @@ Post-write advisories in order:
 
 Exit 0 on success. Exit 1 when the collab is closed, the role is not a participant, unchecked assigned Action Plan items remain (for `completed` status), or touched paths fall outside the role's declared `writeScope`.
 
+## Abort families
+
+Named abort classes that close spec-to-helper gaps not covered by the per-command required-lines tables above. Each entry names the logical module, the triggering condition, and the exact exit-1 message or protocol constraint.
+
+### Module: `speak-render` / `rewrite-speak-render`
+
+**Full-body envelope rejection**
+
+Fires when the excerpt (`--content-file`) contains a hand-authored `<details>` or `</details>` control line, or when the full-body content (`--full-body-file`) contains a `<details>` or `</details>` control line. The helper owns the full-body envelope; callers must not nest additional control lines.
+
+Exit-1 messages (exact):
+
+- Excerpt: `excerpt must not contain hand-authored <details> blocks; use --full-body-file for Full contribution; line <N>`
+- Full body: `full body must not contain hand-authored <details> control lines; the helper owns the Full contribution envelope; line <N>`
+
+### Module: `seal-render`
+
+**Paired-execution-signature double-increment guard**
+
+`seal-render` tracks a `pairedExecutionSignature` alongside the verification round counter. When a seal attempt occurs without any change to execution state since the previous seal, the guard suppresses the round increment, leaving `rounds` unchanged. If `rounds` remains zero after the guard fires (no execution-state change has ever been paired with a seal), the helper aborts:
+
+Exit-1 message (exact): `zero verification rounds; at least one reviewer-executor paired event is required before sealing`
+
+**`seal-verification-archive-protocol-violation`** *(agent-honor-system)*
+
+`--cap-exit archive` is reserved for scenarios where unresolved findings remain at the cap. Using it when participant verification passed cleanly (no findings) is a protocol violation. The helper does not abort — this constraint is agent-honor-system and route-prose-enforced. Violation triggers the rollback condition in `_invariants.md` Invariant #10 (detection remains active).
+
 ## Defect definition
 
 A command has a helper-output defect when any of the following is true:
