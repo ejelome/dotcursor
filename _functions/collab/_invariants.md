@@ -97,6 +97,7 @@ Observable-event conditions derived from the 2026-05-18 missed-and-deferred-goal
 
 - **Item 7 (round-counting / budget-exempt assessment path after cap-exit):** if any seal-attempt transcript exceeds 18 turns, or two consecutive participant verifications fail with full-body blocks present, open a follow-up audit of the round-counting and budget-exempt assessment path.
 - **Item 9 (`/collab rewrite-execution` redesign):** if any seal-attempt transcript exceeds 12 turns, open a follow-up DX audit on `rewrite-execution` and turn-budget management across `/compact`.
+- If any reviewer-backed collab closes via `--cap-exit archive` on a clean first seal (no findings during participant verification), open a verification-cap audit.
 
 **11. Observation backlog**
 

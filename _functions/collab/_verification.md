@@ -10,6 +10,8 @@ Standalone reference for `Completion.verification` sub-state semantics. Loaded b
 
 ## Sub-states
 
+Verification runs in two stages. Each participant completes one full turn against their own write scope; then the reviewer assesses the collab-level outcome against goal, files, and transcript.
+
 `Completion` splits into two ordered sub-states for reviewer-backed collabs:
 
 | Sub-state | Description |
@@ -30,6 +32,8 @@ Within `Completion.verification`, three ordered sub-states apply for reviewer-ba
 | `verification.assessment` | Reviewer evaluates whether discussion goals were met and emits a `verdict`. |
 
 `verification.participant` precedes `verification.seal`, which precedes `verification.assessment`. Assessment opens after a successful seal. Assessment also re-opens when the seal becomes stale or a cap-exit is recorded, which invalidates the prior seal. Assessment is budget-exempt when a cap-exit trigger opened it.
+
+On a clean first pass, `seal-render` transitions to `verification.assessment`; the reviewer emits `--outcome success`, and the collab auto-closes with an auto-summary.
 
 ### Per-role stage: `verification.participants[role].stage`
 
@@ -67,7 +71,9 @@ Assessment must emit even when no actionable cause is identifiable: `nullResult:
 
 ## Round definition
 
-A verification round is a paired-event unit: one reviewer event plus any executor patch events within the same `Completion.verification` cycle. Rounds are registry-countable; `tools/collab/registry.py` increments the count on each paired event. The count is not derived from transcript parsing.
+A verification round is a paired-event unit. The **reviewer-event side** closes the round; `tools/collab/registry.py` increments the count on each reviewer seal event. The **executor-patch side** comprises any executor patch events within the same `Completion.verification` cycle. The count is not derived from transcript parsing.
+
+> **Re-edit in R2 follow-up collab:** This wording reflects R1 behavior, where the increment fires on the reviewer-event side. Once R2 moves the increment, update this section.
 
 **Zero-round rule:** A seal over zero verification rounds is a hard ABORT. At least one complete reviewer-executor paired event must be recorded before the seal is accepted. There is no advisory or warning path for the zero-round case.
 
