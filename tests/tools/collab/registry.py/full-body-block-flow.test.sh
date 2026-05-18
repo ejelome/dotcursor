@@ -115,4 +115,24 @@ if [[ "$reject_status" -eq 0 || "$reject_output" != *"excerpt must not contain h
   exit 1
 fi
 
+OVER_LIMIT_TARGET="$RUN_DATE-full-body-over-limit-hint"
+"$ROOT/tools/collab/registry.py" init --agent-id codex "Full Body Over Limit Hint" >/dev/null
+"$ROOT/tools/collab/registry.py" join-participants "$OVER_LIMIT_TARGET" pe --agent-id gpt >/dev/null
+"$ROOT/tools/collab/registry.py" set "$OVER_LIMIT_TARGET" turn-order pe --caller-role mod >/dev/null
+over_limit_state="$("$ROOT/tools/collab/registry.py" speak-state "$OVER_LIMIT_TARGET" pe)"
+over_limit_revision="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["registryRevision"])' <<<"$over_limit_state")"
+python3 - <<'PY' >over-limit-excerpt.md
+print(' '.join(f'overflowword{i}' for i in range(251)))
+PY
+
+set +e
+over_limit_output="$("$ROOT/tools/collab/registry.py" speak-render "$OVER_LIMIT_TARGET" pe --content-file over-limit-excerpt.md --observed-revision "$over_limit_revision" --caller-role pe 2>&1)"
+over_limit_status=$?
+set -e
+
+if [[ "$over_limit_status" -eq 0 || "$over_limit_output" != *"contribution body is 251 words; limit is 250; use --full-body-file for the full content"* ]]; then
+  printf 'FAIL: speak-render did not include full-body recovery hint on over-limit excerpt\n%s\n' "$over_limit_output" >&2
+  exit 1
+fi
+
 printf 'OK: full-body blocks are helper-owned, budget-exempt, rewrite/retract-preserved, and hidden from rendered non-Audit reads\n'

@@ -2915,7 +2915,10 @@ def enforce_contribution_budget(
     count = len(countable_text.split())
     limit = spec['limit']
     if count > limit:
-        die(f'contribution body is {count} words; limit is {limit}')
+        die(
+            f'contribution body is {count} words; limit is {limit}; '
+            'use --full-body-file for the full content and keep --content-file as the capped excerpt'
+        )
 
 
 def action_plan_label_advisory(content: str, phase: str) -> str | None:

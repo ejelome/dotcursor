@@ -69,7 +69,7 @@ Remaining text is split on whitespace. The count is the number of tokens after s
 
 1. Compute the word count using the method above before appending
 2. Reject the contribution with exit code 1 when the count exceeds 250 and no `moderator-verbatim` exemption applies
-3. Include the computed count and the limit in the rejection message: `contribution body is N words; limit is 250`
+3. Include the computed count, the limit, and the full-body recovery hint in the rejection message: `contribution body is N words; limit is 250; use --full-body-file for the full content and keep --content-file as the capped excerpt`
 4. Accept without counting when the contribution qualifies as `moderator-verbatim`
 
 A test is required for each named exempt class: one test where the exempt content alone would exceed 250 words and the contribution is accepted, and one test where non-exempt prose alone exceeds 250 words and the contribution is rejected.
