@@ -84,8 +84,8 @@ seal_revision="$(read_json_field registryRevision <<<"$seal_state")"
 rounds="$(read_json_field verificationRounds <<<"$seal_state")"
 cap="$(read_json_field verificationCap <<<"$seal_state")"
 
-if [[ "$rounds" != "1" || "$cap" != "3" ]]; then
-  printf 'FAIL: default-cap seal state did not expose one round under cap 3\n%s\n' "$seal_state" >&2
+if [[ "$rounds" != "0" || "$cap" != "3" ]]; then
+  printf 'FAIL: default-cap seal state did not expose zero rounds under cap 3\n%s\n' "$seal_state" >&2
   exit 1
 fi
 
@@ -107,6 +107,8 @@ assert entry['status'] == 'open', entry
 assert entry['completion']['subState'] == 'verification', entry['completion']
 assert entry['verification']['subState'] == 'assessment', entry['verification']
 assert entry['verification']['cap'] == 3, entry['verification']
+assert entry['verification']['rounds'] == 1, entry['verification']
+assert entry['verification']['pairedExecutionSignature'] == entry['verificationSeal']['executionSignature']
 assert entry['verificationSeal']['sealedBy'] == 'pa', entry['verificationSeal']
 assert 'capExit' not in entry['verificationSeal'], entry['verificationSeal']
 assert 'verdict' not in entry, entry

@@ -1259,6 +1259,13 @@ def execution_signature(entry: dict) -> str:
     return base64.urlsafe_b64encode(encoded.encode()).decode().rstrip('=')
 
 
+def record_verification_round_for_execution(entry: dict, verification: dict) -> None:
+    signature = execution_signature(entry)
+    if verification.get('pairedExecutionSignature') != signature:
+        verification['rounds'] = verification.get('rounds', 0) + 1
+        verification['pairedExecutionSignature'] = signature
+
+
 def validation_scopes_for_execution(entry: dict) -> list[str]:
     scopes: list[str] = []
     for state in entry.get('execution', {}).values():
@@ -2916,8 +2923,8 @@ def enforce_contribution_budget(
     limit = spec['limit']
     if count > limit:
         die(
-            f'contribution body is {count} words; limit is {limit}; '
-            'use --full-body-file for the full content and keep --content-file as the capped excerpt'
+            f'contribution excerpt is {count} words; limit is {limit}; '
+            'keep --content-file as a capped standalone excerpt and put complete detail in --full-body-file'
         )
 
 
@@ -4417,17 +4424,8 @@ def seal_state(path: Path, target: str, role: str | None = None, resume: bool = 
                 verification['subState'] = 'participant' if participant_verification_enabled(entry) else 'seal'
             verification = verification_state(entry)
             sync_participant_verification_review_substate(entry)
-        verification = verification_state(entry) if reviewer_backed(entry) else {'rounds': 0, 'cap': DEFAULT_VERIFICATION_CAP}
-        if (
-            reviewer_backed(entry)
-            and verification_substate(entry) == 'verification'
-            and verification_review_substate(entry) == 'seal'
-            and all_execution_completed(entry)
-        ):
-            signature = execution_signature(entry)
-            if verification.get('pairedExecutionSignature') != signature:
-                verification['rounds'] = verification.get('rounds', 0) + 1
-                verification['pairedExecutionSignature'] = signature
+        if reviewer_backed(entry):
+            verification_state(entry)
         if isinstance(entry.get('verificationSeal'), dict):
             invalidate_seal_on_full_body_drift(entry, read_transcript_for_entry(entry))
         save_registry(path, data)
@@ -4690,6 +4688,9 @@ def apply_cap_exit(entry: dict, data: dict, cap_exit: str | None) -> dict | None
             'message': 'Verification seal recorded; reviewer assessment required.',
         }
     if cap_exit == 'archive':
+        # Route prose reserves archive for unresolved findings. Participant
+        # verification findings are transcript prose, not structured registry
+        # fields, so clean-vs-remediated distinction remains caller-asserted.
         entry['status'] = 'archived'
         entry['archived'] = True
         set_verification_review_substate(entry, 'assessment')
@@ -4881,6 +4882,9 @@ def render_seal(
                 review_substate = 'seal'
             if review_substate != 'seal':
                 die('verification assessment is active; seal block is immutable; provide --outcome to record a verdict')
+            if not all_execution_completed(entry):
+                die('verification seal requires all execution entries to be completed')
+            record_verification_round_for_execution(entry, verification)
             rounds = verification.get('rounds', 0)
             cap = verification.get('cap', DEFAULT_VERIFICATION_CAP)
             if rounds == 0:
@@ -4890,8 +4894,6 @@ def render_seal(
                     'round cap reached; reissue with --cap-exit reopen-action-plan, '
                     '--cap-exit reopen-handoff, --cap-exit follow-up-collab, or --cap-exit archive'
                 )
-            if not all_execution_completed(entry):
-                die('verification seal requires all execution entries to be completed')
             clear_verdict(entry)
             seal = seal_snapshot(entry, observed_revision, role, transcript, cap_exit, follow_up)
             entry['verificationSeal'] = seal

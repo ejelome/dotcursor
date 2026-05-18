@@ -57,7 +57,7 @@ The reviewer emits a verdict during `verification.assessment`:
 verdict: { outcome, restoreTarget?, restoreReason?, evidence?, failureCategory? }
 ```
 
-- `outcome`: `success | incomplete | failed`. On `success`, helper closes and summarizes. On `incomplete` or `failed`, the helper emits the restore command as a `NEXT:` advisory; moderator runs `/collab reopen <restoreTarget>` to perform the full phase reset. The helper does not auto-execute the restore.
+- `outcome`: `success | incomplete | failed`. The reviewer determines this autonomously from execution evidence; soliciting the value from the moderator or user is not permitted. On `success`, helper closes and summarizes. On `incomplete` or `failed`, the helper emits the restore command as a `NEXT:` advisory; moderator runs `/collab reopen <restoreTarget>` to perform the full phase reset. The helper does not auto-execute the restore.
 - `evidence`: read-only anchors only — transcript ids, registry revision, committed paths, execution entry ids. The reviewer does not write implementation steps, command output, or replacement content.
 - `restoreTarget`: required when `outcome != success`; must be ≤ current phase in lifecycle order; restricted to registered phases with route support.
 - `restoreReason`: required when `outcome != success`; explains the causal determination.
@@ -71,9 +71,7 @@ Assessment must emit even when no actionable cause is identifiable: `nullResult:
 
 ## Round definition
 
-A verification round is a paired-event unit. The **reviewer-event side** closes the round; `tools/collab/registry.py` increments the count on each reviewer seal event. The **executor-patch side** comprises any executor patch events within the same `Completion.verification` cycle. The count is not derived from transcript parsing.
-
-> **Re-edit in R2 follow-up collab:** This wording reflects R1 behavior, where the increment fires on the reviewer-event side. Once R2 moves the increment, update this section.
+A verification round is a paired-event unit. The **reviewer-event side** closes the round; `seal_render` increments the count atomically when writing the seal object or cap-exit row. `pairedExecutionSignature` guards against double-increment on single-client retry — if `seal_render` is retried after a transient registry write failure, the signature match prevents a second increment. The count is not derived from transcript parsing; `seal_state` exposes the current value as a non-mutating projection.
 
 **Zero-round rule:** A seal over zero verification rounds is a hard ABORT. At least one complete reviewer-executor paired event must be recorded before the seal is accepted. There is no advisory or warning path for the zero-round case.
 
@@ -116,10 +114,10 @@ The participant-verification attempt budget is bound to the active Handoff `writ
 |-----------------|--------|
 | `reopen-action-plan` | Transitions the collab to `Action Plan` phase |
 | `reopen-handoff` | Transitions the collab to `Handoff` phase |
-| `archive` | Closes with an accepted-risk summary |
+| `archive` | Closes with an accepted-risk summary for unresolved findings |
 | `follow-up-collab` | Ends the verification loop and opens a new linked collab for unresolved findings; `seal-render` emits structured `NEXT:` guidance with `restoreReason`, open `evidence` anchors, and `failureCategory`. |
 
-The cap-exit action is passed to `seal-render` as `--cap-exit <action>`. The reviewer may also declare a cap exit before the cap fires when they choose to end the loop early.
+The cap-exit action is passed to `seal-render` as `--cap-exit <action>`. The reviewer may also declare a cap exit before the cap fires when they choose to end the loop early. `--cap-exit archive` requires unresolved findings; using it when participant verification passed cleanly is a protocol violation.
 
 ## writeScope reopen advisory
 
