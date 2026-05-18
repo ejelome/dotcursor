@@ -54,6 +54,16 @@ Neither layer may be reduced without updating this statement to name the resulti
 
 **Technical-writer sign-off gate:** `CONTRACT` must name a specific surface for every deletion row before the technical-writer role approves. Category labels such as "golden file" or "doc contract" are not acceptable `CONTRACT` values.
 
+## Removed test inventory
+
+| Removed test | CONTRACT | OWNER | TYPE |
+| --- | --- | --- | --- |
+| `tests/tools/collab/registry.py/budget-exempt-action-plan-checklist.test.sh` | `_functions/collab/_contribution-budget.md` `action-plan-checklist` exempt class accepts oversized checklist-only Action Plan contributions and rejects oversized non-exempt prose | `central-checker: tests/tools/collab/registry.py/contribution-budget-exempt-classes.test.sh` | `structure` |
+| `tests/tools/collab/registry.py/budget-exempt-conclusion-ratification.test.sh` | `_functions/collab/_contribution-budget.md` `conclusion-ratification` exempt class accepts oversized ratification-only Conclusion contributions and rejects oversized non-exempt prose | `central-checker: tests/tools/collab/registry.py/contribution-budget-exempt-classes.test.sh` | `structure` |
+| `tests/tools/collab/registry.py/budget-exempt-effort-override-line.test.sh` | `_functions/collab/_contribution-budget.md` `effort-override-line` exempt class accepts at-limit prose with an override line and rejects oversized non-exempt prose after stripping the override line | `central-checker: tests/tools/collab/registry.py/contribution-budget-exempt-classes.test.sh` | `structure` |
+| `tests/tools/collab/registry.py/budget-exempt-moderator-verbatim.test.sh` | `_functions/collab/_contribution-budget.md` `moderator-verbatim` exempt class accepts oversized moderator-role content and rejects oversized non-moderator content | `central-checker: tests/tools/collab/registry.py/contribution-budget-exempt-classes.test.sh` | `structure` |
+| `tests/tools/collab/registry.py/execute-spawn-returned-path.test.sh` | `_functions/collab/run-plan.md` parent-owned subagent integration rejects returned paths outside the assigned `execute-spawn --scope` | `central-checker: tests/tools/collab/registry.py/handoff-structured-state.test.sh` | `structure` |
+
 ## Output
 
 Return pass/fail per check and list exact failing file paths.

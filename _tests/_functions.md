@@ -57,6 +57,14 @@ Private function files under `~/.cursor/_functions/`:
 - `collab/write-summary.md`
 - `collab/unset.md`
 - `collab/activate.md`
+- `collab/_glossary.md`
+- `collab/_handoff-shape.md`
+- `collab/_identity-contract.md`
+- `collab/_verification.md`
+- `collab/participant-verify.md`
+- `collab/reopen.md`
+- `collab/seal-verification.md`
+- `collab/show-verdict.md`
 - `doc/assess.md`
 - `doc/write-changelog.md`
 - `doc/compact.md`

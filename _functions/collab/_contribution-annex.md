@@ -35,7 +35,7 @@ Agents must not hand-author `<details>` blocks inside the excerpt surface. A con
 
 ## Parser Contract
 
-The canonical full-body block is recognized only when a `<details>` line is immediately followed by `<summary>Full contribution</summary>`. Any other `<details>` block in submitted excerpt text is rejected before mutation.
+The canonical full-body block is recognized only when a `<details>` line is immediately followed by `<summary>Full contribution</summary>`. Any other `<details>` block in submitted excerpt text is rejected before mutation. The full-body content is byte-fenced; any `<details>` open or close tag inside the supplied full body is rejected before mutation.
 
 Budgeting applies to the excerpt only. The canonical full-body block is excluded from the word count; non-canonical blocks are not exempt.
 

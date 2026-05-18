@@ -106,6 +106,7 @@ LEGACY_EXPANDED_RE = re.compile(r'^\*\*(?P<role>[A-Za-z0-9_-]+)\s+—')
 LEGACY_HEADING_RE = re.compile(r'^###\s+(?P<role>[A-Za-z0-9_-]+)\s+—')
 DETAILS_OPEN_RE = re.compile(r'^<details(?:\s+[^>]*)?>$')
 DETAILS_CLOSE_RE = re.compile(r'^</details>$')
+DETAILS_CONTROL_LINE_RE = re.compile(r'^</?details(?:\s+[^>]*)?\s*>$')
 ANCHOR_RE = re.compile(r'^<a name="(?P<anchor>[A-Za-z0-9_-]+)"></a>$')
 TIMESTAMP_RE = re.compile(r'^<p><em>(?P<timestamp>.+)</em></p>$')
 ACTION_CHECKLIST_RE = re.compile(
@@ -567,10 +568,21 @@ def is_full_body_block_start(lines: list[str], index: int) -> bool:
 
 def reject_hand_authored_excerpt_details(content: str) -> None:
     for line_number, line in enumerate(content.splitlines(), start=1):
-        if DETAILS_OPEN_RE.match(line.strip()):
+        if DETAILS_CONTROL_LINE_RE.match(line.strip()):
             die(
                 'excerpt must not contain hand-authored <details> blocks; '
                 f'use --full-body-file for {FULL_BODY_SUMMARY}; line {line_number}'
+            )
+
+
+def reject_full_body_details_controls(content: str | None) -> None:
+    if content is None:
+        return
+    for line_number, line in enumerate(content.splitlines(), start=1):
+        if DETAILS_CONTROL_LINE_RE.match(line.strip()):
+            die(
+                'full body must not contain hand-authored <details> control lines; '
+                f'the helper owns the {FULL_BODY_SUMMARY} envelope; line {line_number}'
             )
 
 
@@ -2815,10 +2827,10 @@ def transcript_view(path: Path, target: str, phase: str, raw: bool = False) -> i
     data = load_registry(path)
     entry = resolve_collab(data, target)
     transcript = read_transcript_for_entry(entry)
-    if raw or phase == 'Audit':
-        sys.stdout.write(transcript)
-    else:
-        sys.stdout.write(rendered_transcript_without_full_bodies(transcript))
+    rendered = transcript if raw or phase == 'Audit' else rendered_transcript_without_full_bodies(transcript)
+    lines = rendered.splitlines()
+    start, end = section_bounds(lines, f'## {phase}')
+    sys.stdout.write('\n'.join(lines[start:end]) + '\n')
     return 0
 
 
@@ -2916,7 +2928,7 @@ def enforce_contribution_budget(
     spec_path: Path = DEFAULT_BUDGET_PATH,
 ) -> None:
     spec = read_budget_spec(spec_path)
-    if verbatim or role == moderator_role:
+    if role == moderator_role:
         return
     countable_text = '\n'.join(budget_countable_lines(content, phase))
     count = len(countable_text.split())
@@ -3338,6 +3350,7 @@ def polish_moderator_content(content: str, spec_path: Path = DEFAULT_MODERATOR_P
                 line = line[0].upper() + line[1:]
             if (
                 line
+                and not EFFORT_OVERRIDE_RE.match(line.strip())
                 and not line.endswith(('.', '?', '!', ':', '`'))
                 and not line.lstrip().startswith(('- ', '#', '|'))
             ):
@@ -3424,9 +3437,10 @@ def render_speak(
         if role == current_entry['moderatorRole'] and not verbatim:
             content = polish_moderator_content(content)
         reject_hand_authored_excerpt_details(content)
+        reject_full_body_details_controls(full_body)
+        enforce_contribution_budget(content, phase, role, current_entry['moderatorRole'], verbatim)
         validate_effort_override(content, phase, role, current_entry['moderatorRole'])
         validate_action_plan_shape(content, phase)
-        enforce_contribution_budget(content, phase, role, current_entry['moderatorRole'], verbatim)
         handoff_state = parse_handoff_content(content) if phase == 'Handoff' else None
 
         lines = transcript.splitlines()
@@ -3635,6 +3649,7 @@ def render_re_speak(
     full_body_file: Path | None = None,
     timestamp: str | None = None,
     caller_role: str | None = None,
+    verbatim: bool = False,
 ) -> int:
     content = read_content_file(content_file)
     full_body = read_optional_content_file(full_body_file)
@@ -3648,18 +3663,23 @@ def render_re_speak(
             die('rewrite-speak-render is not permitted in Completion')
         if not has_participant(entry, role):
             die(f'role must already be a participant: {role}')
-        reject_hand_authored_excerpt_details(content)
-        enforce_contribution_budget(content, entry['activePhase'], role, entry['moderatorRole'], False)
         transcript_path = Path(entry['transcriptPath'])
         if not transcript_path.exists():
             die(f'transcript missing: {transcript_path}')
         transcript = transcript_path.read_text()
-        validate_action_plan_shape(content, entry['activePhase'])
-        handoff_state = parse_handoff_content(content) if entry['activePhase'] == 'Handoff' else None
+        phase = entry['activePhase']
+        if role == entry['moderatorRole'] and not verbatim:
+            content = polish_moderator_content(content)
+        reject_hand_authored_excerpt_details(content)
+        reject_full_body_details_controls(full_body)
+        enforce_contribution_budget(content, phase, role, entry['moderatorRole'], verbatim)
+        validate_effort_override(content, phase, role, entry['moderatorRole'])
+        validate_action_plan_shape(content, phase)
+        handoff_state = parse_handoff_content(content) if phase == 'Handoff' else None
         reviewer_notice = reviewer_notice_for_rewrite(entry, transcript, role)
         rendered = replace_latest_contribution(
             transcript,
-            entry['activePhase'],
+            phase,
             role,
             content,
             timestamp or format_timestamp(),
@@ -3667,7 +3687,7 @@ def render_re_speak(
         )
         if handoff_state is not None:
             rendered_lines = rendered.splitlines()
-            bounds = contribution_block_bounds(rendered_lines, entry['activePhase'], role)
+            bounds = contribution_block_bounds(rendered_lines, phase, role)
             if bounds is None:
                 die('no prior contribution to rewrite; use /collab speak to create the first contribution')
             start, end = bounds
@@ -3678,6 +3698,13 @@ def render_re_speak(
         commit_registry_and_transcript(path, data, transcript_path, rendered)
     if reviewer_notice:
         print(reviewer_notice)
+    print_post_action_advisories(
+        entry,
+        role,
+        effort_phase_after_speak(phase),
+        None,
+        next_line_after_speak(entry, role, phase, rendered),
+    )
     print(entry['id'])
     return 0
 
@@ -5733,6 +5760,7 @@ def build_parser() -> argparse.ArgumentParser:
     re_speak_render_parser.add_argument('--full-body-file')
     re_speak_render_parser.add_argument('--timestamp')
     re_speak_render_parser.add_argument('--caller-role')
+    re_speak_render_parser.add_argument('--verbatim', action='store_true')
 
     retract_speak_parser = subparsers.add_parser('retract-speak')
     retract_speak_parser.add_argument('target')
@@ -5958,6 +5986,7 @@ def main(argv: list[str]) -> int:
             Path(args.full_body_file) if args.full_body_file else None,
             args.timestamp,
             args.caller_role,
+            args.verbatim,
         )
     if args.command == 'retract-speak':
         return retract_latest_contribution(path, args.target, args.role, args.reason, args.timestamp, args.caller_role)

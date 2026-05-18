@@ -17,7 +17,7 @@ Defines the allowed transformations the helper may apply to moderator-role contr
 
 ## Opt-out
 
-When `--verbatim` is passed to `speak-render`, all polish transforms are bypassed entirely. The contribution is written exactly as supplied. No transform — including whitespace normalization — is applied.
+When `--verbatim` is passed to `speak-render` or `rewrite-speak-render`, all polish transforms are bypassed entirely. The contribution is written exactly as supplied. No transform — including whitespace normalization — is applied.
 
 ## Allowed transformations
 

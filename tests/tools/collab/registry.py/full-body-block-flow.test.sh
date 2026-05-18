@@ -51,10 +51,15 @@ assert 'fullbodyword279' in text
 assert 'Visible excerpt with the standalone finding.' in text
 PY
 
-"$ROOT/tools/collab/registry.py" transcript-view "$TARGET" Audit >audit-view.md
+"$ROOT/tools/collab/registry.py" transcript-view "$TARGET" Discussion --raw >raw-view.md
 "$ROOT/tools/collab/registry.py" transcript-view "$TARGET" Discussion >discussion-view.md
+"$ROOT/tools/collab/registry.py" transcript-view "$TARGET" Audit >audit-view.md
 
-grep -Fq 'fullbodyword279' audit-view.md
+grep -Fq 'fullbodyword279' raw-view.md
+if grep -Fq 'Visible excerpt with the standalone finding.' audit-view.md; then
+  printf 'FAIL: Audit phase view exposed Discussion contribution\n' >&2
+  exit 1
+fi
 if grep -Fq 'fullbodyword279' discussion-view.md; then
   printf 'FAIL: rendered Discussion view exposed full-body content\n' >&2
   exit 1
@@ -115,6 +120,43 @@ if [[ "$reject_status" -eq 0 || "$reject_output" != *"excerpt must not contain h
   exit 1
 fi
 
+CLOSE_TAG_TARGET="$RUN_DATE-full-body-reject-close-tag"
+"$ROOT/tools/collab/registry.py" init --agent-id codex "Full Body Reject Close Tag" >/dev/null
+"$ROOT/tools/collab/registry.py" join-participants "$CLOSE_TAG_TARGET" pe --agent-id gpt >/dev/null
+"$ROOT/tools/collab/registry.py" set "$CLOSE_TAG_TARGET" turn-order pe --caller-role mod >/dev/null
+close_tag_state="$("$ROOT/tools/collab/registry.py" speak-state "$CLOSE_TAG_TARGET" pe)"
+close_tag_revision="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["registryRevision"])' <<<"$close_tag_state")"
+printf 'Visible text.\n</details>\nEscaped text.\n' >bad-close-excerpt.md
+
+set +e
+close_tag_output="$("$ROOT/tools/collab/registry.py" speak-render "$CLOSE_TAG_TARGET" pe --content-file bad-close-excerpt.md --observed-revision "$close_tag_revision" --caller-role pe 2>&1)"
+close_tag_status=$?
+set -e
+
+if [[ "$close_tag_status" -eq 0 || "$close_tag_output" != *"excerpt must not contain hand-authored <details> blocks"* ]]; then
+  printf 'FAIL: speak-render did not reject excerpt closing details tag\n%s\n' "$close_tag_output" >&2
+  exit 1
+fi
+
+FULL_BODY_CONTROL_TARGET="$RUN_DATE-full-body-reject-control-lines"
+"$ROOT/tools/collab/registry.py" init --agent-id codex "Full Body Reject Control Lines" >/dev/null
+"$ROOT/tools/collab/registry.py" join-participants "$FULL_BODY_CONTROL_TARGET" pe --agent-id gpt >/dev/null
+"$ROOT/tools/collab/registry.py" set "$FULL_BODY_CONTROL_TARGET" turn-order pe --caller-role mod >/dev/null
+full_body_control_state="$("$ROOT/tools/collab/registry.py" speak-state "$FULL_BODY_CONTROL_TARGET" pe)"
+full_body_control_revision="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["registryRevision"])' <<<"$full_body_control_state")"
+printf 'Visible text.\n' >safe-excerpt.md
+printf 'Full body text.\n</details>\nEscaped text.\n' >bad-full-body.md
+
+set +e
+full_body_control_output="$("$ROOT/tools/collab/registry.py" speak-render "$FULL_BODY_CONTROL_TARGET" pe --content-file safe-excerpt.md --full-body-file bad-full-body.md --observed-revision "$full_body_control_revision" --caller-role pe 2>&1)"
+full_body_control_status=$?
+set -e
+
+if [[ "$full_body_control_status" -eq 0 || "$full_body_control_output" != *"full body must not contain hand-authored <details> control lines"* ]]; then
+  printf 'FAIL: speak-render did not reject full-body details control line\n%s\n' "$full_body_control_output" >&2
+  exit 1
+fi
+
 OVER_LIMIT_TARGET="$RUN_DATE-full-body-over-limit-hint"
 "$ROOT/tools/collab/registry.py" init --agent-id codex "Full Body Over Limit Hint" >/dev/null
 "$ROOT/tools/collab/registry.py" join-participants "$OVER_LIMIT_TARGET" pe --agent-id gpt >/dev/null
@@ -132,6 +174,27 @@ set -e
 
 if [[ "$over_limit_status" -eq 0 || "$over_limit_output" != *"contribution excerpt is 251 words; limit is 250; keep --content-file as a capped standalone excerpt and put complete detail in --full-body-file"* ]]; then
   printf 'FAIL: speak-render did not include full-body recovery hint on over-limit excerpt\n%s\n' "$over_limit_output" >&2
+  exit 1
+fi
+
+REWRITE_EFFORT_TARGET="$RUN_DATE-full-body-rewrite-effort"
+"$ROOT/tools/collab/registry.py" init --agent-id codex "Full Body Rewrite Effort" >/dev/null
+"$ROOT/tools/collab/registry.py" join-participants "$REWRITE_EFFORT_TARGET" pe --agent-id gpt >/dev/null
+"$ROOT/tools/collab/registry.py" set "$REWRITE_EFFORT_TARGET" turn-order pe --caller-role mod >/dev/null
+"$ROOT/tools/collab/registry.py" set "$REWRITE_EFFORT_TARGET" active-phase Discussion --force --caller-role mod >/dev/null
+rewrite_effort_state="$("$ROOT/tools/collab/registry.py" speak-state "$REWRITE_EFFORT_TARGET" pe)"
+rewrite_effort_revision="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["registryRevision"])' <<<"$rewrite_effort_state")"
+printf 'Initial visible excerpt.\n' >rewrite-initial.md
+"$ROOT/tools/collab/registry.py" speak-render "$REWRITE_EFFORT_TARGET" pe --content-file rewrite-initial.md --observed-revision "$rewrite_effort_revision" --caller-role pe >/dev/null
+printf 'EFFORT OVERRIDE: matrix\nEFFORT OVERRIDE: matrix\n' >bad-rewrite-effort.md
+
+set +e
+rewrite_effort_output="$("$ROOT/tools/collab/registry.py" rewrite-speak-render "$REWRITE_EFFORT_TARGET" pe --content-file bad-rewrite-effort.md --caller-role pe 2>&1)"
+rewrite_effort_status=$?
+set -e
+
+if [[ "$rewrite_effort_status" -eq 0 || "$rewrite_effort_output" != *"EFFORT OVERRIDE must appear at most once"* ]]; then
+  printf 'FAIL: rewrite-speak-render did not reject duplicate effort override lines\n%s\n' "$rewrite_effort_output" >&2
   exit 1
 fi
 
