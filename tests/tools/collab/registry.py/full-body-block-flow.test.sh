@@ -130,9 +130,13 @@ over_limit_output="$("$ROOT/tools/collab/registry.py" speak-render "$OVER_LIMIT_
 over_limit_status=$?
 set -e
 
-if [[ "$over_limit_status" -eq 0 || "$over_limit_output" != *"contribution body is 251 words; limit is 250; use --full-body-file for the full content"* ]]; then
+if [[ "$over_limit_status" -eq 0 || "$over_limit_output" != *"contribution excerpt is 251 words; limit is 250; keep --content-file as a capped standalone excerpt and put complete detail in --full-body-file"* ]]; then
   printf 'FAIL: speak-render did not include full-body recovery hint on over-limit excerpt\n%s\n' "$over_limit_output" >&2
   exit 1
 fi
+
+grep -Fq 'The cap is a visible-excerpt budget, not a total contribution budget.' "$ROOT/_functions/collab/_contribution-budget.md"
+grep -Fq 'Agents must not summarize away or omit that detail solely to satisfy the excerpt cap.' "$ROOT/_functions/collab/_contribution-budget.md"
+grep -Fq 'preserve that material in the full body instead of trimming it out' "$ROOT/_functions/collab/speak.md"
 
 printf 'OK: full-body blocks are helper-owned, budget-exempt, rewrite/retract-preserved, and hidden from rendered non-Audit reads\n'

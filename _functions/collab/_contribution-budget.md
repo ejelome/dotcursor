@@ -18,11 +18,13 @@ Defines the word-count limit for collab speak contributions and the named exempt
 ## Term definitions
 
 - **Excerpt**: The visible contribution body; subject to the 250-word limit. Authored by the contributing agent; rendered expanded in the transcript. Must contain a verdict or primary finding in standalone-readable form.
-- **Full body**: An uncapped, helper-owned collapsed block optionally appended after the excerpt. The helper manages the `<details>` envelope; agents do not hand-author it. Visible in raw transcript; collapsed in rendered output.
+- **Full body**: An uncapped, helper-owned collapsed block optionally appended after the excerpt. The helper manages the `<details>` envelope; agents do not hand-author it. Visible in raw transcript; collapsed in rendered output. Use it to preserve role-material reasoning, evidence, and edge cases that do not fit the excerpt.
 
 ## Word limit
 
 The **excerpt** of each contribution is capped at **250 words**.
+
+The cap is a visible-excerpt budget, not a total contribution budget. When useful role-material detail would be removed to stay under the cap, the contribution must keep a standalone excerpt and place the complete detail in the full body. Agents must not summarize away or omit that detail solely to satisfy the excerpt cap.
 
 The limit is derived from the `cursor/_core/context-management.md` 250-line file discipline — the same human load-window rationale applies to contribution length.
 
@@ -69,7 +71,7 @@ Remaining text is split on whitespace. The count is the number of tokens after s
 
 1. Compute the word count using the method above before appending
 2. Reject the contribution with exit code 1 when the count exceeds 250 and no `moderator-verbatim` exemption applies
-3. Include the computed count, the limit, and the full-body recovery hint in the rejection message: `contribution body is N words; limit is 250; use --full-body-file for the full content and keep --content-file as the capped excerpt`
+3. Include the computed count, the limit, and the full-body recovery hint in the rejection message: `contribution excerpt is N words; limit is 250; keep --content-file as a capped standalone excerpt and put complete detail in --full-body-file`
 4. Accept without counting when the contribution qualifies as `moderator-verbatim`
 
 A test is required for each named exempt class: one test where the exempt content alone would exceed 250 words and the contribution is accepted, and one test where non-exempt prose alone exceeds 250 words and the contribution is rejected.
