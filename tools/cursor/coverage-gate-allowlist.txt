@@ -57,7 +57,7 @@ _functions/collab/rewrite-speak.md:20|c110be377fcc
 _functions/collab/rewrite-speak.md:21|5f9bf75fa3ec
 _functions/collab/rewrite-speak.md:22|aee81246295f
 _functions/collab/rewrite-speak.md:23|4118dc3449da
-_functions/collab/rewrite-speak.md:24|48d9b6fa3d9d
+_functions/collab/rewrite-speak.md:24|d1d59b83bd30
 _functions/collab/rewrite-speak.md:31|964e6e4396ca
 _functions/collab/rewrite-summary.md:17|16d605315414
 _functions/collab/rewrite-summary.md:18|e34221ceb62f

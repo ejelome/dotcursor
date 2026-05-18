@@ -28,6 +28,7 @@ Restore a collaboration from a non-success `Completion.verification` verdict to 
 - **Full reset path:** This route wraps `reopen_collab`. It restores status, active phase, active collab pointer, phase turn order, completion execution state, stale seal state, verdict state, and the managed transcript header. It replaces the unsafe `set active-phase --force` recovery path for non-success assessment verdicts.
 - **Phase mapping:** `action-plan` maps to `Action Plan`; `handoff` maps to `Handoff`.
 - **Cap-exit distinction:** `/collab seal verification --cap-exit reopen-handoff` and `--cap-exit reopen-action-plan` remain direct reviewer cap-exit paths. `/collab reopen` is for non-success assessment verdicts that already recorded a `restoreTarget`.
+- **Recovery sequence:** For the full failed-verdict operator path, see [`seal-verification.md` Restore-route recovery](seal-verification.md#restore-route-recovery).
 
 ```cursor-arg
 dispatch: (collab reopen <action-plan | handoff> [<target>])

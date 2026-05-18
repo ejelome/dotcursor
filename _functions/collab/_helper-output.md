@@ -76,6 +76,20 @@ Post-write (after successful append):
 4. `appended`
 5. `PHASE: <state>` by default, or `{"phaseState": "<state>"}` when `--json` is supplied
 
+### `rewrite-speak-render`
+
+Pre-write checks (before mutating): validates the role-owned contribution block exists, runs the Action Plan shape check when the active phase is `Action Plan`, and evaluates the reviewer-notice gate.
+
+Post-write (after successful rewrite):
+
+1. `REVIEWER-NOTICE: <message>` — when the contribution being rewritten predates the most recent reviewer turn in the same phase
+2. `NEXT: <imperative routing guidance>`
+3. `EFFORT: <phase> · <role> · <level> · <scale phrase>`
+4. `EFFICIENCY:` — only when the action crosses a lifecycle boundary
+5. Entry id of the rewritten contribution
+
+Exit 0 on success. Exit 1 when the role-owned contribution block is missing or malformed, the Action Plan shape check fails, or the reviewer gate blocks the rewrite.
+
 ### `speak-lifecycle-live`
 
 Emits lifecycle JSON: `{"phaseState": "<value>"}` where `<value>` is a phase name or `unchanged`.

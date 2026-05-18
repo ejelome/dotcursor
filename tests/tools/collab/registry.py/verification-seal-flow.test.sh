@@ -63,11 +63,26 @@ fi
 
 state="$("$ROOT/tools/collab/registry.py" seal-state "$TARGET" pa)"
 rounds="$(read_json_field verificationRounds <<<"$state")"
-revision="$(read_json_field registryRevision <<<"$state")"
-if [[ "$rounds" != "1" ]]; then
-  printf 'FAIL: seal-state did not record the paired verification round\n%s\n' "$state" >&2
+if [[ "$rounds" != "0" ]]; then
+  printf 'FAIL: seal-state spent a verification round\n%s\n' "$state" >&2
   exit 1
 fi
+second_state="$("$ROOT/tools/collab/registry.py" seal-state "$TARGET" pa)"
+rounds="$(read_json_field verificationRounds <<<"$second_state")"
+revision="$(read_json_field registryRevision <<<"$second_state")"
+if [[ "$rounds" != "0" ]]; then
+  printf 'FAIL: repeated seal-state spent a verification round\n%s\n' "$second_state" >&2
+  exit 1
+fi
+python3 - "$REGISTRY" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+entry = json.loads(Path(sys.argv[1]).read_text())['collabs'][0]
+assert entry['verification']['rounds'] == 0, entry['verification']
+assert 'pairedExecutionSignature' not in entry['verification'], entry['verification']
+PY
 
 set +e
 wrong_role_output="$("$ROOT/tools/collab/registry.py" seal-render "$TARGET" pe --observed-revision "$revision" --caller-role pe 2>&1)"
@@ -86,6 +101,15 @@ if [[ "$stale_status" -eq 0 || "$stale_output" != *"stale registry revision: obs
   printf 'FAIL: seal-render accepted stale observed revision\n%s\n' "$stale_output" >&2
   exit 1
 fi
+python3 - "$REGISTRY" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+entry = json.loads(Path(sys.argv[1]).read_text())['collabs'][0]
+assert entry['verification']['rounds'] == 0, entry['verification']
+assert 'pairedExecutionSignature' not in entry['verification'], entry['verification']
+PY
 
 "$ROOT/tools/collab/registry.py" seal-render "$TARGET" pa --observed-revision "$revision" --caller-role pa >/dev/null
 python3 - "$REGISTRY" <<'PY'
@@ -99,6 +123,8 @@ assert entry['status'] == 'open'
 assert entry['verificationSeal']['sealedBy'] == 'pa'
 assert entry['verificationSeal']['stale'] is False
 assert entry['verification']['subState'] == 'assessment'
+assert entry['verification']['rounds'] == 1
+assert entry['verification']['pairedExecutionSignature'] == entry['verificationSeal']['executionSignature']
 assert '**pa:** sealed' in transcript
 PY
 
@@ -132,24 +158,46 @@ PY
 
 init_target "Verification Zero Round" "verification-zero-round"
 ZERO_TARGET="$RUN_DATE-verification-zero-round"
+"$ROOT/tools/collab/registry.py" execution "$ZERO_TARGET" pe completed "2026-05-15T21:10:00+02:00" \
+  --assigned-role pe \
+  --auto-close \
+  --validation-result passed \
+  --validation-scope scoped \
+  --touched-path tools/collab/registry.py \
+  --caller-role pe >/dev/null
 python3 - "$REGISTRY" <<'PY'
+import base64
 import json
 import sys
 from pathlib import Path
 path = Path(sys.argv[1])
 data = json.loads(path.read_text())
 entry = next(item for item in data['collabs'] if item['slug'] == 'verification-zero-round')
-entry['completion'] = {'subState': 'verification'}
-entry['verification'] = {'rounds': 0, 'cap': 1}
+entries = []
+for role, state in sorted(entry.get('execution', {}).items()):
+    row = {
+        'role': role,
+        'entryId': state.get('entryId') or f"{role}-execution",
+        'status': state.get('status'),
+        'date': state.get('date'),
+        'validationResult': state.get('validationResult'),
+        'validationScope': state.get('validationScope'),
+        'touchedPaths': list(state.get('touchedPaths', [])),
+    }
+    if state.get('agentId'):
+        row['agentId'] = state.get('agentId')
+    entries.append(row)
+signature = base64.urlsafe_b64encode(
+    json.dumps(entries, sort_keys=True, separators=(',', ':')).encode()
+).decode().rstrip('=')
+entry['verification']['rounds'] = 0
+entry['verification']['cap'] = 1
+entry['verification']['subState'] = 'seal'
+entry['verification']['pairedExecutionSignature'] = signature
 path.write_text(json.dumps(data, indent=2) + '\n')
 PY
-zero_revision="$(python3 - "$REGISTRY" <<'PY'
-import json
-import sys
-from pathlib import Path
-print(json.loads(Path(sys.argv[1]).read_text()).get('revision', 0))
-PY
-)"
+zero_state="$("$ROOT/tools/collab/registry.py" seal-state "$ZERO_TARGET" pa)"
+zero_revision="$(read_json_field registryRevision <<<"$zero_state")"
 set +e
 zero_output="$("$ROOT/tools/collab/registry.py" seal-render "$ZERO_TARGET" pa --observed-revision "$zero_revision" --caller-role pa 2>&1)"
 zero_status=$?
@@ -179,6 +227,11 @@ path.write_text(json.dumps(data, indent=2) + '\n')
 PY
 cap_state="$("$ROOT/tools/collab/registry.py" seal-state "$CAP_TARGET" pa)"
 cap_revision="$(read_json_field registryRevision <<<"$cap_state")"
+cap_rounds="$(read_json_field verificationRounds <<<"$cap_state")"
+if [[ "$cap_rounds" != "0" ]]; then
+  printf 'FAIL: cap-exit seal-state spent a verification round\n%s\n' "$cap_state" >&2
+  exit 1
+fi
 set +e
 cap_output="$("$ROOT/tools/collab/registry.py" seal-render "$CAP_TARGET" pa --observed-revision "$cap_revision" --caller-role pa 2>&1)"
 cap_status=$?
@@ -187,6 +240,15 @@ if [[ "$cap_status" -eq 0 || "$cap_output" != *"round cap reached; reissue with 
   printf 'FAIL: seal-render did not enforce the cap exit\n%s\n' "$cap_output" >&2
   exit 1
 fi
+python3 - "$REGISTRY" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+entry = next(item for item in json.loads(Path(sys.argv[1]).read_text())['collabs'] if item['slug'] == 'verification-cap-exit')
+assert entry['verification']['rounds'] == 0, entry['verification']
+assert 'pairedExecutionSignature' not in entry['verification'], entry['verification']
+PY
 "$ROOT/tools/collab/registry.py" seal-render "$CAP_TARGET" pa --observed-revision "$cap_revision" --cap-exit reopen-handoff --caller-role pa >/dev/null
 python3 - "$REGISTRY" <<'PY'
 import json
@@ -198,6 +260,58 @@ assert entry['activePhase'] == 'Handoff'
 assert entry['verificationSeal']['capExit'] == 'reopen-handoff'
 assert entry['completion']['subState'] == 'execution'
 assert entry['verification']['subState'] == 'assessment'
+PY
+
+init_target "Verification Render Retry" "verification-render-retry"
+RETRY_TARGET="$RUN_DATE-verification-render-retry"
+"$ROOT/tools/collab/registry.py" execution "$RETRY_TARGET" pe completed "2026-05-15T21:30:00+02:00" \
+  --assigned-role pe \
+  --validation-result passed \
+  --validation-scope scoped \
+  --touched-path tools/collab/registry.py \
+  --caller-role pe >/dev/null
+retry_state="$("$ROOT/tools/collab/registry.py" seal-state "$RETRY_TARGET" pa)"
+python3 - "$REGISTRY" <<'PY'
+import base64
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+data = json.loads(path.read_text())
+entry = next(item for item in data['collabs'] if item['slug'] == 'verification-render-retry')
+entries = []
+for role, state in sorted(entry.get('execution', {}).items()):
+    row = {
+        'role': role,
+        'entryId': state.get('entryId') or f"{role}-execution",
+        'status': state.get('status'),
+        'date': state.get('date'),
+        'validationResult': state.get('validationResult'),
+        'validationScope': state.get('validationScope'),
+        'touchedPaths': list(state.get('touchedPaths', [])),
+    }
+    if state.get('agentId'):
+        row['agentId'] = state.get('agentId')
+    entries.append(row)
+signature = base64.urlsafe_b64encode(
+    json.dumps(entries, sort_keys=True, separators=(',', ':')).encode()
+).decode().rstrip('=')
+entry['verification']['rounds'] = 1
+entry['verification']['pairedExecutionSignature'] = signature
+path.write_text(json.dumps(data, indent=2) + '\n')
+PY
+retry_state="$("$ROOT/tools/collab/registry.py" seal-state "$RETRY_TARGET" pa)"
+retry_revision="$(read_json_field registryRevision <<<"$retry_state")"
+"$ROOT/tools/collab/registry.py" seal-render "$RETRY_TARGET" pa --observed-revision "$retry_revision" --caller-role pa >/dev/null
+python3 - "$REGISTRY" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+entry = next(item for item in json.loads(Path(sys.argv[1]).read_text())['collabs'] if item['slug'] == 'verification-render-retry')
+assert entry['verification']['rounds'] == 1, entry['verification']
+assert entry['verification']['pairedExecutionSignature'] == entry['verificationSeal']['executionSignature']
 PY
 
 printf 'OK: verification seal flow enforces reviewer gating, seal state, assessment verdicts, cap exits, and close blocking\n'

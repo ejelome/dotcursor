@@ -90,3 +90,22 @@ No-assignment-lines: `ABORT: Action Plan body contains no assignment lines after
 **Test file:** `tests/tools/collab/registry.py/speak-render-action-plan-shape.test.sh` — three cases: prose header, plain bullet, empty-after-exempts. Each case asserts the full ABORT message text, unchanged transcript bytes, and unchanged registry phase.
 
 **Forward-only:** Historical contributions are not re-validated. Role-token vocabulary remains in the `run plan` parser; this gate enforces shape only.
+
+**10. Rollback triggers**
+
+Observable-event conditions derived from the 2026-05-18 missed-and-deferred-goals audit. Each line names the observable event that re-opens the item; no behavior change until the event fires.
+
+- **Item 7 (round-counting / budget-exempt assessment path after cap-exit):** if any seal-attempt transcript exceeds 18 turns, or two consecutive participant verifications fail with full-body blocks present, open a follow-up audit of the round-counting and budget-exempt assessment path.
+- **Item 9 (`/collab rewrite-execution` redesign):** if any seal-attempt transcript exceeds 12 turns, open a follow-up DX audit on `rewrite-execution` and turn-budget management across `/compact`.
+- If any reviewer-backed collab closes via `--cap-exit archive` on a clean first seal (no findings during participant verification), open a verification-cap audit. *(Fired: collab #16, 2026-05-18. Resolved inline: root cause was doc gap on archive semantics + reviewer soliciting verdict from user instead of determining it autonomously. Fixes: `seal-verification.md` and `_verification.md` updated to prohibit `--cap-exit archive` on clean verification and to require autonomous verdict determination. Detection remains active.)*
+
+**11. Observation backlog**
+
+The following carry-forwards from the 2026-05-18 missed-and-deferred-goals audit are observation-class: no behavior change until the named event is observed. Each re-enters only on evidence, not on transcript memory.
+
+- **Item 10 (`_tests/_roles.md` generator):** re-entry when a fifth role is added to the roster.
+- **Item 11 (effort-matrix shape redesign):** re-entry if a third axis (admission column or `level|null` cells) surfaces during Action Plan drafting.
+- **Item 12 (cross-project registry federation):** re-entry when more than one project store in `~/.collabs/` shows observable drift.
+- **Item 13 (stub retirement observation point):** re-entry when a coverage assertion is added confirming stub fallback is unreached on resolution.
+- **Item 14 (PE Q4 carry-forward — pre-seal reopen primitive):** re-entry if a future protocol redesign reopens the pre-seal flow.
+- **Item 15 (CI scope items — required-status checks, secrets, deploy gates):** re-entry when merge-gating, authenticated workflows, or a deploy surface is introduced.

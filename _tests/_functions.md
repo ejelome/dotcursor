@@ -28,8 +28,8 @@ Private function files under `~/.cursor/_functions/`:
 - `collab/_agent-id.md`
 - `collab/_agent-lifecycle.md`
 - `collab/_agent-model.md`
+- `collab/_contribution-annex.md`
 - `collab/_contribution-budget.md`
-- `collab/_flag-taxonomy.md`
 - `collab/_helper-output.md`
 - `collab/_registry.md`
 - `collab/_role-prohibitions.md`
@@ -57,6 +57,14 @@ Private function files under `~/.cursor/_functions/`:
 - `collab/write-summary.md`
 - `collab/unset.md`
 - `collab/activate.md`
+- `collab/_glossary.md`
+- `collab/_handoff-shape.md`
+- `collab/_identity-contract.md`
+- `collab/_verification.md`
+- `collab/participant-verify.md`
+- `collab/reopen.md`
+- `collab/seal-verification.md`
+- `collab/show-verdict.md`
 - `doc/assess.md`
 - `doc/write-changelog.md`
 - `doc/compact.md`
