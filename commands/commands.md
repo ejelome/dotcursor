@@ -2,12 +2,12 @@
 
 List public slash commands under `~/.cursor/commands/` and their private function routes; use when you need canonical invocation syntax.
 
-Contract: [cursor/_core/command-standard.md](../_core/command-standard.md)
+Contract: [_core/command-standard.md](../_core/command-standard.md)
 
 ## Trigger
 
 **Slash:** `/commands`
-**Phrases:** `cursor commands list`, `slash commands`, `what commands in cursor/commands`, `commands-index`
+**Phrases:** `cursor commands list`, `slash commands`, `what commands in commands/`, `commands-index`
 
 ## Steps
 

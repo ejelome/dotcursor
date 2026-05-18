@@ -184,8 +184,8 @@ def check_artifact() -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(description='Render or validate the generated collab lifecycle reference.')
     mode = parser.add_mutually_exclusive_group(required=True)
-    mode.add_argument('--render', action='store_true', help='write cursor/_generated/collab-lifecycle.md')
-    mode.add_argument('--check', action='store_true', help='verify cursor/_generated/collab-lifecycle.md is current')
+    mode.add_argument('--render', action='store_true', help='write _generated/collab-lifecycle.md')
+    mode.add_argument('--check', action='store_true', help='verify _generated/collab-lifecycle.md is current')
     args = parser.parse_args()
     if args.render:
         write_artifact()

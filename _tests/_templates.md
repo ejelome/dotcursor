@@ -4,7 +4,7 @@ Deterministic QA for scaffold template sources projected to `~/.cursor/_template
 
 ## Procedure
 
-1. Load every `*.md` under the tracked source directory `cursor/_templates/`.
+1. Load every `*.md` under the tracked source directory `_templates/`.
 2. Validate the source roster is exact.
 3. Validate each template file has one H1 and is <= 250 lines.
 4. Validate `CLAUDE.md` is routing-only and points to `AGENTS.md`.
@@ -13,7 +13,7 @@ Deterministic QA for scaffold template sources projected to `~/.cursor/_template
 
 ## Required roster
 
-Tracked scaffold template files under `cursor/_templates/`:
+Tracked scaffold template files under `_templates/`:
 
 - `CLAUDE.md`
 - `AGENTS.md`

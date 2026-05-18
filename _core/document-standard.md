@@ -185,7 +185,7 @@ One sentence — reference scope and when to open it.
 
 ## Generated artifacts
 
-Any generated artifact stored in the source tree must declare its source-of-truth pattern before implementation, chosen from the following ranked options: (1) constant import — the generator imports values directly from the authoritative source code, (2) canonical-file reference — the generator reads from a single authoritative file (e.g., `cursor/_roles/*.json`), (3) structured sidecar block — the generator reads from a machine-readable metadata block adjacent to the artifact's source, (4) prose scrape — the generator parses free-form prose. When more than one pattern applies to a single artifact, the highest-ranked pattern governs. Patterns (1) and (2) are preferred because they make drift structurally impossible — the generated output cannot diverge from its source without a code or file change.
+Any generated artifact stored in the source tree must declare its source-of-truth pattern before implementation, chosen from the following ranked options: (1) constant import — the generator imports values directly from the authoritative source code, (2) canonical-file reference — the generator reads from a single authoritative file (e.g., `_roles/*.json`), (3) structured sidecar block — the generator reads from a machine-readable metadata block adjacent to the artifact's source, (4) prose scrape — the generator parses free-form prose. When more than one pattern applies to a single artifact, the highest-ranked pattern governs. Patterns (1) and (2) are preferred because they make drift structurally impossible — the generated output cannot diverge from its source without a code or file change.
 
 ## Devblog files
 

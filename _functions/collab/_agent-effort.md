@@ -50,7 +50,7 @@ This matrix is rendered from `_agent-effort.json`. The helper's `EFFORT:` adviso
 
 **`—`** means the role is not on the turn-order roster for that phase by default. Optional admission is available via `reviewerOptionalPhases` in the registry (defaults to `["Discussion"]`; extended via `/collab set reviewer-optional-phases`); when admitted to a non-Discussion phase, the effort level is `xhigh`. Implemented by `reviewer_optional_phases` in `tools/collab/registry.py`.
 
-Roles that exist in `cursor/_roles/` but are absent from this advisory matrix receive the helper's open-roster fallback: `medium`. This keeps join and speak advisories non-blocking for newly added roles while preserving explicit matrix values for the curated roles.
+Roles that exist in `_roles/` but are absent from this advisory matrix receive the helper's open-roster fallback: `medium`. This keeps join and speak advisories non-blocking for newly added roles while preserving explicit matrix values for the curated roles.
 
 ## How to use this
 
@@ -110,7 +110,7 @@ At the $100 Claude Code tier, declared effort levels are enforceable: the review
 
 **Source-of-truth coupling:** The advisory binds phase-role to effort level, not to model identity or harness configuration. A `claude-opus-4-7` agent and a `claude-sonnet-4-6` agent reading the same `EFFORT:` advisory both interpret the effort level against their own runtime. The matrix does not change when the runtime model changes; a model rotation is not a reason to update `_agent-effort.json`.
 
-**Declaration trust model:** Declared effort is an audit marker, not a runtime-enforced floor. An agent that contributes below the recommended level leaves no trace of the discrepancy. The override line, when present, records the agent's intent at contribution time — comparable to the `agentId` capture in `cursor/_functions/collab/join.md`, which documents this as “an honest-effort marker, comparable to a git commit author. It is not an authentication signal.”
+**Declaration trust model:** Declared effort is an audit marker, not a runtime-enforced floor. An agent that contributes below the recommended level leaves no trace of the discrepancy. The override line, when present, records the agent's intent at contribution time — comparable to the `agentId` capture in `_functions/collab/join.md`, which documents this as “an honest-effort marker, comparable to a git commit author. It is not an authentication signal.”
 
 **Selection bias:** The protocol detects opt-in escalation only. The absence of an override line is not evidence that the matrix default was sufficient; an agent that silently follows the matrix when escalation was warranted leaves no trace. Reviewers must not interpret a clean transcript as confirmation that every turn was correctly resourced.
 

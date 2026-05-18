@@ -1,8 +1,8 @@
 ---
-description: "[shared] shared-docs-rules.mdc: keep cursor/_mdc .mdc metadata and triggers consistent"
+description: "[shared] shared-docs-rules.mdc: keep _mdc .mdc metadata and triggers consistent"
 alwaysApply: false
 globs:
-  - "cursor/_mdc/**/*.mdc"
+  - "_mdc/**/*.mdc"
   - ".cursor/_mdc/**/*.mdc"
 ---
 

@@ -26,7 +26,7 @@ Inline marker form: `**ABORT** (agent-honor-system): ...` placed on the same lin
 
 Anchor convention: each ABORT in `<route>.md` must carry a stable id anchor `<!-- abort: <id> -->` on the line immediately above it. The anchor id must start with the route stem followed by a hyphen (e.g., `speak-` in `speak.md`); the detector enforces this prefix and rejects anchors that omit it.
 
-Maintainer check: `git grep -rn 'agent-honor-system' cursor/_functions/collab/` shows every agent-honor-system clause. Any undocumented ABORT that has neither a helper check nor this marker is a defect.
+Maintainer check: `git grep -rn 'agent-honor-system' _functions/collab/` shows every agent-honor-system clause. Any undocumented ABORT that has neither a helper check nor this marker is a defect.
 
 Maintainer check: `git grep -rnP '(?<![A-Za-z0-9_])(mod|pa|pe|tw)(?![A-Za-z0-9_])' -- '*.md' '*.mdc'` is the broad review sweep for role-key prose drift. Every prose match must either be covered by the documented carve-outs in `tools/cursor/audit-role-prose.sh` or rewritten to function-bound prose.
 
@@ -63,7 +63,7 @@ Collab routes do not orchestrate `/compact`, `/clear`, or subagent spawning. Tho
 
 The collab system records the role under which an agent joins (`participants[].agentId`) but does not authenticate the caller of any subsequent helper invocation. A role key passed to `tools/collab/registry.py` is caller-asserted. The system enforces lifecycle rules (turn order, one-speak phases, reviewer gates, phase advancement) over caller-asserted identity; it does not enforce that the declared role matches the actor at the harness layer.
 
-**Maintainer check:** Routes that present a role check as a security boundary are mis-stating the model. Where a route note implies enforcement, it must instead cite this invariant and describe the lifecycle effect of a violation, not a prevention claim. `git grep -rn 'trust-model' cursor/_functions/collab/` identifies candidates for review.
+**Maintainer check:** Routes that present a role check as a security boundary are mis-stating the model. Where a route note implies enforcement, it must instead cite this invariant and describe the lifecycle effect of a violation, not a prevention claim. `git grep -rn 'trust-model' _functions/collab/` identifies candidates for review.
 
 **9. Action Plan checklist shape**
 

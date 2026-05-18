@@ -28,7 +28,7 @@ The cap is a visible-excerpt budget, not a total contribution budget. When usefu
 
 The cap applies to `/collab speak` excerpts only; `participant-verify-render` audit, remediation, and final-audit turn bodies are unbounded by design.
 
-The limit is derived from the `cursor/_core/context-management.md` 250-line file discipline — the same human load-window rationale applies to contribution length.
+The limit is derived from the `_core/context-management.md` 250-line file discipline — the same human load-window rationale applies to contribution length.
 
 ## Exempt classes
 
