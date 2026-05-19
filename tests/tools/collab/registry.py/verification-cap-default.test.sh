@@ -84,8 +84,8 @@ seal_revision="$(read_json_field registryRevision <<<"$seal_state")"
 rounds="$(read_json_field verificationRounds <<<"$seal_state")"
 cap="$(read_json_field verificationCap <<<"$seal_state")"
 
-if [[ "$rounds" != "0" || "$cap" != "3" ]]; then
-  printf 'FAIL: default-cap seal state did not expose zero rounds under cap 3\n%s\n' "$seal_state" >&2
+if [[ "$rounds" != "1" || "$cap" != "3" ]]; then
+  printf 'FAIL: default-cap seal state did not expose one paired round under cap 3\n%s\n' "$seal_state" >&2
   exit 1
 fi
 

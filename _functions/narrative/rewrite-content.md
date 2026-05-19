@@ -15,8 +15,8 @@ Run a staged narrative rewrite: audit drift in narrative content, align project 
 
 1. Resolve `<audit | align | gate>` from the first token after `/narrative rewrite content`. If missing or invalid, **ABORT** naming the token received. Recovery: re-invoke with one of `audit`, `align`, or `gate`.
 2. Resolve `--role <key>` from the remaining input. If missing, **ABORT**: `--role <key>` is required.
-3. Read `cursor/_roles/<key>.json`. If unreadable, **ABORT**: role file unreadable; name the expected path.
-4. Validate the role JSON against [cursor/_core/agent-role.md](../../_core/agent-role.md): `key` must match `<key>`, and `displayName` and non-empty `concerns` must be present. If invalid, **ABORT**: invalid role JSON; name the failed field.
+3. Read `_roles/<key>.json`. If unreadable, **ABORT**: role file unreadable; name the expected path.
+4. Validate the role JSON against [_core/agent-role.md](../../_core/agent-role.md): `key` must match `<key>`, and `displayName` and non-empty `concerns` must be present. If invalid, **ABORT**: invalid role JSON; name the failed field.
 5. For `audit`, run **Phase 1 — Audit**. Focus: meaning assessment — locating drift before scope is known.
 6. For `align`, resolve the state file through `tools/narrative/state.py align --role <key>`. If the state file is missing or `~/.cursor` resolves to the repository `cursor/` tree, **ABORT** naming the failed path. Recovery: re-run `audit` to create state before continuing. Then run **Phase 2 — Align**. Focus: surface enumeration, verifiable match.
 7. For `gate`, resolve `validationCommands` through `tools/narrative/state.py gate --role <key>`. If the state file is missing or `validationCommands` is empty, **ABORT** naming the missing field. Recovery: re-run `audit` to populate the state file before continuing. Then run **Phase 3 — Gate**. Focus: verifiable execution.
@@ -39,7 +39,7 @@ Run a staged narrative rewrite: audit drift in narrative content, align project 
 | `concernRequirements` | object | each phase | Map of phase name to the executing role's `concerns` array, written after `roleBindings` is resolved; enforced as a hard gate at phase completion. |
 | `phaseOutputs` | object | each phase | Machine-readable structured artifact written by each phase to state; read by subsequent phases as the authoritative prior-phase output. |
 
-- **Role contract:** [cursor/_core/agent-role.md](../../_core/agent-role.md) — schema, key uniqueness, and canonical `--role` invocation.
+- **Role contract:** [_core/agent-role.md](../../_core/agent-role.md) — schema, key uniqueness, and canonical `--role` invocation.
 - **Role state writes:** At the start of every phase invocation, pass `--role <key>` to the state helper so it writes the resolved key to `roleBindings[phase]` and the resolved role's `concerns` array to `concernRequirements[phase]` before producing the phase output. Reruns overwrite `roleBindings[phase]`, `concernRequirements[phase]`, and `phaseOutputs[phase]` together; do not append history.
 - **Phase output writes:** After a phase emits its structured artifact, write that artifact to `phaseOutputs[phase]` in the state file. `align` must read `phaseOutputs.audit` before producing output. `gate` must read both `phaseOutputs.audit` and `phaseOutputs.align` before producing output. Never rely on chat history or prose outside the state file for prior-phase handoff.
 - **`phaseOutputs` sections:** Each phase writes a structured artifact to `phaseOutputs[phase]`. Sections marked **persisted** are written to the state file and available to downstream phases; sections marked **display-only** are shown to the caller but carry no cross-phase machine-readable contract.

@@ -36,7 +36,7 @@ Keep each command's rubric unique, while learning from every reviewed project.
 - Default mode: learning is enabled.
 - If the prompt includes `no-learn`, `static`, `one-off`, or
   `do not adapt`, run QA normally but skip **Protocol** steps 2–6.
-- In no-learn mode, do not append to `cursor/_functions/quality/show-notes.md`, do not edit target rubric definitions, and do not run the adaptation confirmation flow.
+- In no-learn mode, do not append to `_functions/quality/show-notes.md`, do not edit target rubric definitions, and do not run the adaptation confirmation flow.
 
 ### Protocol
 
@@ -75,7 +75,7 @@ If the user gives no decision or cancels at preview, discard candidates for this
 
 ### Learning governance
 
-- `cursor/_functions/quality/show-notes.md` is the durable append-only log for user-approved QA learning notes.
+- `_functions/quality/show-notes.md` is the durable append-only log for user-approved QA learning notes.
 - Never write QA learning notes to any other path.
 - Evidence required: each candidate must include at least one concrete path
   or symbol from the reviewed project in `notes`.

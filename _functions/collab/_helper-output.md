@@ -118,7 +118,7 @@ Exit 0 on valid input. Exit 1 when the collab is closed, the phase is not `Compl
 
 ### `participant-verify-render`
 
-Writes one atomic three-turn participant-verification sequence. Successful exit emits:
+Writes one atomic three-turn participant-verification sequence. When the last assigned participant completes verification, increments `verification.rounds` by 1. Successful exit emits:
 
 1. `participant verification <completed|failed> for <role>`
 2. `NEXT: Run /collab participant verify for role <role>.` when another participant remains, otherwise `NEXT: Run /collab seal verification for role <reviewer>.`
@@ -169,6 +169,292 @@ Post-write advisories in order:
 
 Exit 0 on success. Exit 1 when the collab is closed, the role is not a participant, unchecked assigned Action Plan items remain (for `completed` status), or touched paths fall outside the role's declared `writeScope`.
 
+## Abort families
+
+Named abort classes that close spec-to-helper gaps not covered by the per-command required-lines tables above. Each entry names the logical module, the triggering condition, and the exact exit-1 message or protocol constraint.
+
+### Module: `speak-render` / `rewrite-speak-render`
+
+**Full-body envelope rejection**
+
+Fires when the excerpt (`--content-file`) contains a hand-authored `<details>` or `</details>` control line, or when the full-body content (`--full-body-file`) contains a `<details>` or `</details>` control line. The helper owns the full-body envelope; callers must not nest additional control lines.
+
+Exit-1 messages (exact):
+
+- Excerpt: `excerpt must not contain hand-authored <details> blocks; use --full-body-file for Full contribution; line <N>`
+- Full body: `full body must not contain hand-authored <details> control lines; the helper owns the Full contribution envelope; line <N>`
+
+**Action Plan shape validation**
+
+Fires when `activePhase == "Action Plan"` and the submitted content has a non-exempt line that does not match the canonical shape, or has no assignment lines after exempt content is stripped. Pre-pass strips HTML comments, blank lines, Markdown headings, and the `EFFORT OVERRIDE:` first line. Abort messages mirror `_invariants.md` Invariant #9 and are the shared validator's sole exit path for both `speak-render` and `rewrite-speak-render`.
+
+Exit-1 messages (exact):
+
+- `ABORT: line N does not match Action Plan shape '- [ ] **<role>:** ...' (Invariant #9, _invariants.md). Offending line: '<line>'. Example: '- [ ] **tw:** Update the route doc.'`
+- `ABORT: Action Plan body contains no assignment lines after exempt content is removed (Invariant #9, _invariants.md). Example: '- [ ] **tw:** Update the route doc.'`
+
+### Module: `seal-state`
+
+**Phase and status guards**
+
+Exit-1 messages (exact):
+
+- `record is closed`
+- `/collab seal verification is valid only in the Completion phase`
+
+### Module: `seal-render`
+
+**Paired-execution-signature double-increment guard**
+
+`seal-render` tracks a `pairedExecutionSignature` alongside the verification round counter. When a seal attempt occurs without any change to execution state since the previous seal, the guard suppresses the round increment, leaving `rounds` unchanged. If `rounds` remains zero after the guard fires (no execution-state change has ever been paired with a seal), the helper aborts:
+
+Exit-1 message (exact): `zero verification rounds; at least one reviewer-executor paired event is required before sealing`
+
+**`seal-verification-archive-protocol-violation`** *(agent-honor-system)*
+
+`--cap-exit archive` is reserved for scenarios where unresolved findings remain at the cap. Using it when participant verification passed cleanly (no findings) is a protocol violation. The helper does not abort — this constraint is agent-honor-system and route-prose-enforced. Violation triggers the rollback condition in `_invariants.md` Invariant #10 (detection remains active).
+
+**Stale revision guard**
+
+Exit-1 message (exact, two lines):
+
+```
+stale registry revision: observed <N>, live <M>
+RESUME: tools/collab/registry.py seal-state --resume <id> <role>
+```
+
+**Role and reviewer guards**
+
+Exit-1 messages (exact):
+
+- `record is closed`
+- `/collab seal verification is valid only in the Completion phase`
+- `verification seal requires an active reviewer role`
+- `reviewer role is not a registered participant; run /collab join --role <reviewer> first`
+- `seal must be authored by the reviewer role; current role: <role>; expected: <reviewer>`
+
+**Sub-state guards**
+
+Exit-1 messages (exact):
+
+- `Completion.verification sub-state is not active; current sub-state: <state>`
+- `participant verification is active; next role: <pending_role>`
+- `verification assessment is active; seal block is immutable; provide --outcome to record a verdict`
+- `verification assessment is not active; current verification.subState: <state>`
+- `verification assessment cannot mutate seal cap-exit; omit --cap-exit when writing a verdict`
+
+**Execution completeness guard**
+
+Exit-1 message (exact): `verification seal requires all execution entries to be completed`
+
+**Round cap guard**
+
+Exit-1 message (exact): `round cap reached; reissue with --cap-exit reopen-action-plan, --cap-exit reopen-handoff, --cap-exit follow-up-collab, or --cap-exit archive`
+
+**Cap-exit argument guards**
+
+Exit-1 messages (exact):
+
+- `invalid cap-exit value <value>; must be one of: reopen-action-plan, reopen-handoff, follow-up-collab, archive`
+- `follow-up-collab cap-exit cannot include assessment outcome fields`
+- `follow-up-collab cap-exit requires --restore-reason, --evidence, and --failure-category`
+- `cap-exit metadata is only valid with --cap-exit follow-up-collab`
+
+**Assessment verdict guards**
+
+Exit-1 messages (exact):
+
+- `verdict outcome is required when writing assessment fields`
+- `assessment verdict requires verificationSeal`
+- `success verdict requires current non-stale verificationSeal; stale: <reason>`
+
+### Module: `handoff-shape`
+
+**writeScope and validationCommands disallowed pattern**
+
+All `writeScope` and `validationCommands` shape violations share one exit-1 template produced by `handoff_abort`:
+
+Exit-1 message template (exact): `ABORT: <field> contains disallowed pattern: <value>`
+
+`<field>` is `writeScope` or `validationCommands`; `<value>` is the rejected value rendered as a string or JSON.
+
+**writeScope triggers:**
+
+- Non-string or blank entry
+- Entry length > 200 characters
+- Absolute path
+- Bare `*` or `**`; path starting with `../`, containing `/../`, or ending with `/..`
+- Normalized path resolves to empty, `.`, or `..`
+- Path component is `''`, `.`, or `..`
+- First path component is `*` or `**`
+- `writeScope` value is not a list or is empty
+- More than 32 entries
+- Duplicate entries after normalization
+- Missing `writeScope` section: `ABORT: writeScope contains disallowed pattern: missing`
+
+**validationCommands triggers:**
+
+- Non-string or blank argument
+- Argument length > 200 characters
+- Shell metacharacter in any argument
+- Command path does not start with `./`
+- Absolute command path
+- Traversal sequences `../`, `/../`, `/..` in any argument
+- Trivial command path `.` or `./`
+- Empty command identifier after `./`
+- `validationCommands` value is not a list or is empty
+- More than 16 command entries
+- More than 16 arguments per command entry
+- JSON parse failure for a command or argument entry
+- Missing `validationCommands` section: `ABORT: validationCommands contains disallowed pattern: missing`
+
+**Handoff state schema validation**
+
+Fires after parsing when the assembled state object does not conform to the schema:
+
+Exit-1 messages (exact):
+
+- `handoff: handoff state must be an object`
+- `handoff: handoff state contains disallowed version field`
+- `handoff: handoff body must be a string when present`
+
+### Module: `participant-verify-state`
+
+**Phase and status guards**
+
+Exit-1 messages (exact):
+
+- `record is closed`
+- `/collab participant verify requires activePhase = Completion`
+- `role must already be a participant: <role>`
+
+**Sub-state, assignment, and turn-lock guards**
+
+Exit-1 messages (exact):
+
+- `participant verification is not the active sub-state; current value: <state>`
+- `role is not assigned to participant verification: <role>`
+- `participant verification turn lock is held by role <pending_role>`
+- `participant verification attempt cap reached for <role>: <attempts>/<cap>`
+
+### Module: `participant-verify-render`
+
+Applies all `participant-verify-state` guards plus the following additional checks.
+
+**Status argument validation**
+
+Exit-1 message (exact): `participant verification status must be one of: completed, failed`
+
+**Stale revision guard**
+
+Exit-1 message (exact, two lines):
+
+```
+stale registry revision: observed <N>, live <M>
+RESUME: tools/collab/registry.py participant-verify-state --resume <id> <role>
+```
+
+**Turn-lock active guard**
+
+Fires when `participant-verify-state` has not been called to acquire the active-stage lock for this role.
+
+Exit-1 message (exact): `participant verification turn lock is not active; run participant-verify-state first for role <role>`
+
+**Touched-path scope guard**
+
+Exit-1 message (exact): `execution touched path outside declared writeScope: <path>`
+
+**Transcript availability guard**
+
+Exit-1 message (exact): `transcript missing: <path>`
+
+### Module: `reopen`
+
+**Phase token validation**
+
+Exit-1 message (exact): `reopen phase must be one of: action-plan, handoff`
+
+**Status and verdict guards**
+
+Exit-1 messages (exact):
+
+- `record is archived`
+- `/collab reopen is valid only after a non-success Completion verdict`
+- `/collab reopen requires a non-success Completion verdict`
+- `/collab reopen phase mismatch: verdict restoreTarget is <target>; expected <expected_token>`
+
+**Transcript availability guard**
+
+Exit-1 message (exact): `transcript missing: <path>`
+
+### Module: `show-verdict`
+
+**Verdict availability guard**
+
+Exit-1 message (exact): `verdict unavailable for target`
+
+### Module: `init` (argument validation)
+
+**Flag parsing guards**
+
+Exit-1 messages (exact):
+
+- `duplicate flag: --agent-id`
+- `agent-id is required`
+- `duplicate flag: --reviewer`
+- `--reviewer requires a role key`
+- `duplicate flag: --preview`
+- `duplicate flag: --no-participant-verification`
+- `unknown flag: <flag>`
+- `<name> is required`
+
+**Registry collision guards**
+
+Exit-1 messages (exact):
+
+- `record already exists: <path>`
+- `registry collision: <id>`
+- `registry collision: <slug>`
+- `registry collision: sequence <N>`
+
+### Module: `contribution-budget`
+
+**Spec integrity guards**
+
+Fire when `_contribution-budget.md` is missing or malformed; abort `speak-render` and `rewrite-speak-render` before word count is evaluated.
+
+Exit-1 messages (exact):
+
+- `contribution budget spec missing: <path>`
+- `contribution budget spec missing word limit: <path>`
+- `contribution budget spec missing exempt class: <class_name>`
+
+`<class_name>` is the alphabetically first missing required key among: `action-plan-checklist`, `conclusion-ratification`, `contribution-full-body`, `effort-override-line`, `moderator-verbatim`.
+
+**Word count enforcement**
+
+Fires when the countable excerpt exceeds the configured word limit.
+
+Exit-1 message (exact): `contribution excerpt is <count> words; limit is <limit>; keep --content-file as a capped standalone excerpt and put complete detail in --full-body-file`
+
+### Module: command-default (registry and target resolution)
+
+Shared abort conditions across all commands that read from the registry.
+
+**Registry availability**
+
+Exit-1 messages (exact):
+
+- `registry missing: <path>`
+- `registry invalid JSON: <path>: <detail>`
+
+**Target resolution**
+
+Exit-1 messages (exact):
+
+- `registry target not found: <target>`
+- `registry activeCollabId is empty`
+
 ## Defect definition
 
 A command has a helper-output defect when any of the following is true:
@@ -178,3 +464,25 @@ A command has a helper-output defect when any of the following is true:
 - Exit code does not match the semantic table above
 - A pre-write advisory line appears after a post-write advisory line
 - A suppressed line appears on a failed-gate output
+
+## Module-to-subcommand map
+
+Maps each documented `## Abort families` module family to its implementing subcommand(s) and key function(s). Most functions reside in `registry.py`; rows that resolve to a sibling helper note the containing module in the Key function(s) column. Use this table to audit spec-to-code alignment without running the helper: check that the abort messages listed in each module section match the exit-1 strings in the named functions.
+
+| Module | Subcommand(s) | Key function(s) |
+|---|---|---|
+| `speak-render` / `rewrite-speak-render` | `speak-render`, `rewrite-speak-render` | `render_speak()`, `render_re_speak()` |
+| `seal-state` | `seal-state` | `seal_state()` |
+| `seal-render` | `seal-render` | `render_seal()` |
+| `handoff-shape` | `speak-render`, `rewrite-speak-render` | `parse_handoff_content()`, `validate_handoff_write_scope()`, `validate_handoff_validation_commands()`, `validate_handoff_state()` |
+| `participant-verify-state` | `participant-verify-state` | `participant_verify_state()` |
+| `participant-verify-render` | `participant-verify-render` | `participant_verify_render()` |
+| `reopen` | `reopen` | `reopen_collab()` |
+| `show-verdict` | `show-verdict` | `show_verdict()` |
+| `init` | `init` | `init_collab()`, `parse_init_tokens()` |
+| `contribution-budget` | `speak-render`, `rewrite-speak-render` | `enforce_contribution_budget()`, `read_budget_spec()` |
+| `command-default` | all commands | `load_registry()`, `resolve_cursor_root()` |
+| `participant-role-files` | all registry-loading commands | `validate_registry()`, `validate_participant_role_files()` |
+| `planned-route-gates` | `validate` | `validate_planned_route_prerequisites()` in `tools/collab/planned_routes.py` |
+
+**How to diff:** For each module row, open the named key function(s) in `registry.py` or the named helper module and compare its `die()` / `sys.exit(1)` call strings against the exit-1 messages listed in the corresponding `## Abort families` module section above. Any string present in one but absent in the other is a spec-drift candidate.

@@ -13,7 +13,7 @@
 
 ## Notes
 
-This document defines the join-time model and harness for each collab role, a generated effort projection, and fallback. It supplements [`_agent-effort.md`](_agent-effort.md) (effort levels) and [`_agent-lifecycle.md`](_agent-lifecycle.md) (lifecycle command timing). For the role schema and roster, see [`cursor/_core/agent-role.md`](../../_core/agent-role.md); for agentId precedence and capture semantics, see [`join.md`](join.md).
+This document defines the join-time model and harness for each collab role, a generated effort projection, and fallback. It supplements [`_agent-effort.md`](_agent-effort.md) (effort levels) and [`_agent-lifecycle.md`](_agent-lifecycle.md) (lifecycle command timing). For the role schema and roster, see [`_core/agent-role.md`](../../_core/agent-role.md); for agentId precedence and capture semantics, see [`join.md`](join.md).
 
 **Authoritative source:** This file is authoritative for join-time model and harness guidance. `_agent-effort.json` is authoritative for effort matrix values; the table below is a generated projection checked by `tools/collab/registry.py audit-effort-matrix`.
 

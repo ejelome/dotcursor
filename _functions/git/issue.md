@@ -24,6 +24,10 @@ Prefill a tracked issue workflow (**`create`**) or run implementation work (**`i
 - **Parameters:** `<create | implement>` — mode keyword (required): `create` prefills issue template only; `implement` writes code and edits files. `<goal>` — brief description of the issue or work (required).
 - **Scope:** Devblog- and playbook-specific bullets apply only when those paths exist and matching project rules load; otherwise omit them.
 - **Conventions:** Types, scopes, branch pattern `<type>-<scope>/<n>-<issue-title-kebab-case>`, PR keywords, and release title `chore(release): merge dev to main` follow [shared-git-commits.mdc](../../_mdc/shared/shared-git-commits.mdc).
+- **Output contract:** `create` always labels its result as either `Issue delivery: prefill` or `Issue delivery: connector-backed`. `prefill` means the route emitted copy-ready issue and PR fields only. `connector-backed` means the route created the issue through an available tracker connector and must include the created issue URL and number before Phase 2 fields. Callers must branch on this delivery label, not on prose.
+- **Owner metadata:** When the caller supplies an owner role, assignee login, or Action Plan role label, preserve it in the Phase 1 metadata block as `Owner:`. Map `Owner:` to `Assignees:` only when a concrete tracker login is directly readable from input or repository metadata; otherwise leave `Assignees:` blank and keep `Owner:` for downstream routing.
+- **`_requires:` preservation:** If `<goal>` or caller context contains `_requires: #N` or `_requires: #N #M`, copy the exact `_requires:` line into the create handoff block and the implement structured input. Do not translate these numbers to issue IDs; they are source Action Plan item references.
+- **Implement handoff shape:** `implement` accepts the create handoff block as structured input. The block shape is title, optional `Issue: #<n>`, optional `Owner: <role-or-login>`, optional `_requires: #N...`, then `requirements:` with checklist-derived bullets. Preserve all present fields in the grounded implementation plan before editing files.
 - **Issue labels (inventory):** For **`Labels:`** in **Create — Phase 1**, use comma-separated names that are directly readable from the active repo context: existing issue or PR templates, repo docs, local metadata, or user-provided label inventory. Match spelling, casing, and spaces exactly. Use the issue-label rule of thumb in [shared-git-commits.mdc](../../_mdc/shared/shared-git-commits.mdc) only when those label names are visible in context. If no label inventory is directly readable, leave `Labels:` empty and say why. Do not invent labels. Do not require a network lookup.
 - **Acceptance criteria:** Use three to five `- [ ]` lines; text after each marker stays ≤ 80 characters.
 - **Headings for `create` output:** Use these `###` titles **above** each block (never inside paste fences): **Phase 1 — Create issue**, **Phase 2 — Implement issue**, **Phase 3 — branch into `dev`**, **Phase 4 — dev into main**. They pair with **Create — Phase 1–4** bullets below.
@@ -32,6 +36,8 @@ Prefill a tracked issue workflow (**`create`**) or run implementation work (**`i
 ```text
 <issue title>
 
+Issue delivery: prefill
+Owner: <owner>
 Assignees: <assignee>
 Labels: <label>
 Milestone: <milestone>
@@ -55,6 +61,9 @@ Projects: <project>
 
 <issue title>
 
+Issue: #<n>
+Owner: <owner>
+_requires: #<action-plan-item>
 requirements:
 - <criteria>
 ```
@@ -107,11 +116,13 @@ Files ≤300 lines · functions ≤80 · max 3 params · branch from dev · atom
 <context>
 Stack {{stack}} · branch {{type}}-{{scope}}/{{n}}-{{issue-title-kebab-case}}
 Commits per shared-git-commits.mdc · PR {{type}}({{scope}}): {{title}}
+Owner {{owner}} · Requires {{requires}}
 </context>
 
 <task>
 {{role}}: goal is {{want}}; outcome is {{benefit}}.
 Type {{type}} · Issue #{{n}}: {{title}} · Scope {{scope}} · Goal: {{goal}}
+{{requires}}
 </task>
 
 <requirements>{{requirements}}</requirements>

@@ -14,6 +14,41 @@ read_json_field() {
   python3 -c 'import json,sys; data=json.load(sys.stdin); print(data["'"$1"'"])'
 }
 
+seed_paired_verification_round() {
+  local slug="$1"
+  python3 - "$REGISTRY" "$slug" <<'PY'
+import base64
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+slug = sys.argv[2]
+data = json.loads(path.read_text())
+entry = next(item for item in data['collabs'] if item['slug'] == slug or item['id'] == slug)
+entries = []
+for role, state in sorted(entry.get('execution', {}).items()):
+    row = {
+        'role': role,
+        'entryId': state.get('entryId') or f"{role}-execution",
+        'status': state.get('status'),
+        'date': state.get('date'),
+        'validationResult': state.get('validationResult'),
+        'validationScope': state.get('validationScope'),
+        'touchedPaths': list(state.get('touchedPaths', [])),
+    }
+    if state.get('agentId'):
+        row['agentId'] = state.get('agentId')
+    entries.append(row)
+signature = base64.urlsafe_b64encode(
+    json.dumps(entries, sort_keys=True, separators=(',', ':')).encode()
+).decode().rstrip('=')
+entry['verification']['rounds'] = 1
+entry['verification']['pairedExecutionSignature'] = signature
+path.write_text(json.dumps(data, indent=2) + '\n')
+PY
+}
+
 init_target() {
   local title="$1"
   local slug="$2"
@@ -111,6 +146,9 @@ assert entry['verification']['rounds'] == 0, entry['verification']
 assert 'pairedExecutionSignature' not in entry['verification'], entry['verification']
 PY
 
+seed_paired_verification_round "$TARGET"
+state="$("$ROOT/tools/collab/registry.py" seal-state "$TARGET" pa)"
+revision="$(read_json_field registryRevision <<<"$state")"
 "$ROOT/tools/collab/registry.py" seal-render "$TARGET" pa --observed-revision "$revision" --caller-role pa >/dev/null
 python3 - "$REGISTRY" <<'PY'
 import json
@@ -225,10 +263,11 @@ entry = next(item for item in data['collabs'] if item['slug'] == 'verification-c
 entry['verification']['cap'] = 1
 path.write_text(json.dumps(data, indent=2) + '\n')
 PY
+seed_paired_verification_round "$CAP_TARGET"
 cap_state="$("$ROOT/tools/collab/registry.py" seal-state "$CAP_TARGET" pa)"
 cap_revision="$(read_json_field registryRevision <<<"$cap_state")"
 cap_rounds="$(read_json_field verificationRounds <<<"$cap_state")"
-if [[ "$cap_rounds" != "0" ]]; then
+if [[ "$cap_rounds" != "1" ]]; then
   printf 'FAIL: cap-exit seal-state spent a verification round\n%s\n' "$cap_state" >&2
   exit 1
 fi
@@ -246,8 +285,8 @@ import sys
 from pathlib import Path
 
 entry = next(item for item in json.loads(Path(sys.argv[1]).read_text())['collabs'] if item['slug'] == 'verification-cap-exit')
-assert entry['verification']['rounds'] == 0, entry['verification']
-assert 'pairedExecutionSignature' not in entry['verification'], entry['verification']
+assert entry['verification']['rounds'] == 1, entry['verification']
+assert 'pairedExecutionSignature' in entry['verification'], entry['verification']
 PY
 "$ROOT/tools/collab/registry.py" seal-render "$CAP_TARGET" pa --observed-revision "$cap_revision" --cap-exit reopen-handoff --caller-role pa >/dev/null
 python3 - "$REGISTRY" <<'PY'

@@ -71,7 +71,7 @@ Assessment must emit even when no actionable cause is identifiable: `nullResult:
 
 ## Round definition
 
-A verification round is a paired-event unit. The **reviewer-event side** closes the round; `seal_render` increments the count atomically when writing the seal object or cap-exit row. `pairedExecutionSignature` guards against double-increment on single-client retry — if `seal_render` is retried after a transient registry write failure, the signature match prevents a second increment. The count is not derived from transcript parsing; `seal_state` exposes the current value as a non-mutating projection.
+A verification round is a paired-event unit. The round is recorded when the last participant verification completes. `participant_verify_render` increments the count atomically at the all-participants-completed transition; `pairedExecutionSignature` guards against double-increment on single-client retry — if `participant_verify_render` is retried after a transient registry write failure, the signature match prevents a second increment. `seal_render` checks that `verificationRounds > 0` as defense-in-depth only; it does not increment the count. The count is not derived from transcript parsing; `seal_state` exposes the current value as a non-mutating projection.
 
 **Zero-round rule:** A seal over zero verification rounds is a hard ABORT. At least one complete reviewer-executor paired event must be recorded before the seal is accepted. There is no advisory or warning path for the zero-round case.
 

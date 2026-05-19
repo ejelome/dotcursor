@@ -80,7 +80,8 @@ registry = Path(sys.argv[1])
 data = json.loads(registry.read_text())
 entry = next(item for item in data['collabs'] if item['slug'] == 'structured-handoff')
 state = entry['handoff']['roles']['pe']
-assert state['schemaVersion'] == 1
+assert 'schema' + 'Version' not in entry['handoff']
+assert 'schema' + 'Version' not in state
 assert state['writeScope'] == ['tools/collab/registry.py', 'tests/tools/collab/registry.py']
 assert state['validationCommands'] == [['./tools/cursor/audit.sh'], ['./tests/run.sh']]
 assert '_requires: #1_' in state['body']

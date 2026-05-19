@@ -37,7 +37,7 @@ Authority is strict and ordered:
    - Runtime invocation surface at `~/.cursor/*` (this checkout, developed in place)
    - Optional project overlay plane: project-local `.cursor/` in consumer repos
    - Ignored runtime state (not source): `.claude/`, `projects/`, `extensions/`, `ide_state.json`, `skills-cursor/`, `plugins/`, `skills/`, `plans/`, `subagents/`
-   - User-scope collab state root (outside the repo): `$HOME/.collabs/<projectId>/` — live registry and records for the repo marker in `.collab.json` (see § 7 Collab State)
+   - User-scope collab state root (outside the repo): `$HOME/.collabs/<projectId>/` — live registry and records for the repo marker in `.collab.json` (see § 6 Collab State)
 
 ## 3) Output Chain Contract
 
@@ -87,15 +87,7 @@ This repo projects runtime state under `~/.cursor/*` and generated mirrors under
 
 No project-local `.cursor/` overlay is owned by this repo. Consumer repos that carry their own `.cursor/` overlay must validate it through that repo's own gates; this repo does not gate overlays from upstream.
 
-## 6) Contract Versioning
-
-Contract version: `0.2.0`.
-
-- **Patch:** wording or validation tightening with no behavioral change.
-- **Minor:** additive contract surface; backward compatible.
-- **Major:** precedence, path, or ownership changes requiring migration.
-
-## 7) Collab State
+## 6) Collab State
 
 Primary collab state lives outside the repository at the user-scope collab state root `$HOME/.collabs/<projectId>/`, bound by the tracked repo marker `.collab.json`. The project id value is opaque and follows git history (rename, fork). Schema and binding rules: [`_functions/collab/_identity-contract.md`](_functions/collab/_identity-contract.md).
 
@@ -107,7 +99,7 @@ Primary collab state lives outside the repository at the user-scope collab state
 
 The `git clean -Xdf` data-loss risk that applied to repo-local `.collabs/` storage is retired: primary collab state is at `$HOME/.collabs/<projectId>/`, outside the repository tree.
 
-## 8) No-Deprecation Principle
+## 7) No-Deprecation Principle
 
 Every contract surface in `~/.cursor` is authored as a fresh feature. There is no support for deprecation paths, legacy behavior, or backwards compatibility shims.
 
@@ -117,7 +109,7 @@ Every contract surface in `~/.cursor` is authored as a fresh feature. There is n
 
 This principle applies to every layer: public routers (`commands/*.md`), private route functions (`_functions/**/*.md`), core invariants (`_core/*.md`), schema blocks (`cursor-flag`, `cursor-arg`, `cursor-gate`), and helper interfaces (`tools/collab/registry.py`, `tools/cursor/*`).
 
-## 9) Reporting Contract
+## 8) Reporting Contract
 
 When work completes, report:
 
@@ -127,3 +119,23 @@ When work completes, report:
 - Any unresolved install or patch placeholder markers remaining in installed scaffold files (as defined in `_functions/agent/install.md` and `_functions/agent/patch.md`).
 - Any residual risks: known blockers in `_tests/*`, deferred test additions, or boundary cases (e.g. the documented `agent-honor-system` limit in `_tests/_tests.md`) that affected the run.
 - Any uncommitted state in ignored runtime directories (`.claude/`, `projects/`, etc.) or the user-scope collab state root that influenced behavior during the run.
+
+## 9) Contract History
+
+Contract history is recorded from `0.3.0` forward; pre-`0.3.0` entries are absent because this section was introduced at `0.3.0` and those contracts predate it — their absence here does not archive or retire them.
+
+**0.4.0** (2026-05-19): Five inter-bump structural changes recorded — § 10 Workflow Models added as additive contract surface (seal-terminal committed as default, issue-terminal gated behind `planned_routes.py`); verification round increment relocated from `seal_render` to `participant_verify_render` as the sole owner; `_planned-routes.md` and `_registry-state.md` sibling specs added; first honor-system promotion recorded in `_honor-system-audit.md` (`seal-verification-zero-rounds` clause); `tools/collab/planned_routes.py` extracted from `registry.py` as the forward-defensive issue-terminal gate.
+
+**0.3.0** (2026-05-19): Registry identity binding enforced — `projectId` rebinding to a different user-scope collab state root is a hard rejection in `tools/collab/registry.py`; participant `agentId` rebinding detection added; state root resolution extracted into `tools/collab/registry_state.py`; issue-bridge gate diagnostics documented in `tools/collab/registry.py`; helper output abort families in `_functions/collab/_helper-output.md` expanded to exact-exit-1-message depth for existing helpers.
+
+## 10) Workflow Models
+
+A **workflow model** determines which artifact serves as the terminal closing transaction for a collab record.
+
+**Committed default: seal-terminal.** The collab record is the terminal artifact. A collab closes when `verificationSeal` is recorded and `verdict.outcome == success`. This is the only implemented model.
+
+**Selectable alternative: issue-terminal.** An issue-terminal model closes the record by publishing the collab output to an external issue tracker rather than by sealing the record. Selection is per-collab at `/collab init --terminal seal|issue` (not yet implemented; blocked by the prerequisite gate below).
+
+**Switching the default is a contract rewrite under § 7.** No deprecation path. The new contract is the complete specification. When the committed default changes, write the new contract from scratch.
+
+**Forward-defensive gate.** `tools/collab/planned_routes.py` enforces that `/collab export-issues` cannot land without the init-side selection mechanism as a prerequisite. Any route that would enable issue-terminal behavior must have the selection contract specified and the gate updated before it enters scope. See `_functions/collab/_planned-routes.md` for the gate's abort family and prerequisite set.

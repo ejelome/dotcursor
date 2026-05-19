@@ -126,7 +126,7 @@ def strip_allowed_inline_code(line: str) -> str:
             return ""
         if value.endswith((".md", ".mdc", ".json", ".sh", ".py")):
             return ""
-        if "cursor/_roles/" in value or value.startswith("_roles/"):
+        if value.startswith("_roles/"):
             return ""
         return value
 

@@ -4,7 +4,7 @@ Deterministic QA for generated Cursor artifacts projected to `~/.cursor/_generat
 
 ## Procedure
 
-1. Load every `*.md` under the tracked source directory `cursor/_generated/`.
+1. Load every `*.md` under the tracked source directory `_generated/`.
 2. Validate the source roster is exact.
 3. Validate each generated file has one H1 and is <= 250 lines.
 4. Validate each generated file names its generator and source-of-truth pattern.
@@ -12,7 +12,7 @@ Deterministic QA for generated Cursor artifacts projected to `~/.cursor/_generat
 
 ## Required roster
 
-Tracked generated files under `cursor/_generated/`:
+Tracked generated files under `_generated/`:
 
 - `collab-lifecycle.md`
 - `command-reference.md`

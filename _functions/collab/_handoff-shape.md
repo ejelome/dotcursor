@@ -1,6 +1,6 @@
 # Structured Handoff deliverable shape
 
-This document specifies the v1 schema for structured Handoff contributions appended by `/collab speak` in the `Handoff` phase. Structured Handoff state is registry-owned; the transcript `## Handoff` section is a helper-rendered mirror.
+This document specifies the structured Handoff schema for contributions appended by `/collab speak` in the `Handoff` phase. Structured Handoff state is registry-owned; the transcript `## Handoff` section is a helper-rendered mirror.
 
 **Architectural grounding:**
 - **Invariant #2 (registry as source of truth; transcript as human ledger):** Registry is the authoritative source for command state, including Handoff deliverable data. The transcript `## Handoff` section mirrors selected registry fields; it is generated from registry state and must not be hand-edited.
@@ -19,16 +19,14 @@ This document specifies the v1 schema for structured Handoff contributions appen
 
 ## Notes
 
-**v1 field set**
+**Field set**
 
-A v1 Handoff contribution declares two fields:
+A Handoff contribution declares two fields:
 
 | Field | Type | Description |
 |---|---|---|
 | `writeScope` | array of glob strings | Allowed-path globs for Completion execution; consumed by `execute-spawn --scope` and `execution --touched-path`. |
 | `validationCommands` | array of argv arrays | Bounded commands to run after Completion; each entry is an argv array, not a shell string. |
-
-`schemaVersion: 1` is stored alongside these fields in registry state.
 
 **writeScope**
 
@@ -39,10 +37,6 @@ Each entry is a glob string matching one or more repository paths. Entries must 
 Each entry is an argv array: `["./tools/cursor/audit.sh"]`, `["./tests/run.sh"]`, or `["./some-test.sh", "--flag"]`. Complex validation logic lives in repo-source scripts; `validationCommands` invokes those scripts. Registry content carries bounded invocations only; the scripts carry the logic and are subject to normal code review.
 
 Rejection message format: `ABORT: validationCommands contains disallowed pattern: <value>`. The exact rejected value is named. Rejection triggers: shell metacharacters, shell-string form (instead of argv array), unsafe or absolute paths, empty command arrays, and overlong entries.
-
-**schemaVersion rule**
-
-Optional field additions stay compatible with `schemaVersion: 1`. Bump `schemaVersion` only when an existing field's shape changes (not when adding optional fields).
 
 **Mirror-render idempotency**
 

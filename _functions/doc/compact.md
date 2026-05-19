@@ -25,7 +25,7 @@ Compact a Markdown document while preserving all facts, structure, and constrain
 ## Notes
 
 - **Parameters:** `<path>` — Markdown file path (required); attachment is equivalent.
-- **Force flag:** `--force` is ineligible for this route per [cursor/_core/command-argument.md](../../_core/command-argument.md). Step 4e is a default output-mode choice, not an artifact-conflict guard; `--force` on this route would teach users that the flag means "change behavior" rather than "overwrite an artifact."
+- **Force flag:** `--force` is ineligible for this route per [_core/command-argument.md](../../_core/command-argument.md). Step 4e is a default output-mode choice, not an artifact-conflict guard; `--force` on this route would teach users that the flag means "change behavior" rather than "overwrite an artifact."
 - **TOC:** Do not add by default. Preserve an existing TOC unless the user asks to drop it. Add only when the user asks; follow **`shared-docs-toc.mdc`**; place after title and short intro when present.
 - Do not add content beyond what the original supports.
 

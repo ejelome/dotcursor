@@ -1,5 +1,4 @@
 {
-  "version": "1",
   "levels": {
     "low": "Routing and moderation only; no synthesis or generation required",
     "medium": "Standard contribution; analysis and synthesis without deep implementation",

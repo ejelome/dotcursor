@@ -7,11 +7,11 @@ import datetime as dt
 import fcntl
 import fnmatch
 import hashlib
+import html
 import json
 import os
 import re
 import sys
-import uuid
 import webbrowser
 from contextlib import contextmanager
 from collections.abc import Callable
@@ -24,6 +24,14 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from tools.cursor.roles import load_role, participant_row, roles_command
+from tools.collab.planned_routes import validate_issue_bridge_block, validate_planned_route_prerequisites
+from tools.collab.registry_state import (
+    PROJECT_ID_RE,
+    assert_registry_project_binding,
+    project_metadata_from_identity,
+    resolve_default_registry_path,
+    sync_registry_project_metadata,
+)
 
 
 PHASES = ['Audit', 'Discussion', 'Conclusion', 'Action Plan', 'Handoff', 'Completion']
@@ -49,8 +57,7 @@ ALLOWED_VERDICT_OUTCOMES = {'success', 'incomplete', 'failed'}
 ALLOWED_VERDICT_RESTORE_TARGETS = {'Action Plan', 'Handoff'}
 ALLOWED_CAP_EXITS = {'reopen-action-plan', 'reopen-handoff', 'follow-up-collab', 'archive'}
 DEFAULT_VERIFICATION_CAP = 3
-HANDOFF_SCHEMA_VERSION = 1
-VERIFICATION_SEAL_SCHEMA_VERSION = 1
+DISALLOWED_VERSION_FIELD = 'schema' + 'Version'
 MAX_HANDOFF_SCOPE_COUNT = 32
 MAX_HANDOFF_SCOPE_LENGTH = 200
 MAX_VALIDATION_COMMANDS = 16
@@ -62,12 +69,9 @@ DEFAULT_REVIEWER_OPTIONAL_PHASES = ['Discussion']
 INVALID_AGENT_ID_ALTERNATIVES = {'n/a', 'unspecified'}
 CALLER_DECLINED_AGENT_ID = 'caller-declined'
 DEFAULT_OPEN_ROSTER_EFFORT = 'medium'
-PROJECT_ID_FILENAME = '.collab.json'
-STATE_HOME_ENV = 'CURSOR_COLLAB_STATE_HOME'
-DEFAULT_STATE_HOME = Path.home() / '.collabs'
-PROJECT_ID_RE = re.compile(r'^[a-z0-9][a-z0-9-]{7,127}$')
 STALE_LOCK_SECONDS = 24 * 60 * 60
-RESOLVED_PROJECT_IDENTITY: dict | None = None
+
+
 def resolve_cursor_root() -> Path:
     configured = os.environ.get('CURSOR_CONFIG_ROOT')
     if configured:
@@ -151,112 +155,6 @@ def die(message: str) -> None:
     raise SystemExit(message)
 
 
-def find_project_identity_path(start: Path | None = None) -> Path | None:
-    current = (start or Path.cwd()).resolve()
-    for directory in [current, *current.parents]:
-        identity_path = directory / PROJECT_ID_FILENAME
-        if identity_path.exists():
-            return identity_path
-    return None
-
-
-def read_project_identity(path: Path) -> dict:
-    try:
-        data = json.loads(path.read_text())
-    except json.JSONDecodeError as exc:
-        die(f'project identity invalid JSON: {path}: {exc}')
-    if not isinstance(data, dict):
-        die(f'project identity must be an object: {path}')
-    schema_version = data.get('schemaVersion')
-    if schema_version != 1:
-        die(f'project identity schemaVersion must be 1: {path}')
-    project_id = data.get('projectId')
-    if not isinstance(project_id, str) or not PROJECT_ID_RE.match(project_id):
-        die(f'project identity projectId must be an opaque lowercase id: {path}')
-    label = data.get('label')
-    if label is not None and (not isinstance(label, str) or not label.strip()):
-        die(f'project identity label must be a non-empty string when present: {path}')
-    state = data.get('state')
-    if state is not None and not isinstance(state, dict):
-        die(f'project identity state must be an object when present: {path}')
-    return data
-
-
-def write_project_identity(project_root: Path, label: str | None = None) -> dict:
-    project_root.mkdir(parents=True, exist_ok=True)
-    identity_path = project_root / PROJECT_ID_FILENAME
-    if identity_path.exists():
-        return read_project_identity(identity_path)
-    project_id = uuid.uuid4().hex
-    data = {
-        'schemaVersion': 1,
-        'projectId': project_id,
-        'label': label or project_root.name or 'cursor-project',
-        'state': {
-            'mode': 'shared',
-            'isolation': 'opt-in',
-        },
-    }
-    identity_path.write_text(json.dumps(data, indent=2) + '\n')
-    return data
-
-
-def collab_state_home() -> Path:
-    configured = os.environ.get(STATE_HOME_ENV)
-    if configured:
-        return Path(configured).expanduser().resolve()
-    return DEFAULT_STATE_HOME
-
-
-def state_root_for_project(project_id: str) -> Path:
-    return collab_state_home() / project_id
-
-
-def project_metadata_from_identity(identity: dict | None = None) -> dict | None:
-    source = identity if identity is not None else RESOLVED_PROJECT_IDENTITY
-    if not isinstance(source, dict):
-        return None
-    project_id = source.get('projectId')
-    if not isinstance(project_id, str) or not project_id.strip():
-        return None
-    label = source.get('label')
-    if not isinstance(label, str) or not label.strip():
-        label = 'cursor-project'
-    return {'projectId': project_id, 'label': label.strip()}
-
-
-def sync_registry_project_metadata(data: dict) -> None:
-    metadata = project_metadata_from_identity()
-    if metadata is not None:
-        data['project'] = metadata
-
-
-def resolve_default_registry_path(command: str | None) -> tuple[Path, bool]:
-    global RESOLVED_PROJECT_IDENTITY
-    project_root = Path.cwd().resolve()
-    identity_path = find_project_identity_path(project_root)
-
-    if identity_path is None and command == 'init':
-        identity = write_project_identity(project_root)
-        identity_path = project_root / PROJECT_ID_FILENAME
-    elif identity_path is not None:
-        identity = read_project_identity(identity_path)
-        project_root = identity_path.parent
-    else:
-        die(f'project marker missing: {PROJECT_ID_FILENAME}; run /collab init from the project root')
-
-    RESOLVED_PROJECT_IDENTITY = identity
-    state_root = state_root_for_project(identity['projectId'])
-    label_path = state_root / 'label'
-    metadata = project_metadata_from_identity(identity)
-    if metadata:
-        current = metadata['label'] + '\n'
-        if not label_path.exists() or label_path.read_text() != current:
-            state_root.mkdir(parents=True, exist_ok=True)
-            label_path.write_text(current)
-    return state_root / 'registry.json', True
-
-
 def load_registry(path: Path) -> dict:
     if not path.exists():
         die(f'registry missing: {path}')
@@ -265,6 +163,7 @@ def load_registry(path: Path) -> dict:
     except json.JSONDecodeError as exc:
         die(f'registry invalid JSON: {path}: {exc}')
     validate_registry(data, path)
+    assert_registry_project_binding(data, path)
     return data
 
 
@@ -314,7 +213,7 @@ def registry_lock(path: Path):
 
 def load_registry_or_bootstrap(path: Path) -> dict:
     if not path.exists():
-        data = {'schemaVersion': 1, 'activeCollabId': None, 'collabs': []}
+        data = {'activeCollabId': None, 'collabs': []}
         sync_registry_project_metadata(data)
         return data
     data = load_registry(path)
@@ -778,6 +677,14 @@ def completed_execution_unchecked_items(entry: dict, transcript: str) -> list[di
     return violations
 
 
+def validate_participant_role_files(role_keys: list[str], roles_dir: Path, source: str) -> None:
+    for role in role_keys:
+        try:
+            load_role(roles_dir, role)
+        except SystemExit as exc:
+            die(f'{source}: participants role file unreadable for {role}: {roles_dir / f"{role}.json"}: {exc}')
+
+
 def handoff_abort(field: str, value: object) -> None:
     if isinstance(value, str):
         rendered = value
@@ -890,19 +797,17 @@ def validate_handoff_validation_commands(value: object) -> list[list[str]]:
     return [normalize_validation_command_entry(item) for item in value]
 
 
-def validate_handoff_state(value: object, source: str) -> dict:
+def validate_handoff_state(value: object, source: str, reject_version_field: bool = True) -> dict:
     if not isinstance(value, dict):
         die(f'{source}: handoff state must be an object')
-    schema_version = value.get('schemaVersion')
-    if schema_version != HANDOFF_SCHEMA_VERSION:
-        die(f'{source}: handoff schemaVersion must be {HANDOFF_SCHEMA_VERSION}')
+    if reject_version_field and DISALLOWED_VERSION_FIELD in value:
+        die(f'{source}: handoff state contains disallowed version field')
     write_scope = validate_handoff_write_scope(value.get('writeScope'))
     validation_commands = validate_handoff_validation_commands(value.get('validationCommands'))
     body = value.get('body')
     if body is not None and not isinstance(body, str):
         die(f'{source}: handoff body must be a string when present')
     normalized = dict(value)
-    normalized['schemaVersion'] = HANDOFF_SCHEMA_VERSION
     normalized['writeScope'] = write_scope
     normalized['validationCommands'] = validation_commands
     return normalized
@@ -1509,8 +1414,8 @@ def validate_registry(data: dict, path: Path | None = None) -> None:
     old_root_keys = sorted(OLD_ROOT_KEYS.intersection(data))
     if old_root_keys:
         die(f'{source}: old registry keys are not allowed: {old_root_keys}')
-    if data.get('schemaVersion') != 1:
-        die(f'{source}: schemaVersion must be 1')
+    if DISALLOWED_VERSION_FIELD in data:
+        die(f'{source}: root contains disallowed version field')
     revision = data.get('revision', 0)
     if not isinstance(revision, int) or revision < 0:
         die(f'{source}: revision must be a non-negative integer when present')
@@ -1604,6 +1509,7 @@ def validate_registry(data: dict, path: Path | None = None) -> None:
         participant_role_keys = [p['role'] for p in participants]
         if len(set(participant_role_keys)) != len(participant_role_keys):
             die(f'{source}: participants must not contain duplicate roles')
+        validate_participant_role_files(participant_role_keys, DEFAULT_ROLES_DIR, source)
         if moderatorRole not in participant_role_keys:
             die(f'{source}: moderatorRole must be listed in participants')
 
@@ -1734,8 +1640,8 @@ def validate_registry(data: dict, path: Path | None = None) -> None:
         if verification_seal is not None:
             if not isinstance(verification_seal, dict):
                 die(f'{source}: verificationSeal must be an object when present')
-            if verification_seal.get('schemaVersion') != VERIFICATION_SEAL_SCHEMA_VERSION:
-                die(f'{source}: verificationSeal.schemaVersion must be {VERIFICATION_SEAL_SCHEMA_VERSION}')
+            if collab_id == active_id and DISALLOWED_VERSION_FIELD in verification_seal:
+                die(f'{source}: verificationSeal contains disallowed version field')
             observed = verification_seal.get('observedRevision')
             if not isinstance(observed, int) or observed < 0:
                 die(f'{source}: verificationSeal.observedRevision must be a non-negative integer')
@@ -1779,8 +1685,8 @@ def validate_registry(data: dict, path: Path | None = None) -> None:
         if handoff is not None:
             if not isinstance(handoff, dict):
                 die(f'{source}: handoff must be an object when present')
-            if handoff.get('schemaVersion') != HANDOFF_SCHEMA_VERSION:
-                die(f'{source}: handoff schemaVersion must be {HANDOFF_SCHEMA_VERSION}')
+            if collab_id == active_id and DISALLOWED_VERSION_FIELD in handoff:
+                die(f'{source}: handoff contains disallowed version field')
             handoff_roles = handoff.get('roles')
             if not isinstance(handoff_roles, dict):
                 die(f'{source}: handoff roles must be an object when present')
@@ -1789,7 +1695,7 @@ def validate_registry(data: dict, path: Path | None = None) -> None:
                     die(f'{source}: handoff role keys must be non-empty strings')
                 if role not in participant_role_keys:
                     die(f'{source}: handoff role must already be a participant: {role}')
-                validate_handoff_state(state, f'{source}: handoff.{role}')
+                validate_handoff_state(state, f'{source}: handoff.{role}', reject_version_field=collab_id == active_id)
 
         if collab_id in collab_map:
             die(f'{source}: duplicate collab id: {collab_id}')
@@ -3201,7 +3107,6 @@ def parse_handoff_content(content: str) -> dict:
     if 'validationCommands' not in sections:
         handoff_abort('validationCommands', 'missing')
     state = {
-        'schemaVersion': HANDOFF_SCHEMA_VERSION,
         'writeScope': parse_write_scope_section(sections['writeScope']),
         'validationCommands': parse_validation_commands_section(sections['validationCommands']),
         'body': '\n'.join(render_content_for_transcript(content)).rstrip('\n'),
@@ -3210,8 +3115,7 @@ def parse_handoff_content(content: str) -> dict:
 
 
 def set_handoff_state(entry: dict, role: str, state: dict) -> None:
-    handoff = entry.setdefault('handoff', {'schemaVersion': HANDOFF_SCHEMA_VERSION, 'roles': {}})
-    handoff['schemaVersion'] = HANDOFF_SCHEMA_VERSION
+    handoff = entry.setdefault('handoff', {'roles': {}})
     roles = handoff.setdefault('roles', {})
     if not isinstance(roles, dict):
         die('handoff roles must be an object')
@@ -4388,7 +4292,6 @@ def seal_snapshot(
     follow_up: dict | None = None,
 ) -> dict:
     seal = {
-        'schemaVersion': VERIFICATION_SEAL_SCHEMA_VERSION,
         'observedRevision': observed_revision,
         'executionEntries': active_execution_entries(entry),
         'validationScopes': validation_scopes_for_execution(entry),
@@ -4692,6 +4595,7 @@ def participant_verify_render(
         rendered = append_participant_verify_block(rendered, role, 'remediation', remediation_content, rendered_timestamp, agent_line)
         rendered = append_participant_verify_block(rendered, role, 'final-audit', final_audit_content, rendered_timestamp)
         if status == 'completed' and all_participant_verification_completed(entry):
+            record_verification_round_for_execution(entry, verification)
             verification['subState'] = 'seal'
         rendered, header_changed = render_managed_header_text(rendered, entry, DEFAULT_ROLES_DIR)
         print_header_overwrite(header_changed)
@@ -4752,6 +4656,133 @@ def assessment_next_line(entry: dict, verdict: dict) -> str:
     target = verdict.get('restoreTarget', 'Action Plan')
     phase_token = 'handoff' if target == 'Handoff' else 'action-plan'
     return f'NEXT: Moderator should run /collab reopen {phase_token} {entry["id"]}.'
+
+
+def verdict_reopen_command(entry: dict, verdict: dict) -> str:
+    target = verdict.get('restoreTarget', 'Action Plan')
+    phase_token = 'handoff' if target == 'Handoff' else 'action-plan'
+    return f'/collab reopen {phase_token} {entry["id"]}'
+
+
+def evidence_list(evidence: dict, key: str) -> str:
+    values = evidence.get(key)
+    if not isinstance(values, list) or not values:
+        return '[]'
+    return json.dumps(values, ensure_ascii=True, separators=(',', ':'))
+
+
+def affected_summary(evidence: dict) -> str:
+    pieces: list[str] = []
+    for key in ('committedPaths', 'executionEntryIds', 'transcriptIds'):
+        values = evidence.get(key)
+        if isinstance(values, list) and values:
+            pieces.append(f'{key}={json.dumps(values, ensure_ascii=True, separators=(",", ":"))}')
+    return '; '.join(pieces) if pieces else 'none'
+
+
+def next_reviewer_findings_counter(transcript: str) -> int:
+    highest = 0
+    for line in transcript.splitlines():
+        match = ANCHOR_RE.match(line.strip())
+        if not match:
+            continue
+        anchor = match.group('anchor')
+        if not anchor.startswith('reviewer-findings-'):
+            continue
+        suffix = anchor[len('reviewer-findings-'):]
+        if suffix.isdigit():
+            highest = max(highest, int(suffix))
+    return highest + 1
+
+
+def latest_reviewer_findings_anchor(transcript: str) -> str | None:
+    latest: tuple[int, str] | None = None
+    for line in transcript.splitlines():
+        match = ANCHOR_RE.match(line.strip())
+        if not match:
+            continue
+        anchor = match.group('anchor')
+        if not anchor.startswith('reviewer-findings-'):
+            continue
+        suffix = anchor[len('reviewer-findings-'):]
+        if not suffix.isdigit():
+            continue
+        ordinal = int(suffix)
+        if latest is None or ordinal > latest[0]:
+            latest = (ordinal, anchor)
+    return latest[1] if latest else None
+
+
+def append_reviewer_findings_block(
+    transcript: str,
+    entry: dict,
+    role: str,
+    verdict: dict,
+    timestamp: str,
+    next_line: str,
+) -> str:
+    if verdict.get('outcome') == 'success':
+        return transcript
+    evidence = verdict.get('evidence') if isinstance(verdict.get('evidence'), dict) else {}
+    failure_category = verdict.get('failureCategory') or 'uncategorized'
+    restore_target = verdict.get('restoreTarget', 'Action Plan')
+    restore_reason = verdict.get('restoreReason', '')
+    anchor = f'reviewer-findings-{next_reviewer_findings_counter(transcript)}'
+    command = verdict_reopen_command(entry, verdict)
+    block = [
+        '',
+        f'<a name="{anchor}"></a>',
+        '<details>',
+        f'<summary>{html.escape(role)} · reopen brief ({html.escape(verdict["outcome"])}, {html.escape(failure_category)})</summary>',
+        f'<p><em>{timestamp}</em></p>',
+        CONTENT_ONLY_GUARD,
+        '',
+        f'restoreReason: {restore_reason}',
+        f'restoreTarget: {restore_target}',
+        f'failureCategory: {failure_category}',
+        'evidence:',
+    ]
+    if 'registryRevision' in evidence:
+        block.append(f'  registryRevision: {evidence["registryRevision"]}')
+    block.extend([
+        f'  committedPaths: {evidence_list(evidence, "committedPaths")}',
+        f'  executionEntryIds: {evidence_list(evidence, "executionEntryIds")}',
+        f'  transcriptIds: {evidence_list(evidence, "transcriptIds")}',
+        '',
+        'commandPacket:',
+        f'  NEXT: {command}',
+        f'  REASON: {restore_reason}',
+        f'  AFFECTED: {affected_summary(evidence)}',
+        f'  RETURN: {restore_target}',
+        '',
+        f'helperNext: {next_line}',
+        '',
+        '</details>',
+    ])
+    lines = transcript.splitlines()
+    _start, end = section_bounds(lines, '## Completion')
+    return '\n'.join(lines[:end] + block + lines[end:]) + '\n'
+
+
+def insert_reopen_pointer(transcript: str, phase: str, findings_anchor: str | None, expected_role: str | None) -> str:
+    if findings_anchor is None:
+        return transcript
+    lines = transcript.splitlines()
+    start, end = section_bounds(lines, f'## {phase}')
+    link = f'[reviewer findings](#{findings_anchor})'
+    role_label = expected_role or 'none'
+    note = f'> Reopened from {link}; next expected role: `{role_label}`.'
+    if any(line.strip() == note for line in lines[start:end]):
+        return transcript
+    insert_at = start + 1
+    while insert_at < end and lines[insert_at].strip() in {'', CONTENT_ONLY_GUARD}:
+        insert_at += 1
+    block = [note, '']
+    if insert_at > start + 1 and lines[insert_at - 1].strip() != '':
+        block = ['', *block]
+    if insert_at < len(lines) and lines[insert_at].strip() == '':
+        block = block[:-1]
+    return '\n'.join(lines[:insert_at] + block + lines[insert_at:]) + '\n'
 
 
 def assessment_notice(verdict: dict) -> dict | None:
@@ -4890,15 +4921,17 @@ def render_seal(
                 verdict_detail = 'verdict success'
             else:
                 verdict_detail = f"verdict {outcome}; restore {verdict['restoreTarget']}"
+            rendered_timestamp = format_timestamp()
             assessment_line = (
-                f"{number}. **{role}:** assessed {format_timestamp()} \u2014 "
+                f"{number}. **{role}:** assessed {rendered_timestamp} \u2014 "
                 f"{verdict_detail}; assessment; {len(touched_paths_for_execution(entry))} paths."
             )
+            next_line = assessment_next_line(entry, verdict)
             rendered = append_completion_history_line(transcript, assessment_line)
+            rendered = append_reviewer_findings_block(rendered, entry, role, verdict, rendered_timestamp, next_line)
             rendered, header_changed = render_managed_header_text(rendered, entry, DEFAULT_ROLES_DIR)
             if entry['status'] == 'closed' and completion_summary_empty(rendered):
-                rendered = append_completion_summary(rendered, default_close_summary(entry), summary_date_from_timestamp(format_timestamp()))
-            next_line = assessment_next_line(entry, verdict)
+                rendered = append_completion_summary(rendered, default_close_summary(entry), summary_date_from_timestamp(rendered_timestamp))
         else:
             if participant_verification_incomplete(entry):
                 verification['subState'] = 'participant'
@@ -4911,11 +4944,11 @@ def render_seal(
                 die('verification assessment is active; seal block is immutable; provide --outcome to record a verdict')
             if not all_execution_completed(entry):
                 die('verification seal requires all execution entries to be completed')
-            record_verification_round_for_execution(entry, verification)
             rounds = verification.get('rounds', 0)
             cap = verification.get('cap', DEFAULT_VERIFICATION_CAP)
             if rounds == 0:
                 die('zero verification rounds; at least one reviewer-executor paired event is required before sealing')
+            rounds = verification.get('rounds', 0)
             if cap_exit is None and rounds >= cap:
                 die(
                     'round cap reached; reissue with --cap-exit reopen-action-plan, '
@@ -4979,6 +5012,11 @@ def reopen_collab(
         if restore_target != phase:
             expected_token = 'handoff' if restore_target == 'Handoff' else 'action-plan'
             die(f'/collab reopen phase mismatch: verdict restoreTarget is {restore_target}; expected {expected_token}')
+        transcript_path = Path(entry['transcriptPath'])
+        if not transcript_path.exists():
+            die(f'transcript missing: {transcript_path}')
+        transcript = transcript_path.read_text()
+        findings_anchor = latest_reviewer_findings_anchor(transcript)
         entry['status'] = 'open'
         entry['archived'] = False
         entry['activePhase'] = phase
@@ -4987,10 +5025,9 @@ def reopen_collab(
         initialize_completion_state(entry, 'execution', reset_rounds=True)
         invalidate_verification_seal(entry, f'reopened {phase}')
         clear_verdict(entry)
-        transcript_path = Path(entry['transcriptPath'])
-        if not transcript_path.exists():
-            die(f'transcript missing: {transcript_path}')
-        rendered, header_changed = render_managed_header_text(transcript_path.read_text(), entry, DEFAULT_ROLES_DIR)
+        expected_role = next((item for item in effective_turn_order(entry) if item != entry['moderatorRole']), None)
+        transcript = insert_reopen_pointer(transcript, phase, findings_anchor, expected_role)
+        rendered, header_changed = render_managed_header_text(transcript, entry, DEFAULT_ROLES_DIR)
         print_header_overwrite(header_changed)
         commit_registry_and_transcript(path, data, transcript_path, rendered)
     print_post_action_advisories(entry, None, None, None, next_line_for_state(entry))
@@ -5015,7 +5052,6 @@ def show_verdict(path: Path, target: str) -> int:
     }
     if isinstance(seal, dict):
         output['verificationSeal'] = {
-            'schemaVersion': seal.get('schemaVersion'),
             'observedRevision': seal.get('observedRevision'),
             'sealedAt': seal.get('sealedAt'),
             'sealedBy': seal.get('sealedBy'),
@@ -5578,6 +5614,12 @@ def require_source_text(path: Path, needle: str, label: str) -> None:
         die(f'source contract missing {label}: {path.relative_to(DEFAULT_CURSOR_ROOT)}')
 
 
+def source_text(path: Path) -> str:
+    if not path.exists():
+        return ''
+    return path.read_text()
+
+
 def validate_source_contracts() -> None:
     old_flag_taxonomy = DEFAULT_CURSOR_ROOT / '_functions/collab/_flag-taxonomy.md'
     if not DEFAULT_FLAG_TAXONOMY_PATH.exists():
@@ -5596,6 +5638,7 @@ def validate_source_contracts() -> None:
     invariants = DEFAULT_CURSOR_ROOT / '_functions/collab/_invariants.md'
     require_source_text(invariants, 'Rollback triggers', 'rollback trigger section')
     require_source_text(invariants, 'Observation backlog', 'observation backlog section')
+    validate_planned_route_prerequisites(DEFAULT_CURSOR_ROOT)
 
 
 def registry_path_command(path: Path) -> int:
