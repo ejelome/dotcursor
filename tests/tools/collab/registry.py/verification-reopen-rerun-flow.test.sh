@@ -69,7 +69,7 @@ end = transcript.index('</details>', start) + len('</details>')
 block = transcript[start:end]
 assert 'restoreTarget: Handoff' in block
 assert f'  NEXT: /collab reopen handoff {entry["id"]}' in block
-assert f'**For mod:** Run `/collab reopen handoff {entry["id"]}`.' in block
+assert block.index('  NEXT:') < block.index('helperNext:')
 Path('findings-block.txt').write_text(block)
 PY
 

@@ -54,8 +54,8 @@ assert f'  NEXT: /collab reopen action-plan {entry["id"]}' in block
 assert '  REASON: Action Plan acceptance criteria were not met.' in block
 assert '  AFFECTED: committedPaths=["tools/collab/registry.py"]; executionEntryIds=["pe-2026-05-15t21-00-00-02-00"]; transcriptIds=["action-plan-pe-1"]' in block
 assert '  RETURN: Action Plan' in block
-assert f'**For mod:** Run `/collab reopen action-plan {entry["id"]}`.' in block
 assert f'helperNext: NEXT: Moderator should run /collab reopen action-plan {entry["id"]}.' in block
+assert block.index('  RETURN: Action Plan') < block.index('helperNext:')
 Path('findings-block.txt').write_text(block)
 PY
 
@@ -98,7 +98,6 @@ transcript = (registry.parent / entry['transcriptPath']).read_text()
 assert entry['status'] == 'closed'
 assert entry['verdict']['outcome'] == 'success'
 assert 'reviewer-findings-' not in transcript
-assert '**For mod:** Run `/collab reopen' not in transcript
 PY
 
 printf 'OK: non-success assessment emits durable findings, reopen preserves it, and success omits it\n'

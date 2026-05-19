@@ -4755,8 +4755,6 @@ def append_reviewer_findings_block(
         f'  AFFECTED: {affected_summary(evidence)}',
         f'  RETURN: {restore_target}',
         '',
-        f'**For mod:** Run `{command}`.',
-        '',
         f'helperNext: {next_line}',
         '',
         '</details>',
