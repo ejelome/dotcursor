@@ -109,3 +109,16 @@ The following carry-forwards from the 2026-05-18 missed-and-deferred-goals audit
 - **Item 13 (stub retirement observation point):** re-entry when a coverage assertion is added confirming stub fallback is unreached on resolution.
 - **Item 14 (PE Q4 carry-forward — pre-seal reopen primitive):** re-entry if a future protocol redesign reopens the pre-seal flow.
 - **Item 15 (CI scope items — required-status checks, secrets, deploy gates):** re-entry when merge-gating, authenticated workflows, or a deploy surface is introduced.
+
+**12. Routing-vs-rationale lifecycle**
+
+When a structured field is cleared on consume (e.g., during a phase restore transition), classify it before the transition:
+
+- **Routing field:** directs where the workflow goes next (e.g., `restoreTarget`). Cleared on consume is correct; the routing decision has been executed.
+- **Rationale field:** explains why the transition is happening (e.g., `restoreReason`, `evidence`, `failureCategory`). Must be emitted to a durable surface atomically with the write that creates the field, not at the consume site that clears it.
+
+**Write-time emission rule:** a rationale field needed by downstream actors after a transition must appear on a durable surface before or at the same write that first records it. The audit log is the canonical durable surface for collab-scoped cause. A marker that the event occurred is not sufficient; the rationale content must be present.
+
+**Diagnostic frame:** for any transition that clears structured state, verify: (1) which cleared fields are routing (cleared on consume is correct); (2) which are rationale (require a write-time durable emission); (3) whether the durable surface carries the content, not merely a marker.
+
+Maintainer check: `grep -rn 'restoreReason' tools/collab/` enumerates verdict-write candidate sites. Each non-success verdict write path must have a paired durable rationale emission in the same atomic operation.

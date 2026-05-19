@@ -51,7 +51,33 @@ Seal the `Completion.verification` sub-state after a reviewer pass, recording th
 - **Seal object:** `verificationSeal = { observedRevision: integer, executionEntries: object[], validationScopes: string[], touchedPaths: string[], sealedAt: ISO-8601, sealedBy: string, followUp?: { restoreReason: string, evidence: object, failureCategory: string } }`. Written atomically by `seal-render`; no hand-editing.
 - **Stale-write guard:** `seal-render` requires `--observed-revision <registryRevision>` from the immediately preceding `seal-state` call. If the live registry revision differs, the helper aborts and emits `RESUME: tools/collab/registry.py seal-state --resume <target> <role>`.
 - **Auto-close after seal:** For reviewer-backed collabs, `seal-render` triggers close when all assigned `execution.<role>` entries are `completed` and a current non-stale `verificationSeal` exists. Auto-close from `/collab run plan` alone is removed for reviewer-backed collabs; the seal is required.
-- **Post-seal assessment:** After a successful seal, `Completion.verification` transitions to `verification.assessment`. The reviewer evaluates whether discussion goals were met and emits a `verdict: { outcome, restoreTarget?, restoreReason?, evidence?, failureCategory? }`. The reviewer must determine `outcome` autonomously from execution evidence; soliciting the outcome from the moderator or user is not permitted. Assessment also re-opens when the seal becomes stale or a cap-exit is recorded. On `outcome == success`, the helper may close and summarize. On `incomplete` or `failed`, the helper prompts the next responsible role and exact command without auto-executing; the moderator confirms the restore route. Assessment must emit even when no actionable cause is identifiable (`nullResult: true` with a one-line justification); silent non-emission is not permitted.
+- **Post-seal assessment:** After a successful seal, `Completion.verification` transitions to `verification.assessment`. The reviewer evaluates whether discussion goals were met and emits a `verdict: { outcome, restoreTarget?, restoreReason?, evidence?, failureCategory? }`. The reviewer must determine `outcome` autonomously from execution evidence; soliciting the outcome from the moderator or user is not permitted. Assessment also re-opens when the seal becomes stale or a cap-exit is recorded. On `outcome == success`, the helper may close and summarize. On `incomplete` or `failed`, the assessment write atomically appends the **Reviewer findings block** (see below) to the audit log and prompts the next responsible role and exact command without auto-executing; the moderator confirms the restore route. Assessment must emit even when no actionable cause is identifiable (`nullResult: true` with a one-line justification); silent non-emission is not permitted.
+- <a name="reviewer-findings-block"></a>**Reviewer findings block:** On a non-success outcome (`incomplete` or `failed`), the assessment helper appends an immutable `Reviewer findings` block to the audit log atomically with the verdict write. Reopen clears the structured `verdict` object in registry state but does not rewrite the audit log; the block survives. For `success` outcome, no block is emitted. Block shape:
+
+  ```
+  <a name="reviewer-findings-N"></a>
+  <details>
+  <summary>pa · reopen brief (<outcome>, <failureCategory>)</summary>
+
+  restoreReason: <one-line>
+  restoreTarget: <action-plan | handoff>
+  failureCategory: <category>
+  evidence:
+    registryRevision: <int>
+    committedPaths: [...]
+    executionEntryIds: [...]
+    transcriptIds: [...]
+  NEXT: Run /collab reopen <restoreTarget> — <summary>.
+
+  </details>
+  ```
+
+  **Derived fields:** `NEXT:` and the command packet (reopen command, role prompt, reason summary) are derived from `restoreTarget` and the verdict object fields at write time; the reviewer does not author them. The `NEXT:` line in the block is the in-transcript, human-readable counterpart to the machine-advisory `NEXT:` line emitted by the helper after the write; both are derived from the same verdict fields but serve different consumers and must not be collapsed.
+
+  **Anchor rule:** anchor id is `reviewer-findings-N` where `N` is the count of prior findings blocks in this transcript plus one. The block appears immediately after the verdict marker line and before the next phase header.
+
+  **Drift detection:** `grep -nP '^restoreReason:' ~/.collabs/*/records/*.md` enumerates emitted blocks. A non-success verdict that emits no block, or a reopen that removes a block, is a regression. See `_invariants.md` Invariant #12 for the routing-vs-rationale classification that motivates this design.
+
 - <a name="restore-route-recovery"></a>**Restore-route recovery:** After an `incomplete` or `failed` verdict, run `/collab show verdict` to inspect `restoreTarget`, `restoreReason`, evidence, and the next command. If `restoreTarget` is `Action Plan`, run `/collab reopen action-plan`; if it is `Handoff`, run `/collab reopen handoff`. Revise the reopened phase content, rerun assigned execution with `/collab run plan`, then reseal with `/collab seal verification`. After any `/compact`, agent swap, or subagent return during this path, re-establish context with `tools/collab/registry.py seal-state --resume <target> <role>` before continuing.
 - **Post-state resume signal:** After `/collab seal verification` completes, re-establish context with `tools/collab/registry.py seal-state --resume <target> <role>` after any `/compact`, agent swap, or subagent return before the next command.
 - **writeScope reopen advisory:** When the reviewer surfaces out-of-scope work during verification, the legal exit is `/collab seal verification --cap-exit reopen-handoff`. The `seal-render` helper applies the cap-exit and transitions the collab to `Handoff` phase directly; no separate reopen command is needed for this path. The reviewer must not widen the scope informally; the cap-exit creates the audit trail. Registry field `handoff.roles.<role>.writeScope` is the reopen boundary source.

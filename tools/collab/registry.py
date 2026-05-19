@@ -7,6 +7,7 @@ import datetime as dt
 import fcntl
 import fnmatch
 import hashlib
+import html
 import json
 import os
 import re
@@ -4657,6 +4658,135 @@ def assessment_next_line(entry: dict, verdict: dict) -> str:
     return f'NEXT: Moderator should run /collab reopen {phase_token} {entry["id"]}.'
 
 
+def verdict_reopen_command(entry: dict, verdict: dict) -> str:
+    target = verdict.get('restoreTarget', 'Action Plan')
+    phase_token = 'handoff' if target == 'Handoff' else 'action-plan'
+    return f'/collab reopen {phase_token} {entry["id"]}'
+
+
+def evidence_list(evidence: dict, key: str) -> str:
+    values = evidence.get(key)
+    if not isinstance(values, list) or not values:
+        return '[]'
+    return json.dumps(values, ensure_ascii=True, separators=(',', ':'))
+
+
+def affected_summary(evidence: dict) -> str:
+    pieces: list[str] = []
+    for key in ('committedPaths', 'executionEntryIds', 'transcriptIds'):
+        values = evidence.get(key)
+        if isinstance(values, list) and values:
+            pieces.append(f'{key}={json.dumps(values, ensure_ascii=True, separators=(",", ":"))}')
+    return '; '.join(pieces) if pieces else 'none'
+
+
+def next_reviewer_findings_counter(transcript: str) -> int:
+    highest = 0
+    for line in transcript.splitlines():
+        match = ANCHOR_RE.match(line.strip())
+        if not match:
+            continue
+        anchor = match.group('anchor')
+        if not anchor.startswith('reviewer-findings-'):
+            continue
+        suffix = anchor[len('reviewer-findings-'):]
+        if suffix.isdigit():
+            highest = max(highest, int(suffix))
+    return highest + 1
+
+
+def latest_reviewer_findings_anchor(transcript: str) -> str | None:
+    latest: tuple[int, str] | None = None
+    for line in transcript.splitlines():
+        match = ANCHOR_RE.match(line.strip())
+        if not match:
+            continue
+        anchor = match.group('anchor')
+        if not anchor.startswith('reviewer-findings-'):
+            continue
+        suffix = anchor[len('reviewer-findings-'):]
+        if not suffix.isdigit():
+            continue
+        ordinal = int(suffix)
+        if latest is None or ordinal > latest[0]:
+            latest = (ordinal, anchor)
+    return latest[1] if latest else None
+
+
+def append_reviewer_findings_block(
+    transcript: str,
+    entry: dict,
+    role: str,
+    verdict: dict,
+    timestamp: str,
+    next_line: str,
+) -> str:
+    if verdict.get('outcome') == 'success':
+        return transcript
+    evidence = verdict.get('evidence') if isinstance(verdict.get('evidence'), dict) else {}
+    failure_category = verdict.get('failureCategory') or 'uncategorized'
+    restore_target = verdict.get('restoreTarget', 'Action Plan')
+    restore_reason = verdict.get('restoreReason', '')
+    anchor = f'reviewer-findings-{next_reviewer_findings_counter(transcript)}'
+    command = verdict_reopen_command(entry, verdict)
+    block = [
+        '',
+        f'<a name="{anchor}"></a>',
+        '<details>',
+        f'<summary>{html.escape(role)} · reopen brief ({html.escape(verdict["outcome"])}, {html.escape(failure_category)})</summary>',
+        f'<p><em>{timestamp}</em></p>',
+        CONTENT_ONLY_GUARD,
+        '',
+        f'restoreReason: {restore_reason}',
+        f'restoreTarget: {restore_target}',
+        f'failureCategory: {failure_category}',
+        'evidence:',
+    ]
+    if 'registryRevision' in evidence:
+        block.append(f'  registryRevision: {evidence["registryRevision"]}')
+    block.extend([
+        f'  committedPaths: {evidence_list(evidence, "committedPaths")}',
+        f'  executionEntryIds: {evidence_list(evidence, "executionEntryIds")}',
+        f'  transcriptIds: {evidence_list(evidence, "transcriptIds")}',
+        '',
+        'commandPacket:',
+        f'  NEXT: {command}',
+        f'  REASON: {restore_reason}',
+        f'  AFFECTED: {affected_summary(evidence)}',
+        f'  RETURN: {restore_target}',
+        '',
+        f'**For mod:** Run `{command}`.',
+        '',
+        f'helperNext: {next_line}',
+        '',
+        '</details>',
+    ])
+    lines = transcript.splitlines()
+    _start, end = section_bounds(lines, '## Completion')
+    return '\n'.join(lines[:end] + block + lines[end:]) + '\n'
+
+
+def insert_reopen_pointer(transcript: str, phase: str, findings_anchor: str | None, expected_role: str | None) -> str:
+    if findings_anchor is None:
+        return transcript
+    lines = transcript.splitlines()
+    start, end = section_bounds(lines, f'## {phase}')
+    link = f'[reviewer findings](#{findings_anchor})'
+    role_label = expected_role or 'none'
+    note = f'> Reopened from {link}; next expected role: `{role_label}`.'
+    if any(line.strip() == note for line in lines[start:end]):
+        return transcript
+    insert_at = start + 1
+    while insert_at < end and lines[insert_at].strip() in {'', CONTENT_ONLY_GUARD}:
+        insert_at += 1
+    block = [note, '']
+    if insert_at > start + 1 and lines[insert_at - 1].strip() != '':
+        block = ['', *block]
+    if insert_at < len(lines) and lines[insert_at].strip() == '':
+        block = block[:-1]
+    return '\n'.join(lines[:insert_at] + block + lines[insert_at:]) + '\n'
+
+
 def assessment_notice(verdict: dict) -> dict | None:
     outcome = verdict.get('outcome')
     if outcome == 'success':
@@ -4793,15 +4923,17 @@ def render_seal(
                 verdict_detail = 'verdict success'
             else:
                 verdict_detail = f"verdict {outcome}; restore {verdict['restoreTarget']}"
+            rendered_timestamp = format_timestamp()
             assessment_line = (
-                f"{number}. **{role}:** assessed {format_timestamp()} \u2014 "
+                f"{number}. **{role}:** assessed {rendered_timestamp} \u2014 "
                 f"{verdict_detail}; assessment; {len(touched_paths_for_execution(entry))} paths."
             )
+            next_line = assessment_next_line(entry, verdict)
             rendered = append_completion_history_line(transcript, assessment_line)
+            rendered = append_reviewer_findings_block(rendered, entry, role, verdict, rendered_timestamp, next_line)
             rendered, header_changed = render_managed_header_text(rendered, entry, DEFAULT_ROLES_DIR)
             if entry['status'] == 'closed' and completion_summary_empty(rendered):
-                rendered = append_completion_summary(rendered, default_close_summary(entry), summary_date_from_timestamp(format_timestamp()))
-            next_line = assessment_next_line(entry, verdict)
+                rendered = append_completion_summary(rendered, default_close_summary(entry), summary_date_from_timestamp(rendered_timestamp))
         else:
             if participant_verification_incomplete(entry):
                 verification['subState'] = 'participant'
@@ -4882,6 +5014,11 @@ def reopen_collab(
         if restore_target != phase:
             expected_token = 'handoff' if restore_target == 'Handoff' else 'action-plan'
             die(f'/collab reopen phase mismatch: verdict restoreTarget is {restore_target}; expected {expected_token}')
+        transcript_path = Path(entry['transcriptPath'])
+        if not transcript_path.exists():
+            die(f'transcript missing: {transcript_path}')
+        transcript = transcript_path.read_text()
+        findings_anchor = latest_reviewer_findings_anchor(transcript)
         entry['status'] = 'open'
         entry['archived'] = False
         entry['activePhase'] = phase
@@ -4890,10 +5027,9 @@ def reopen_collab(
         initialize_completion_state(entry, 'execution', reset_rounds=True)
         invalidate_verification_seal(entry, f'reopened {phase}')
         clear_verdict(entry)
-        transcript_path = Path(entry['transcriptPath'])
-        if not transcript_path.exists():
-            die(f'transcript missing: {transcript_path}')
-        rendered, header_changed = render_managed_header_text(transcript_path.read_text(), entry, DEFAULT_ROLES_DIR)
+        expected_role = next((item for item in effective_turn_order(entry) if item != entry['moderatorRole']), None)
+        transcript = insert_reopen_pointer(transcript, phase, findings_anchor, expected_role)
+        rendered, header_changed = render_managed_header_text(transcript, entry, DEFAULT_ROLES_DIR)
         print_header_overwrite(header_changed)
         commit_registry_and_transcript(path, data, transcript_path, rendered)
     print_post_action_advisories(entry, None, None, None, next_line_for_state(entry))

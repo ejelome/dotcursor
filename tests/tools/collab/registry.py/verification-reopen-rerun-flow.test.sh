@@ -56,6 +56,23 @@ if [[ "$output" != *"NEXT: Moderator should run /collab reopen handoff $TARGET."
   exit 1
 fi
 
+python3 - "$REGISTRY" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+registry = Path(sys.argv[1])
+entry = next(item for item in json.loads(registry.read_text())['collabs'] if item['slug'] == 'verification-reopen-rerun-flow')
+transcript = (registry.parent / entry['transcriptPath']).read_text()
+start = transcript.index('<a name="reviewer-findings-1"></a>')
+end = transcript.index('</details>', start) + len('</details>')
+block = transcript[start:end]
+assert 'restoreTarget: Handoff' in block
+assert f'  NEXT: /collab reopen handoff {entry["id"]}' in block
+assert f'**For mod:** Run `/collab reopen handoff {entry["id"]}`.' in block
+Path('findings-block.txt').write_text(block)
+PY
+
 "$ROOT/tools/collab/registry.py" reopen "$TARGET" handoff --caller-role mod >/dev/null
 
 cat >revised-handoff.md <<'HANDOFF'
@@ -89,6 +106,8 @@ assert 'Scope revised after verification' in state['body']
 assert 'Previous revision,' in state['body']
 assert 'verdict' not in entry
 transcript = (registry.parent / entry['transcriptPath']).read_text()
+assert Path('findings-block.txt').read_text() in transcript
+assert '> Reopened from [reviewer findings](#reviewer-findings-1); next expected role: `pe`.' in transcript
 assert '_functions/collab/reopen.md' in transcript
 assert 'Previous revision,' in transcript
 PY
