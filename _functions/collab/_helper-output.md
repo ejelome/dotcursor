@@ -464,3 +464,25 @@ A command has a helper-output defect when any of the following is true:
 - Exit code does not match the semantic table above
 - A pre-write advisory line appears after a post-write advisory line
 - A suppressed line appears on a failed-gate output
+
+## Module-to-subcommand map
+
+Maps each documented `## Abort families` module family to its `registry.py` subcommand(s) and key implementing function(s). Use this table to audit spec-to-code alignment without running the helper: check that the abort messages listed in each module section match the exit-1 strings in the named functions.
+
+| Module | Subcommand(s) | Key function(s) |
+|---|---|---|
+| `speak-render` / `rewrite-speak-render` | `speak-render`, `rewrite-speak-render` | `render_speak()`, `render_re_speak()` |
+| `seal-state` | `seal-state` | `seal_state()` |
+| `seal-render` | `seal-render` | `render_seal()` |
+| `handoff-shape` | `speak-render`, `rewrite-speak-render` | `parse_handoff_content()`, `validate_handoff_write_scope()`, `validate_handoff_validation_commands()`, `validate_handoff_state()` |
+| `participant-verify-state` | `participant-verify-state` | `participant_verify_state()` |
+| `participant-verify-render` | `participant-verify-render` | `participant_verify_render()` |
+| `reopen` | `reopen` | `reopen_collab()` |
+| `show-verdict` | `show-verdict` | `show_verdict()` |
+| `init` | `init` | `init_collab()`, `parse_init_tokens()` |
+| `contribution-budget` | `speak-render`, `rewrite-speak-render` | `enforce_contribution_budget()`, `read_budget_spec()` |
+| `command-default` | all commands | `load_registry()`, `resolve_cursor_root()` |
+| `participant-role-files` | all registry-loading commands | `validate_registry()`, `validate_participant_role_files()` |
+| `planned-route-gates` | `validate` | `validate_planned_route_prerequisites()` in `tools/collab/planned_routes.py` |
+
+**How to diff:** For each module row, open the named key function(s) in `registry.py` or the named helper module and compare its `die()` / `sys.exit(1)` call strings against the exit-1 messages listed in the corresponding `## Abort families` module section above. Any string present in one but absent in the other is a spec-drift candidate.

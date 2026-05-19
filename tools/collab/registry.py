@@ -23,6 +23,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from tools.cursor.roles import load_role, participant_row, roles_command
+from tools.collab.planned_routes import validate_issue_bridge_block, validate_planned_route_prerequisites
 from tools.collab.registry_state import (
     PROJECT_ID_RE,
     assert_registry_project_binding,
@@ -674,6 +675,14 @@ def completed_execution_unchecked_items(entry: dict, transcript: str) -> list[di
         if count:
             violations.append({'role': role, 'uncheckedCount': count})
     return violations
+
+
+def validate_participant_role_files(role_keys: list[str], roles_dir: Path, source: str) -> None:
+    for role in role_keys:
+        try:
+            load_role(roles_dir, role)
+        except SystemExit as exc:
+            die(f'{source}: participants role file unreadable for {role}: {roles_dir / f"{role}.json"}: {exc}')
 
 
 def handoff_abort(field: str, value: object) -> None:
@@ -1502,6 +1511,7 @@ def validate_registry(data: dict, path: Path | None = None) -> None:
         participant_role_keys = [p['role'] for p in participants]
         if len(set(participant_role_keys)) != len(participant_role_keys):
             die(f'{source}: participants must not contain duplicate roles')
+        validate_participant_role_files(participant_role_keys, DEFAULT_ROLES_DIR, source)
         if moderatorRole not in participant_role_keys:
             die(f'{source}: moderatorRole must be listed in participants')
 
@@ -5482,60 +5492,6 @@ def source_text(path: Path) -> str:
     return path.read_text()
 
 
-def issue_bridge_declared(cursor_root: Path = DEFAULT_CURSOR_ROOT) -> bool:
-    if (cursor_root / '_functions/collab/export-issues.md').exists():
-        return True
-    command_text = '\n'.join([
-        source_text(cursor_root / 'commands/collab.md'),
-        source_text(cursor_root / 'commands/commands.md'),
-    ])
-    return '/collab export-issues' in command_text or 'export issues' in command_text
-
-
-def issue_bridge_prerequisite_gaps(cursor_root: Path = DEFAULT_CURSOR_ROOT) -> list[str]:
-    gaps: list[str] = []
-    helper_output = source_text(cursor_root / '_functions/collab/_helper-output.md')
-    helper_required = {
-        'helper-output abort families': '## Abort families',
-        'full-body envelope rejection': 'Full-body envelope rejection',
-        'paired-execution-signature double-increment guard': 'Paired-execution-signature double-increment guard',
-        'archive protocol violation': 'seal-verification-archive-protocol-violation',
-        'logical module annotations': 'logical module',
-    }
-    helper_lower = helper_output.lower()
-    for label, needle in helper_required.items():
-        haystack = helper_lower if label == 'logical module annotations' else helper_output
-        expected = needle.lower() if label == 'logical module annotations' else needle
-        if expected not in haystack:
-            gaps.append(label)
-
-    rebinding_test = cursor_root / 'tests/tools/collab/registry.py/rebinding-invariants.test.sh'
-    rebinding_text = source_text(rebinding_test)
-    rebinding_required = {
-        'rebinding invariant test file': '#!/usr/bin/env bash',
-        'projectId rebinding coverage': 'projectId rebinding',
-        'participant agentId rebinding coverage': 'agentId rebinding',
-        'issue bridge gate coverage': 'issue bridge',
-    }
-    for label, needle in rebinding_required.items():
-        if needle not in rebinding_text:
-            gaps.append(label)
-    return gaps
-
-
-def validate_issue_bridge_block(cursor_root: Path = DEFAULT_CURSOR_ROOT) -> None:
-    if not issue_bridge_declared(cursor_root):
-        return
-    gaps = issue_bridge_prerequisite_gaps(cursor_root)
-    if gaps:
-        die(
-            'issue bridge blocked until prerequisite artifacts are present: '
-            '_functions/collab/_helper-output.md and '
-            'tests/tools/collab/registry.py/rebinding-invariants.test.sh; '
-            f'missing {", ".join(gaps)}'
-        )
-
-
 def validate_source_contracts() -> None:
     old_flag_taxonomy = DEFAULT_CURSOR_ROOT / '_functions/collab/_flag-taxonomy.md'
     if not DEFAULT_FLAG_TAXONOMY_PATH.exists():
@@ -5554,7 +5510,7 @@ def validate_source_contracts() -> None:
     invariants = DEFAULT_CURSOR_ROOT / '_functions/collab/_invariants.md'
     require_source_text(invariants, 'Rollback triggers', 'rollback trigger section')
     require_source_text(invariants, 'Observation backlog', 'observation backlog section')
-    validate_issue_bridge_block()
+    validate_planned_route_prerequisites(DEFAULT_CURSOR_ROOT)
 
 
 def registry_path_command(path: Path) -> int:
