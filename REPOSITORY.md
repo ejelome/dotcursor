@@ -89,7 +89,7 @@ No project-local `.cursor/` overlay is owned by this repo. Consumer repos that c
 
 ## 6) Contract Versioning
 
-Contract version: `0.3.0`.
+Contract version: `0.4.0`.
 
 - **Patch:** wording or validation tightening with no behavioral change.
 - **Minor:** additive contract surface; backward compatible.
@@ -131,6 +131,8 @@ When work completes, report:
 ## 10) Contract History
 
 Contract history is recorded from `0.3.0` forward; pre-`0.3.0` entries are absent because this section was introduced at `0.3.0` and those contracts predate it — their absence here does not archive or retire them.
+
+**0.4.0** (2026-05-19): Five inter-bump structural changes recorded — § 11 Workflow Models added as additive contract surface (seal-terminal committed as default, issue-terminal gated behind `planned_routes.py`); verification round increment relocated from `seal_render` to `participant_verify_render` as the sole owner; `_planned-routes.md` and `_registry-state.md` sibling specs added; first honor-system promotion recorded in `_honor-system-audit.md` (`seal-verification-zero-rounds` clause); `tools/collab/planned_routes.py` extracted from `registry.py` as the forward-defensive issue-terminal gate.
 
 **0.3.0** (2026-05-19): Registry identity binding enforced — `projectId` rebinding to a different user-scope collab state root is a hard rejection in `tools/collab/registry.py`; participant `agentId` rebinding detection added; state root resolution extracted into `tools/collab/registry_state.py`; issue-bridge gate diagnostics documented in `tools/collab/registry.py`; helper output abort families in `_functions/collab/_helper-output.md` expanded to exact-exit-1-message depth for existing helpers.
 

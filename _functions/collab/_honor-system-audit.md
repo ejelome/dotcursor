@@ -31,7 +31,7 @@ Every `agent-honor-system` clause marks an ABORT that relies on agent judgment r
 
 | # | Source | ABORT anchor | Clause summary | Helper enforcement | Promoted in |
 |---|---|---|---|---|---|
-| 5 | `_functions/collab/seal-verification.md:27` | `seal-verification-zero-rounds` | Step 8: `verificationRounds` is zero; agent must abort before sealing. Round increment moved from `seal_render` to `participant_verify_render` at the all-participants-completed transition; `seal_render` now checks `verificationRounds > 0` as defense-in-depth only. | Full — `participant_verify_render` owns the increment; `seal_render` defends in depth; agent judgment no longer required for this abort path. | pe item, collab `2026-05-19-multi-agent-framework-assessment-part-4` |
+| 5 | `seal-verification-zero-rounds` | `seal-verification-zero-rounds` | Step 8: `verificationRounds` is zero; agent must abort before sealing. Round increment moved from `seal_render` to `participant_verify_render` at the all-participants-completed transition; `seal_render` now checks `verificationRounds > 0` as defense-in-depth only. | Full — `participant_verify_render` owns the increment; `seal_render` defends in depth; agent judgment no longer required for this abort path. | pe item, collab `2026-05-19-multi-agent-framework-assessment-part-4` |
 
 ## Non-convergence observation (PA Addition 3)
 

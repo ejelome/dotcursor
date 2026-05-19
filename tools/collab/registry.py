@@ -4824,7 +4824,6 @@ def render_seal(
             cap = verification.get('cap', DEFAULT_VERIFICATION_CAP)
             if rounds == 0:
                 die('zero verification rounds; at least one reviewer-executor paired event is required before sealing')
-            record_verification_round_for_execution(entry, verification)
             rounds = verification.get('rounds', 0)
             if cap_exit is None and rounds >= cap:
                 die(
