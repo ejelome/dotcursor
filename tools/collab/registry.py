@@ -4600,6 +4600,7 @@ def participant_verify_render(
         rendered = append_participant_verify_block(rendered, role, 'remediation', remediation_content, rendered_timestamp, agent_line)
         rendered = append_participant_verify_block(rendered, role, 'final-audit', final_audit_content, rendered_timestamp)
         if status == 'completed' and all_participant_verification_completed(entry):
+            record_verification_round_for_execution(entry, verification)
             verification['subState'] = 'seal'
         rendered, header_changed = render_managed_header_text(rendered, entry, DEFAULT_ROLES_DIR)
         print_header_overwrite(header_changed)
@@ -4819,11 +4820,12 @@ def render_seal(
                 die('verification assessment is active; seal block is immutable; provide --outcome to record a verdict')
             if not all_execution_completed(entry):
                 die('verification seal requires all execution entries to be completed')
-            record_verification_round_for_execution(entry, verification)
             rounds = verification.get('rounds', 0)
             cap = verification.get('cap', DEFAULT_VERIFICATION_CAP)
             if rounds == 0:
                 die('zero verification rounds; at least one reviewer-executor paired event is required before sealing')
+            record_verification_round_for_execution(entry, verification)
+            rounds = verification.get('rounds', 0)
             if cap_exit is None and rounds >= cap:
                 die(
                     'round cap reached; reissue with --cap-exit reopen-action-plan, '

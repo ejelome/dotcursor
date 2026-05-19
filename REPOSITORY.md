@@ -133,3 +133,15 @@ When work completes, report:
 Contract history is recorded from `0.3.0` forward; pre-`0.3.0` entries are absent because this section was introduced at `0.3.0` and those contracts predate it — their absence here does not archive or retire them.
 
 **0.3.0** (2026-05-19): Registry identity binding enforced — `projectId` rebinding to a different user-scope collab state root is a hard rejection in `tools/collab/registry.py`; participant `agentId` rebinding detection added; state root resolution extracted into `tools/collab/registry_state.py`; issue-bridge gate diagnostics documented in `tools/collab/registry.py`; helper output abort families in `_functions/collab/_helper-output.md` expanded to exact-exit-1-message depth for existing helpers.
+
+## 11) Workflow Models
+
+A **workflow model** determines which artifact serves as the terminal closing transaction for a collab record.
+
+**Committed default: seal-terminal.** The collab record is the terminal artifact. A collab closes when `verificationSeal` is recorded and `verdict.outcome == success`. This is the only implemented model.
+
+**Selectable alternative: issue-terminal.** An issue-terminal model closes the record by publishing the collab output to an external issue tracker rather than by sealing the record. Selection is per-collab at `/collab init --terminal seal|issue` (not yet implemented; blocked by the prerequisite gate below).
+
+**Switching the default is a contract rewrite under § 8.** No deprecation path. The new contract is the complete specification. When the committed default changes, write the new contract from scratch.
+
+**Forward-defensive gate.** `tools/collab/planned_routes.py` enforces that `/collab export-issues` cannot land without the init-side selection mechanism as a prerequisite. Any route that would enable issue-terminal behavior must have the selection contract specified and the gate updated before it enters scope. See `_functions/collab/_planned-routes.md` for the gate's abort family and prerequisite set.

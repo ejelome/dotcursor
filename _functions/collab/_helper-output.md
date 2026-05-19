@@ -118,7 +118,7 @@ Exit 0 on valid input. Exit 1 when the collab is closed, the phase is not `Compl
 
 ### `participant-verify-render`
 
-Writes one atomic three-turn participant-verification sequence. Successful exit emits:
+Writes one atomic three-turn participant-verification sequence. When the last assigned participant completes verification, increments `verification.rounds` by 1. Successful exit emits:
 
 1. `participant verification <completed|failed> for <role>`
 2. `NEXT: Run /collab participant verify for role <role>.` when another participant remains, otherwise `NEXT: Run /collab seal verification for role <reviewer>.`
@@ -467,7 +467,7 @@ A command has a helper-output defect when any of the following is true:
 
 ## Module-to-subcommand map
 
-Maps each documented `## Abort families` module family to its `registry.py` subcommand(s) and key implementing function(s). Use this table to audit spec-to-code alignment without running the helper: check that the abort messages listed in each module section match the exit-1 strings in the named functions.
+Maps each documented `## Abort families` module family to its implementing subcommand(s) and key function(s). Most functions reside in `registry.py`; rows that resolve to a sibling helper note the containing module in the Key function(s) column. Use this table to audit spec-to-code alignment without running the helper: check that the abort messages listed in each module section match the exit-1 strings in the named functions.
 
 | Module | Subcommand(s) | Key function(s) |
 |---|---|---|

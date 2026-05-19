@@ -27,6 +27,12 @@ Every `agent-honor-system` clause marks an ABORT that relies on agent judgment r
 | 3 | `_functions/collab/seal-verification.md:43` (Notes) | *(Notes clause — no anchor)* | Registry target unavailable for `/collab seal verification`; agent names the registry field or token. | Partial — `seal-state` enforces target resolution (`registry target not found`, `registry activeCollabId is empty`). The honor-system marker covers the human-facing naming obligation, not the gate itself. | Low: helper enforcement is the primary gate; this clause only adds the human-readable name obligation. |
 | 4 | `_functions/collab/_helper-output.md:213` | `seal-verification-archive-protocol-violation` | `--cap-exit archive` used when participant verification passed cleanly (no findings); protocol violation with no helper abort. | None — `seal-render` accepts `--cap-exit archive` regardless of participant-verification outcome. The constraint is route-prose-enforced only. | Medium: violations trigger the rollback condition in `_invariants.md` Invariant #10. Detection is active but reactive; the helper cannot prevent the violation. |
 
+## Promoted
+
+| # | Source | ABORT anchor | Clause summary | Helper enforcement | Promoted in |
+|---|---|---|---|---|---|
+| 5 | `_functions/collab/seal-verification.md:27` | `seal-verification-zero-rounds` | Step 8: `verificationRounds` is zero; agent must abort before sealing. Round increment moved from `seal_render` to `participant_verify_render` at the all-participants-completed transition; `seal_render` now checks `verificationRounds > 0` as defense-in-depth only. | Full — `participant_verify_render` owns the increment; `seal_render` defends in depth; agent judgment no longer required for this abort path. | pe item, collab `2026-05-19-multi-agent-framework-assessment-part-4` |
+
 ## Non-convergence observation (PA Addition 3)
 
 PA's Audit finding #3 (convergence by participation) is absorbed here rather than in the Action Plan. The observation: when a participant never joins a collab phase, their absence is indistinguishable from silence — the protocol has no signal for deliberate non-participation versus missing contributor. This is listed beside the honor-system clauses because it has the same failure shape: documentation assumes participation; the helper does not enforce it.
