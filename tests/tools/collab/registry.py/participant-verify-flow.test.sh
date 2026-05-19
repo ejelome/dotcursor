@@ -27,10 +27,8 @@ registry = Path(sys.argv[1])
 data = json.loads(registry.read_text())
 entry = next(item for item in data['collabs'] if item['slug'] == 'participant-verify-flow')
 entry['handoff'] = {
-    'schemaVersion': 1,
     'roles': {
         'pe': {
-            'schemaVersion': 1,
             'writeScope': ['tools/collab/registry.py'],
             'validationCommands': [['./tools/cursor/audit.sh']],
         }

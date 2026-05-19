@@ -19,7 +19,6 @@ The checked-in repo marker (`.collab.json`) binds a repository to its user-scope
 
   | Field | Type | Description |
   | --- | --- | --- |
-  | `schemaVersion` | integer | Schema revision; currently `1`. |
   | `projectId` | string | Opaque identifier. Never derived from directory name, path, remote URL, basename, or worktree. Set once at project initialization; never changed. |
   | `label` | string | Human-readable project name; used for display only, not resolution. |
   | `state.mode` | string | Worktree sharing mode: `"shared"` (default) or `"isolated"`. |

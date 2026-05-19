@@ -46,14 +46,6 @@ Authority is strict and ordered:
 
 <!-- TODO(patch): describe any project-local or environment-specific validation gates -->
 
-## 6) Contract Versioning
-
-Contract version: `0.1.0`.
-
-- **Patch:** wording or validation tightening with no behavioral change.
-- **Minor:** additive contract surface; backward compatible.
-- **Major:** precedence, path, or ownership changes requiring migration.
-
-## 7) Reporting Contract
+## 6) Reporting Contract
 
 <!-- TODO(patch): define the validation results and residual risks that must be reported when work completes -->

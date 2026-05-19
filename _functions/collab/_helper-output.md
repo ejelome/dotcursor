@@ -315,7 +315,7 @@ Fires after parsing when the assembled state object does not conform to the sche
 Exit-1 messages (exact):
 
 - `handoff: handoff state must be an object`
-- `handoff: handoff schemaVersion must be 1`
+- `handoff: handoff state contains disallowed version field`
 - `handoff: handoff body must be a string when present`
 
 ### Module: `participant-verify-state`

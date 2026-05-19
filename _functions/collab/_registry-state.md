@@ -48,7 +48,7 @@ Exit-1 message (exact): `project identity invalid JSON: <path>: <detail>`
 Exit-1 messages (exact):
 
 - `project identity must be an object: <path>`
-- `project identity schemaVersion must be 1: <path>`
+- `project identity contains disallowed version field: <path>`
 - `project identity projectId must be an opaque lowercase id: <path>`
 - `project identity label must be a non-empty string when present: <path>`
 - `project identity state must be an object when present: <path>`

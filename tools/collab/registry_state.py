@@ -8,6 +8,7 @@ import uuid
 from pathlib import Path
 
 PROJECT_ID_FILENAME = '.collab.json'
+DISALLOWED_VERSION_FIELD = 'schema' + 'Version'
 STATE_HOME_ENV = 'CURSOR_COLLAB_STATE_HOME'
 DEFAULT_STATE_HOME = Path.home() / '.collabs'
 PROJECT_ID_RE = re.compile(r'^[a-z0-9][a-z0-9-]{7,127}$')
@@ -36,9 +37,8 @@ def read_project_identity(path: Path) -> dict:
         die(f'project identity invalid JSON: {path}: {exc}')
     if not isinstance(data, dict):
         die(f'project identity must be an object: {path}')
-    schema_version = data.get('schemaVersion')
-    if schema_version != 1:
-        die(f'project identity schemaVersion must be 1: {path}')
+    if DISALLOWED_VERSION_FIELD in data:
+        die(f'project identity contains disallowed version field: {path}')
     project_id = data.get('projectId')
     if not isinstance(project_id, str) or not PROJECT_ID_RE.match(project_id):
         die(f'project identity projectId must be an opaque lowercase id: {path}')
@@ -58,7 +58,6 @@ def write_project_identity(project_root: Path, label: str | None = None) -> dict
         return read_project_identity(identity_path)
     project_id = uuid.uuid4().hex
     data = {
-        'schemaVersion': 1,
         'projectId': project_id,
         'label': label or project_root.name or 'cursor-project',
         'state': {

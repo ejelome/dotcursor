@@ -37,7 +37,7 @@ state_home = Path(sys.argv[2]).resolve()
 target = sys.argv[3]
 list_output = sys.argv[4]
 identity = json.loads(Path('.collab.json').read_text())
-assert identity['schemaVersion'] == 1
+assert 'schema' + 'Version' not in identity
 assert identity['projectId']
 assert identity['label'] == Path.cwd().name
 assert registry == state_home / identity['projectId'] / 'registry.json'

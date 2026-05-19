@@ -29,6 +29,7 @@ entry = next(item for item in data['collabs'] if item['slug'] == 'verification-a
 entry['verification']['cap'] = 1
 path.write_text(json.dumps(data, indent=2) + '\n')
 PY
+seed_paired_verification_round "$TARGET"
 
 registry_rounds() {
   python3 - "$TARGET" "$REGISTRY" <<'PY'
@@ -56,11 +57,11 @@ assert_rounds() {
 state="$("$ROOT/tools/collab/registry.py" seal-state "$TARGET" pa)"
 rounds="$(read_json_field verificationRounds <<<"$state")"
 revision="$(read_json_field registryRevision <<<"$state")"
-if [[ "$rounds" != "0" ]]; then
-  printf 'FAIL: seal-state spent a verification round\n%s\n' "$state" >&2
+if [[ "$rounds" != "1" ]]; then
+  printf 'FAIL: seal-state did not expose the existing paired verification round\n%s\n' "$state" >&2
   exit 1
 fi
-assert_rounds "paired reviewer-executor state read" 0
+assert_rounds "paired reviewer-executor state read" 1
 
 set +e
 cap_output="$("$ROOT/tools/collab/registry.py" seal-render "$TARGET" pa --observed-revision "$revision" --caller-role pa 2>&1)"
@@ -70,7 +71,7 @@ if [[ "$cap_status" -eq 0 || "$cap_output" != *"round cap reached; reissue with 
   printf 'FAIL: seal-render did not enforce cap before cap-exit\n%s\n' "$cap_output" >&2
   exit 1
 fi
-assert_rounds "blocked over-cap seal attempt" 0
+assert_rounds "blocked over-cap seal attempt" 1
 
 "$ROOT/tools/collab/registry.py" seal-render "$TARGET" pa \
   --observed-revision "$revision" \

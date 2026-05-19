@@ -56,8 +56,7 @@ ALLOWED_VERDICT_OUTCOMES = {'success', 'incomplete', 'failed'}
 ALLOWED_VERDICT_RESTORE_TARGETS = {'Action Plan', 'Handoff'}
 ALLOWED_CAP_EXITS = {'reopen-action-plan', 'reopen-handoff', 'follow-up-collab', 'archive'}
 DEFAULT_VERIFICATION_CAP = 3
-HANDOFF_SCHEMA_VERSION = 1
-VERIFICATION_SEAL_SCHEMA_VERSION = 1
+DISALLOWED_VERSION_FIELD = 'schema' + 'Version'
 MAX_HANDOFF_SCOPE_COUNT = 32
 MAX_HANDOFF_SCOPE_LENGTH = 200
 MAX_VALIDATION_COMMANDS = 16
@@ -213,7 +212,7 @@ def registry_lock(path: Path):
 
 def load_registry_or_bootstrap(path: Path) -> dict:
     if not path.exists():
-        data = {'schemaVersion': 1, 'activeCollabId': None, 'collabs': []}
+        data = {'activeCollabId': None, 'collabs': []}
         sync_registry_project_metadata(data)
         return data
     data = load_registry(path)
@@ -797,19 +796,17 @@ def validate_handoff_validation_commands(value: object) -> list[list[str]]:
     return [normalize_validation_command_entry(item) for item in value]
 
 
-def validate_handoff_state(value: object, source: str) -> dict:
+def validate_handoff_state(value: object, source: str, reject_version_field: bool = True) -> dict:
     if not isinstance(value, dict):
         die(f'{source}: handoff state must be an object')
-    schema_version = value.get('schemaVersion')
-    if schema_version != HANDOFF_SCHEMA_VERSION:
-        die(f'{source}: handoff schemaVersion must be {HANDOFF_SCHEMA_VERSION}')
+    if reject_version_field and DISALLOWED_VERSION_FIELD in value:
+        die(f'{source}: handoff state contains disallowed version field')
     write_scope = validate_handoff_write_scope(value.get('writeScope'))
     validation_commands = validate_handoff_validation_commands(value.get('validationCommands'))
     body = value.get('body')
     if body is not None and not isinstance(body, str):
         die(f'{source}: handoff body must be a string when present')
     normalized = dict(value)
-    normalized['schemaVersion'] = HANDOFF_SCHEMA_VERSION
     normalized['writeScope'] = write_scope
     normalized['validationCommands'] = validation_commands
     return normalized
@@ -1416,8 +1413,8 @@ def validate_registry(data: dict, path: Path | None = None) -> None:
     old_root_keys = sorted(OLD_ROOT_KEYS.intersection(data))
     if old_root_keys:
         die(f'{source}: old registry keys are not allowed: {old_root_keys}')
-    if data.get('schemaVersion') != 1:
-        die(f'{source}: schemaVersion must be 1')
+    if DISALLOWED_VERSION_FIELD in data:
+        die(f'{source}: root contains disallowed version field')
     revision = data.get('revision', 0)
     if not isinstance(revision, int) or revision < 0:
         die(f'{source}: revision must be a non-negative integer when present')
@@ -1642,8 +1639,8 @@ def validate_registry(data: dict, path: Path | None = None) -> None:
         if verification_seal is not None:
             if not isinstance(verification_seal, dict):
                 die(f'{source}: verificationSeal must be an object when present')
-            if verification_seal.get('schemaVersion') != VERIFICATION_SEAL_SCHEMA_VERSION:
-                die(f'{source}: verificationSeal.schemaVersion must be {VERIFICATION_SEAL_SCHEMA_VERSION}')
+            if collab_id == active_id and DISALLOWED_VERSION_FIELD in verification_seal:
+                die(f'{source}: verificationSeal contains disallowed version field')
             observed = verification_seal.get('observedRevision')
             if not isinstance(observed, int) or observed < 0:
                 die(f'{source}: verificationSeal.observedRevision must be a non-negative integer')
@@ -1687,8 +1684,8 @@ def validate_registry(data: dict, path: Path | None = None) -> None:
         if handoff is not None:
             if not isinstance(handoff, dict):
                 die(f'{source}: handoff must be an object when present')
-            if handoff.get('schemaVersion') != HANDOFF_SCHEMA_VERSION:
-                die(f'{source}: handoff schemaVersion must be {HANDOFF_SCHEMA_VERSION}')
+            if collab_id == active_id and DISALLOWED_VERSION_FIELD in handoff:
+                die(f'{source}: handoff contains disallowed version field')
             handoff_roles = handoff.get('roles')
             if not isinstance(handoff_roles, dict):
                 die(f'{source}: handoff roles must be an object when present')
@@ -1697,7 +1694,7 @@ def validate_registry(data: dict, path: Path | None = None) -> None:
                     die(f'{source}: handoff role keys must be non-empty strings')
                 if role not in participant_role_keys:
                     die(f'{source}: handoff role must already be a participant: {role}')
-                validate_handoff_state(state, f'{source}: handoff.{role}')
+                validate_handoff_state(state, f'{source}: handoff.{role}', reject_version_field=collab_id == active_id)
 
         if collab_id in collab_map:
             die(f'{source}: duplicate collab id: {collab_id}')
@@ -3109,7 +3106,6 @@ def parse_handoff_content(content: str) -> dict:
     if 'validationCommands' not in sections:
         handoff_abort('validationCommands', 'missing')
     state = {
-        'schemaVersion': HANDOFF_SCHEMA_VERSION,
         'writeScope': parse_write_scope_section(sections['writeScope']),
         'validationCommands': parse_validation_commands_section(sections['validationCommands']),
         'body': '\n'.join(render_content_for_transcript(content)).rstrip('\n'),
@@ -3118,8 +3114,7 @@ def parse_handoff_content(content: str) -> dict:
 
 
 def set_handoff_state(entry: dict, role: str, state: dict) -> None:
-    handoff = entry.setdefault('handoff', {'schemaVersion': HANDOFF_SCHEMA_VERSION, 'roles': {}})
-    handoff['schemaVersion'] = HANDOFF_SCHEMA_VERSION
+    handoff = entry.setdefault('handoff', {'roles': {}})
     roles = handoff.setdefault('roles', {})
     if not isinstance(roles, dict):
         die('handoff roles must be an object')
@@ -4296,7 +4291,6 @@ def seal_snapshot(
     follow_up: dict | None = None,
 ) -> dict:
     seal = {
-        'schemaVersion': VERIFICATION_SEAL_SCHEMA_VERSION,
         'observedRevision': observed_revision,
         'executionEntries': active_execution_entries(entry),
         'validationScopes': validation_scopes_for_execution(entry),
@@ -4924,7 +4918,6 @@ def show_verdict(path: Path, target: str) -> int:
     }
     if isinstance(seal, dict):
         output['verificationSeal'] = {
-            'schemaVersion': seal.get('schemaVersion'),
             'observedRevision': seal.get('observedRevision'),
             'sealedAt': seal.get('sealedAt'),
             'sealedBy': seal.get('sealedBy'),

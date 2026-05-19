@@ -29,7 +29,6 @@ spec.loader.exec_module(module)
 module.DEFAULT_ROLES_DIR = roles
 
 registry = {
-    'schemaVersion': 1,
     'revision': 1,
     'activeCollabId': '2026-05-19-role-file-check',
     'collabs': [{

@@ -129,10 +129,8 @@ path = Path(sys.argv[2])
 data = json.loads(path.read_text())
 entry = next(item for item in data['collabs'] if item['slug'] == slug)
 entry['handoff'] = {
-    'schemaVersion': 1,
     'roles': {
         'pe': {
-            'schemaVersion': 1,
             'writeScope': ['tools/collab/registry.py'],
             'validationCommands': [['./tools/cursor/audit.sh']],
         }
