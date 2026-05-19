@@ -119,7 +119,7 @@ try:
     module.validate_issue_bridge_block(tmp)
 except SystemExit as exc:
     message = str(exc)
-    assert 'issue bridge blocked until TW helper-output drift work and PE rebinding tests are present' in message, message
+    assert 'issue bridge blocked until prerequisite artifacts are present: _functions/collab/_helper-output.md and tests/tools/collab/registry.py/rebinding-invariants.test.sh' in message, message
     assert 'full-body envelope rejection' in message, message
     assert 'rebinding invariant test file' in message, message
 else:

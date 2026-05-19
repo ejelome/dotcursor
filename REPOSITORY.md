@@ -127,3 +127,9 @@ When work completes, report:
 - Any unresolved install or patch placeholder markers remaining in installed scaffold files (as defined in `_functions/agent/install.md` and `_functions/agent/patch.md`).
 - Any residual risks: known blockers in `_tests/*`, deferred test additions, or boundary cases (e.g. the documented `agent-honor-system` limit in `_tests/_tests.md`) that affected the run.
 - Any uncommitted state in ignored runtime directories (`.claude/`, `projects/`, etc.) or the user-scope collab state root that influenced behavior during the run.
+
+## 10) Contract History
+
+Contract history is recorded from `0.3.0` forward; pre-`0.3.0` entries are absent because this section was introduced at `0.3.0` and those contracts predate it — their absence here does not archive or retire them.
+
+**0.3.0** (2026-05-19): Registry identity binding enforced — `projectId` rebinding to a different user-scope collab state root is a hard rejection in `tools/collab/registry.py`; participant `agentId` rebinding detection added; state root resolution extracted into `tools/collab/registry_state.py`; issue-bridge gate diagnostics documented in `tools/collab/registry.py`; helper output abort families in `_functions/collab/_helper-output.md` expanded to exact-exit-1-message depth for existing helpers.

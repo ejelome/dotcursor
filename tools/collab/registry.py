@@ -5529,8 +5529,10 @@ def validate_issue_bridge_block(cursor_root: Path = DEFAULT_CURSOR_ROOT) -> None
     gaps = issue_bridge_prerequisite_gaps(cursor_root)
     if gaps:
         die(
-            'issue bridge blocked until TW helper-output drift work and PE rebinding '
-            f'tests are present: missing {", ".join(gaps)}'
+            'issue bridge blocked until prerequisite artifacts are present: '
+            '_functions/collab/_helper-output.md and '
+            'tests/tools/collab/registry.py/rebinding-invariants.test.sh; '
+            f'missing {", ".join(gaps)}'
         )
 
 
