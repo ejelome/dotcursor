@@ -1996,21 +1996,9 @@ def completion_summary_empty(transcript: str) -> bool:
         if str(exc) == 'transcript phase missing: Completion':
             return True
         raise
-    saw_execution_history = False
     for line in lines:
-        stripped = line.strip()
-        if not stripped or stripped == CONTENT_ONLY_GUARD:
-            continue
-        if SUMMARY_HEADING_RE.match(stripped):
+        if SUMMARY_HEADING_RE.match(line.strip()):
             return False
-        if stripped == '**Execution history**':
-            saw_execution_history = True
-            continue
-        if saw_execution_history and re.match(r'^\d+\.\s+\*\*[^*]+:\*\*\s+', stripped):
-            continue
-        if stripped.startswith('<') and stripped.endswith('>'):
-            continue
-        return False
     return True
 
 
