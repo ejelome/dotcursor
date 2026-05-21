@@ -76,8 +76,8 @@ def workflow_model_selection_gaps(cursor_root: Path) -> list[str]:
 
     init_required = {
         'init --terminal selector': '--terminal',
-        'init cursor-arg --terminal': 'param: name=--terminal',
-        'init terminal values': 'seal|issue|none',
+        'init route-arg --terminal': 'param: name=--terminal',
+        'init terminal values': 'seal|issue',
     }
     for label, needle in init_required.items():
         if needle not in init_text:
@@ -85,7 +85,7 @@ def workflow_model_selection_gaps(cursor_root: Path) -> list[str]:
 
     registry_required = {
         'registry terminal field': '`terminal`',
-        'registry terminal enum': 'seal|issue|none',
+        'registry terminal enum': 'seal|issue',
     }
     for label, needle in registry_required.items():
         if needle not in registry_text:

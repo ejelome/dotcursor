@@ -27,7 +27,7 @@ Remove one participant from the registry roster and transcript metadata when the
 - **Registry targeting:** Resolve the target collab from the resolved registry, using `tools/collab/registry.py` as the shared helper. When the first token after the route is present, treat it as a collab slug, id, or stable numeric position. Otherwise use `activeCollabId`. If the registry is unreadable or invalid, the token does not match any entry, or `activeCollabId` is empty, **ABORT**: registry target unavailable; name the registry field or token.
 - **Ownership boundary:** `participants` are owned by `join` and `kick`. `/collab set` must not replace the roster during normal operation.
 
-```cursor-arg
+```route-arg
 dispatch: (collab remove participant <role>)
 param: name=<role>; required=required; placeholder=<role>; class=dynamic; source=tools/collab/registry.py roles
 ```

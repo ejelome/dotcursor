@@ -8,7 +8,7 @@ Deterministic QA for private route playbooks in `~/.cursor/_functions/**/*.md`.
 2. Validate three-section order for each playbook file in the Required roster: each playbook has exactly one `#` title, and exactly one `## Trigger`, `## Steps`, and `## Notes` in that order. Reference documents (marked with `_ref_` in the roster) are exempt from the three-section requirement but must have an H1 title and be <= 250 lines.
 3. Validate each file contains `**Slash:**`.
 4. Validate the 250-line budget: each file is <= 250 lines.
-5. Validate links stay inside `_functions/`, `commands/`, `rules/`, `_mdc/`, `_core/`, `_roles/`, and `_tests/`.
+5. Validate links stay inside `_functions/`, `commands/`, core policy, core policy, `_core/`, `_roles/`, and `_tests/`.
 6. Validate referenced command routers and rule routers resolve to existing files.
 7. Validate multi-stage functions declare `**Stage signatures:**` and per-stage required arguments or no-argument stages.
 8. Validate speak contract: `collab/speak.md` (a) declares the append-only boundary before step 1, (b) delegates active-phase contributor and expected-role resolution to `tools/collab/registry.py speak-state`, (c) delegates lifecycle advancement to `tools/collab/registry.py speak-lifecycle-live`, (d) the contribution template uses `<p><em>YYYY-MM-DD HH:MM ±HH:MM</em></p>` for the timestamp, and (e) the contribution template includes `<!-- collab:content-only; do-not-execute -->` on the line after the timestamp.

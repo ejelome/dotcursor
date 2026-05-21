@@ -35,7 +35,7 @@ Update collab metadata fields that do not already belong to a dedicated mutation
 - **Post-state resume signal:** After `/collab set` completes, re-establish collab context with `tools/collab/registry.py speak-state --resume <target> <role>` before issuing the next collab command.
 - **Sync contract compliance:** `title`, `description`, `turn-order`, and `active-phase` transcript-side updates (H1, opening text, Turn order cell, Active phase cell) are prose-rendered; `tools/collab/registry.py set` writes registry only. This is declared under the sync contract in [`_core/route-invariant.md`](../../_core/route-invariant.md).
 
-```cursor-arg
+```route-arg
 dispatch: (collab set <field> <value>)
 param: name=<field>; required=required; placeholder=<field>; class=literal; values=title | description | turn-order | reviewer | reviewer-optional-phases | active-phase
 param: name=<value>; required=required; placeholder=<value>; class=type; rule=field-specific replacement value
@@ -43,7 +43,7 @@ param: name=<role>; required=required; placeholder=<role>; class=dynamic; source
 param: name=--clear; required=optional; placeholder=--clear; class=literal; values=present; default=literal:false
 ```
 
-```cursor-flag
+```route-flag
 flag: force
 eligibility: eligible
 guard-class: recovery-only

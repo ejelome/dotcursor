@@ -30,7 +30,7 @@ Restore a collaboration from a non-success `Completion.verification` verdict to 
 - **Cap-exit distinction:** `/collab seal verification --cap-exit reopen-handoff` and `--cap-exit reopen-action-plan` remain direct reviewer cap-exit paths. `/collab reopen` is for non-success assessment verdicts that already recorded a `restoreTarget`.
 - **Recovery sequence:** For the full failed-verdict operator path, see [`seal-verification.md` Restore-route recovery](seal-verification.md#restore-route-recovery).
 
-```cursor-arg
+```route-arg
 dispatch: (collab reopen <action-plan | handoff> [<target>])
 param: name=<action-plan | handoff>; required=required; placeholder=<action-plan | handoff>; class=literal; values=action-plan | handoff
 param: name=<target>; required=optional; placeholder=<target>; class=dynamic; rule=collab slug, id, or #N; defaults to active collab; default=derived:active-collab

@@ -18,7 +18,7 @@ Patch `REPOSITORY.md` in the current repository with repo-specific multi-agent m
 5. Locate all `<!-- TODO(patch): <description> -->` placeholders. If none are found, **ABORT**: no `<!-- TODO(patch): ... -->` placeholders found; `REPOSITORY.md` may already be patched or was not installed via `/agent install`.
 6. For each placeholder, infer repo-specific content from the current repository context. For validation commands, include a command path only when that exact path exists in the target repo; see **Validation inference scope** in **Notes**. When no eligible command is found, leave a bounded `<!-- TODO(patch): list repo-specific validation commands -->` placeholder. Use the `<description>` as the inference prompt. Display all inferred values. For placeholders that cannot be inferred, collect the values from the user before presenting the gate. When `--force` is supplied, compute `the candidate patch`, render the diff from `the candidate patch`, then present the same gate. Gate the write per `_core/command-argument.md`:
 
-   ```cursor-gate
+   ```route-gate
    gate-class: destructive
    proceed: overwrite REPOSITORY.md
    abort: cancel
@@ -45,12 +45,12 @@ Patch `REPOSITORY.md` in the current repository with repo-specific multi-agent m
 - **Confirm-before-write:** `patch.md` is a confirm-before-write route; the confirmation step is mandatory and not optional for any placeholder. Gate contract: `_core/command-argument.md`.
 - **Force flag:** `--force` is eligible only for the route's gated overwrite path. It does not bypass missing-file, idempotency, inference, validation, or permission failures.
 
-```cursor-arg
+```route-arg
 dispatch: (agent patch [--force])
 param: name=--force; required=optional; placeholder=--force; class=literal; values=present; default=literal:false
 ```
 
-```cursor-flag
+```route-flag
 flag: force
 eligibility: eligible
 guard-class: gated-overwrite

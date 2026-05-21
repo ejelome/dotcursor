@@ -13,14 +13,14 @@
 
 1. Resolve **`<project>`** from the first argument or `@`-mention per **Invocation** in **Notes**. If missing, **ABORT**: `<project>` is required.
 2. Walk **Rubric** items **1–9** in **Notes**; skip what does not apply.
-3. When rubric learning applies, follow [shared-cmd-quality.mdc](../../_mdc/shared/shared-cmd-quality.mdc) **Protocol** steps 2–6 after the primary review.
+3. When rubric learning applies, follow [quality-learning](../../_core/quality-learning.md) **Protocol** steps 2–6 after the primary review.
 
 ## Notes
 
 - **Parameters:** `<project>` — project root path (required); `@`-mentions are additive.
 - **Constraint:** Ground claims in files and `@`-mentions; screenshots alone are insufficient.
 - **Scope:** **`<project>`** — web stack root; resolve absolute when possible. Web stacks (static, SPA, SSR, BFF, edge, workers, bundlers, UI, CSS, tokens as code). Default **non-game** web. **Phaser/hybrid:** own host shell, DOM outside canvas, routing, build/tooling, server/BFF, auth, CMS, CI glue — not gameplay canvas. Wrapper that mounts Phaser (e.g. `PhaserGame.tsx`): WSE owns wrapper lifecycle, props, events; IGD owns inside `Game`. **In:** structure, API boundaries, validation at edges, async/errors, config/secrets, web-typical security (not pentest), code-level a11y, tokens, tests/CI, observability when present. **Out:** image-only review; pure gameplay canvas with no web slice; repos with no web delivery.
-- **Dependencies:** If required context is missing, **ABORT** per **`auto-context-gate.mdc`**.
+- **Dependencies:** If required context is missing, **ABORT** per **`context-gate.md`**.
 - **Invocation:** First token = `<project>`; if absent, ABORT; invalid path → ABORT; multiple positional path args → first wins; multiple `@`-mentions are additive; resolve absolute when possible.
 - **Rubric** (walk items 1–9; skip what does not apply):
   - **1 Structure** — acyclic layers when present; single wiring for globals; isolatable features; DDD/ports only if pattern exists.
@@ -35,7 +35,7 @@
   - **Process** — map entrypoints; read root **`OWNERS.md`** if present when boundaries unclear; if `OWNERS.md` is absent and boundaries are unclear, ask `/quality assess operations` to generate it; missing router/CI = note, not automatic failure; **default** one topic per round; **`full`** or user "full pass" → all items with file anchors; prefer incremental fixes. `/quality tune` may aggregate this pass with other principal reviews.
   - **Feedback** — file + boundary; risk→fix; no roadmap unless in scope.
 
-```cursor-arg
+```route-arg
 dispatch: (quality assess web <project>)
 param: name=<project>; required=required; placeholder=<project>; class=type; rule=web project root path
 ```

@@ -1,6 +1,6 @@
 # Style guide
 
-The style guide applies to all `.md` and `.mdc` files across all projects and notes, except where [Personal account exception](#personal-account-exception) or [Changelog entries](#changelog-entries) says otherwise. Per-type templates for common shapes live in [the document standard](document-standard.md); slash playbook details live in [command standard](command-standard.md).
+The style guide applies to all `.md` and `markdown-workflow.md` files across all projects and notes, except where [Personal account exception](#personal-account-exception) or [Changelog entries](#changelog-entries) says otherwise. Per-type templates for common shapes live in [the document standard](document-standard.md); slash playbook details live in [command standard](command-standard.md).
 
 Contract: [document-standard.md](document-standard.md), [command-standard.md](command-standard.md), [context-management.md](context-management.md)
 
@@ -36,7 +36,7 @@ Never use `this`, `it`, or `that` as a subject in reference docs, role docs, or 
 
 ### Tense
 
-- Present tense for facts: `auto-context-gate.mdc` in the rules layer (illustrative) sets `alwaysApply: true` with no path `globs`.
+- Present tense for facts: `context-gate.md` in the rules layer (illustrative) sets `activation: true` with no path `path patterns`.
 - Imperative for instructions: `Open _functions/git/commit.md in the commands layer before drafting the commit message.`
 - Future tense only for planned but unbuilt features: `The migration command will handle schema versioning once the playbook is written.`
 - In personal accounts (see Personal account exception), future tense is also permitted for intentions: `Next week I'll focus on the auth flow.`
@@ -109,7 +109,7 @@ Personal accounts — devblog entries, personal essays, journaling, public longf
 
 ## LLM-consumed files
 
-Files consumed by Cursor — rules (`.mdc`), commands, and skills — follow all voice rules above plus the requirements in the LLM-consumed files section. These files instruct a language model, not a human. Ambiguity in these files produces inconsistent model behavior.
+LLM-consumed files — rules (`markdown-workflow.md`), commands, and skills — follow all voice rules above plus the requirements in the LLM-consumed files section. These files instruct a language model, not a human. Ambiguity in these files produces inconsistent model behavior.
 
 ### Instructions
 
@@ -127,7 +127,7 @@ Files consumed by Cursor — rules (`.mdc`), commands, and skills — follow all
 ### Conflict resolution
 
 - When two rules could conflict, the more specific rule wins. State the precedence explicitly in the more general rule
-- If a rule defers to another, name the other rule by filename: “See `shared-docs-precedence.mdc` for markdown and workflow precedence when rules stack” (as in `auto-docs-markdown.mdc`, illustrative)
+- If a rule defers to another, name the other rule by filename: “See `markdown-workflow.md` for markdown and workflow precedence when rules stack” (as in `markdown-workflow.md`, illustrative)
 - Never leave conflict resolution implicit — the model will not infer precedence correctly
 
 ### Examples
@@ -143,17 +143,17 @@ Files consumed by Cursor — rules (`.mdc`), commands, and skills — follow all
 
 ## File naming
 
-### Rules (`.mdc`)
+### Rules (`markdown-workflow.md`)
 
-Pattern: `{scope}-{group}-{name}.mdc`
+Pattern: `markdown-workflow.md`
 
 |Segment|Values                                   |Meaning                                                                                                                                                                                                                                 |
 |-------|-----------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-|`scope`|`shared`, `auto`                         |`auto` — main rule for its domain (not a dependency). Use either `alwaysApply: true` or path `globs` with `alwaysApply: false`, never both. `shared` — dependency rule for other rules; keep `alwaysApply: false` and load via Agent Requested, path `globs`, or stacking — not as a standalone always-on main rule.|
+|`scope`|`shared`, `auto`                         |`auto` — main rule for its domain (not a dependency). Use either `activation: true` or path `path patterns` with `activation: false`, never both. `shared` — dependency rule for other rules; keep `activation: false` and load via Agent Requested, path `path patterns`, or stacking — not as a standalone always-on main rule.|
 |`group`|`docs`, `cmd`, `git`, `quality`, `review`, …|Domain that ties the rule to its command group. Matches the group prefix of related commands.                                                                                                                                           |
 |`name` |kebab-case noun                          |What the rule governs within the group.                                                                                                                                                                                                 |
 
-Examples: `shared-docs-author-voice.mdc`, `auto-docs-markdown.mdc`, `shared-cmd-quality.mdc`
+Examples: `markdown-workflow.md`, `markdown-workflow.md`, `quality-learning.md`
 
 ### Commands (`.md`)
 

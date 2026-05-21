@@ -1,6 +1,6 @@
 # /doc write readme
 
-Create or update `README*` and `readme*` files using verified workspace facts, `shared-docs-toc.mdc`, `shared-docs-precedence.mdc`, and `auto-docs-markdown.mdc` (README tone and repository layout tree defer to this command on those paths).
+Create or update `README*` and `readme*` files using verified workspace facts, `markdown-workflow.md`, `markdown-workflow.md`, and `markdown-workflow.md` (README tone and repository layout tree defer to this command on those paths).
 
 ## Trigger
 
@@ -12,7 +12,7 @@ Create or update `README*` and `readme*` files using verified workspace facts, `
 ## Steps
 
 1. Confirm target path(s) match **`**/README*`** and **`**/readme*`**. If multiple match and the user did not name one, **ask once**. Treat each README as independent unless the user scopes a monorepo package.
-2. If **`shared-docs-toc.mdc`**, **`shared-docs-precedence.mdc`**, or **`auto-docs-markdown.mdc`** is missing from context when needed, **ABORT** per **`auto-context-gate.mdc`**.
+2. If **`markdown-workflow.md`**, **`markdown-workflow.md`**, or **`markdown-workflow.md`** is missing from context when needed, **ABORT** per **`context-gate.md`**.
 3. Choose **Create** (no file or new package readme) or **Update** (file exists). Default **Update** when unsure; preserve structure unless the user wants a rewrite.
 4. Discover in order for orientation (not precedence when facts conflict):
    - **`package.json`** or equivalent if present
@@ -42,13 +42,13 @@ Create or update `README*` and `readme*` files using verified workspace facts, `
 
    **Include when verified:** **Badges** when CI/CD config exists; **Screenshot or Demo** when a reader-visible UI exists and an asset or URL is verified; **Structure** or **Repository layout** when a short map helps; **Prerequisites** when non-obvious; **Configuration**, **Scripts or Commands**, **Deployment**, **Known issues**, **Roadmap**, **Contributing**, **License**, **Support**, **Asset credits**, **Architecture/Conventions** only with evidence.
 8. **Repository layout tree:** At each level list subdirectories first (A–Z), then files (A–Z); ASCII order so dot-prefixed entries sort before letters; recurse the same rule; keep optional trailing `#` comments concrete.
-9. **Manual TOC:** Required for the repository root **`README.md`** in this workspace. Wrap the TOC block with `---` immediately before the `**Table of contents**` label and immediately after the final TOC entry. For other README paths, the TOC is optional unless requested or already present. When a TOC is present, follow **`shared-docs-toc.mdc`**: list every `##`, `###`, and deeper subsection in order (or label-only when no such headings).
+9. **Manual TOC:** Required for the repository root **`README.md`** in this workspace. Wrap the TOC block with `---` immediately before the `**Table of contents**` label and immediately after the final TOC entry. For other README paths, the TOC is optional unless requested or already present. When a TOC is present, follow **`markdown-workflow.md`**: list every `##`, `###`, and deeper subsection in order (or label-only when no such headings).
 10. **Changelog:** Do not create or edit **`CHANGELOG.md`** (or other changelog paths) unless the user or same task explicitly includes them—then use **`/doc write changelog`**.
 11. **MANUAL:** Do not create or edit repo-root **`MANUAL.md`** unless the repo has **Automated setup** (a root shell installer or **`Makefile`/`justfile`** targets clearly used for install/bootstrap) **and** the user or task explicitly includes **`MANUAL.md`**. Otherwise treat **`MANUAL.md`** as out of scope here; use **`/doc write manual`** in a separate invocation when needed.
 12. **Symlink-first config repos:** When the main deliverable is config installed into **`~`** or editor dirs via a named installer, the opening line may name platforms, what is managed, and the installer plus symlink targets in one short sentence within the ≤80-character cap even if **Install** repeats the script; **“here”** is allowed only in that narrow case.
 13. **Tone:** Present tense; second person or neutral for body; sentence-case headings; short sentences; lists for steps; language-tagged fences; placeholders explicit; plain Markdown without extra decorative rules; emoji only if the project already uses them.
 14. **Environment variables and paths** in README body use single backticks, not bold-wrapped code.
-15. Before finishing, verify each of the following. Required sections are present and the brief-description limit is met. **Install**/**Setup** and **Usage** are concrete or honestly delegated. **Status** matches the chosen shape and date rule in **Notes**. No commands are invented. Badges appear only when CI config exists. The screenshot rule is satisfied or honestly omitted. The repository root **`README.md`** has a synced TOC wrapped with `---`; TOCs in other README files are synced when present. **Description standards**, **`shared-docs-toc.mdc`**, and **`shared-docs-precedence.mdc`** are respected.
+15. Before finishing, verify each of the following. Required sections are present and the brief-description limit is met. **Install**/**Setup** and **Usage** are concrete or honestly delegated. **Status** matches the chosen shape and date rule in **Notes**. No commands are invented. Badges appear only when CI config exists. The screenshot rule is satisfied or honestly omitted. The repository root **`README.md`** has a synced TOC wrapped with `---`; TOCs in other README files are synced when present. **Description standards**, **`markdown-workflow.md`**, and **`markdown-workflow.md`** are respected.
 
 ## Notes
 
@@ -84,4 +84,4 @@ What works now and what is in progress (two sentences max).
 
 - **Date sourcing (default shape only):** Never guess **`YYYY-MM-DD`**. Prefer `date +%F` in the workspace; otherwise use a user-stated calendar date for the edit; if neither, ask once. Update the date when **Status** meaning changes; keep it for mechanical typo-only edits unless status text changes.
 - **README ↔ MANUAL:** When **Automated setup** exists and the user names both README and **`MANUAL.md`**, finish README first if it gives context, then run **`/doc write manual`** separately for **`MANUAL.md`**.
-- **Compliance:** No changelog edits out of scope; claims map to files read; TOC anchors match slugs per **`shared-docs-toc.mdc`** when a TOC is used.
+- **Compliance:** No changelog edits out of scope; claims map to files read; TOC anchors match slugs per **`markdown-workflow.md`** when a TOC is used.

@@ -56,8 +56,13 @@ ACTIVE_PARTICIPANT_VERIFICATION_STAGES = {'audit', 'remediation', 'final-audit'}
 ALLOWED_VERDICT_OUTCOMES = {'success', 'incomplete', 'failed'}
 ALLOWED_VERDICT_RESTORE_TARGETS = {'Action Plan', 'Handoff'}
 ALLOWED_CAP_EXITS = {'reopen-action-plan', 'reopen-handoff', 'follow-up-collab', 'archive'}
-ALLOWED_TERMINALS = {'seal', 'issue', 'none'}
+ALLOWED_TERMINALS = {'seal', 'issue'}
 DEFAULT_TERMINAL = 'seal'
+TERMINAL_CHOICES_MESSAGE = 'seal, issue'
+RESERVED_ISSUE_TERMINAL_MESSAGE = (
+    '--terminal issue is reserved and not yet implemented; '
+    'use --terminal seal or omit --terminal'
+)
 DEFAULT_VERIFICATION_CAP = 3
 DISALLOWED_VERSION_FIELD = 'schema' + 'Version'
 MAX_HANDOFF_SCOPE_COUNT = 32
@@ -312,10 +317,10 @@ def parse_init_tokens(tokens: list[str]) -> tuple[str, str, str | None, bool, bo
             terminal_seen = True
             index += 1
             if index >= len(tokens) or tokens[index].startswith('--'):
-                die('--terminal requires one of: issue, none, seal')
+                die(f'--terminal requires one of: {TERMINAL_CHOICES_MESSAGE}')
             terminal = tokens[index]
             if terminal not in ALLOWED_TERMINALS:
-                die('--terminal requires one of: issue, none, seal')
+                die(f'--terminal requires one of: {TERMINAL_CHOICES_MESSAGE}')
         elif token == '--preview':
             if open_requested:
                 die('duplicate flag: --preview')
@@ -5230,6 +5235,8 @@ def init_collab(
     opener: Callable[[str], bool] = webbrowser.open_new_tab,
 ) -> int:
     title, agent_id, reviewer, open_requested, participant_verification, terminal = parse_init_tokens(tokens)
+    if terminal == 'issue':
+        die(RESERVED_ISSUE_TERMINAL_MESSAGE)
     with registry_lock(path):
         data = load_registry_or_bootstrap(path)
         date = dt.date.today().isoformat()
@@ -5741,7 +5748,7 @@ def build_parser() -> argparse.ArgumentParser:
         'init',
         usage=(
             '%(prog)s --agent-id <agentId> [--reviewer <role>] '
-            '[--terminal <seal|issue|none>] [--no-participant-verification] [--preview] <name>'
+            '[--terminal <seal|issue>] [--no-participant-verification] [--preview] <name>'
         ),
         description='Create a registry-backed collab record.',
     )

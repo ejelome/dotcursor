@@ -67,7 +67,7 @@ except SystemExit as exc:
     message = str(exc)
     assert message.startswith('workflow-model selection blocked: missing --terminal prerequisite(s): '), message
     assert 'init --terminal selector' in message, message
-    assert 'init cursor-arg --terminal' in message, message
+    assert 'init route-arg --terminal' in message, message
     assert 'registry terminal field' in message, message
     assert 'helper --terminal parser' in message, message
 else:
@@ -77,9 +77,9 @@ write(
     '_functions/collab/init.md',
     '\n'.join([
         '# /collab init',
-        'Use --terminal seal|issue|none.',
-        '```cursor-arg',
-        'param: name=--terminal; values=seal|issue|none; default=seal',
+        'Use --terminal seal|issue.',
+        '```route-arg',
+        'param: name=--terminal; values=seal|issue; default=seal',
         '```',
     ]),
 )
@@ -87,13 +87,13 @@ write(
     '_functions/collab/_registry.md',
     '\n'.join([
         '# /collab registry',
-        '| `terminal` | string | Workflow-model terminal selector: seal|issue|none. |',
+        '| `terminal` | string | Workflow-model terminal selector: seal|issue. |',
     ]),
 )
 write(
     'tools/collab/registry.py',
     '\n'.join([
-        "ALLOWED_TERMINALS = {'seal', 'issue', 'none'}",
+        "ALLOWED_TERMINALS = {'seal', 'issue'}",
         "if token == '--terminal': pass",
         "entry = {'terminal': terminal}",
     ]),
@@ -130,26 +130,39 @@ assert module.parse_init_tokens(['--agent-id', 'codex', '--terminal', 'seal', 'S
 try:
     module.parse_init_tokens(['--agent-id', 'codex', '--terminal', 'bad', 'Bad Terminal'])
 except SystemExit as exc:
-    assert str(exc) == '--terminal requires one of: issue, none, seal', exc
+    assert str(exc) == '--terminal requires one of: seal, issue', exc
 else:
     raise AssertionError('init accepted invalid terminal selector')
+
+try:
+    module.parse_init_tokens(['--agent-id', 'codex', '--terminal', 'none', 'None Terminal'])
+except SystemExit as exc:
+    assert str(exc) == '--terminal requires one of: seal, issue', exc
+else:
+    raise AssertionError('init accepted removed terminal selector')
 
 init_tmp.mkdir(parents=True)
 old_cwd = Path.cwd()
 try:
     os.chdir(init_tmp)
     registry = init_tmp / 'registry.json'
-    with redirect_stdout(StringIO()):
+    try:
         module.init_collab(registry, ['--agent-id', 'codex', '--terminal', 'issue', 'Issue Init'], root / '_roles')
+    except SystemExit as exc:
+        assert str(exc) == '--terminal issue is reserved and not yet implemented; use --terminal seal or omit --terminal', exc
+    else:
+        raise AssertionError('init accepted reserved issue terminal selector')
+    with redirect_stdout(StringIO()):
         module.init_collab(registry, ['--agent-id', 'codex', '--terminal', 'seal', 'Seal Init'], root / '_roles')
+        module.init_collab(registry, ['--agent-id', 'codex', 'Default Init'], root / '_roles')
 finally:
     os.chdir(old_cwd)
 
 data = json.loads((init_tmp / 'registry.json').read_text())
 by_slug = {entry['slug']: entry for entry in data['collabs']}
-assert by_slug['issue-init']['terminal'] == 'issue', by_slug['issue-init']
 assert by_slug['seal-init']['terminal'] == 'seal', by_slug['seal-init']
-assert by_slug['issue-init']['createdAt'], by_slug['issue-init']
+assert by_slug['default-init']['terminal'] == 'seal', by_slug['default-init']
+assert by_slug['seal-init']['createdAt'], by_slug['seal-init']
 PY
 
 printf 'OK: issue bridge planned-route prerequisite gate holds\n'

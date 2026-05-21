@@ -1,39 +1,29 @@
 # dotcursor
 
-Configuration framework for `~/.cursor` — Cursor IDE, Claude Code, and agent harnesses.
+Configuration framework for `~/.cursor` command routes and agent harnesses.
 
 ## Entry points
 
-Each adapter is a thin routing-only file that points to `_CURSOR.md` as the shared core.
+Each adapter is a thin routing-only file that points to `commands/commands.md` as the shared command catalog.
 
 | Adapter | For | Bootstrap chain |
 |---|---|---|
-| `CLAUDE.md` | Claude Code CLI | `CLAUDE.md` → `_CURSOR.md` → `commands/commands.md` |
-| `AGENTS.md` | Codex, GPT, and other agent harnesses | `AGENTS.md` → `_CURSOR.md` → `commands/commands.md` |
-| `rules/auto.mdc` | Cursor IDE (auto-applied at startup) | `rules/auto.mdc` → `_mdc/auto/*` |
-| `rules/shared.mdc` | Cursor IDE (applied on request) | `rules/shared.mdc` → `_mdc/shared/*` |
-
-Cursor reads `~/.cursor/rules/*.mdc` at startup. `auto.mdc` is `alwaysApply: true`; `shared.mdc` is `alwaysApply: false`. No separate adapter file is needed — the rules directory is the native Cursor entry surface.
+| `CLAUDE.md` | Claude Code CLI | `CLAUDE.md` → `AGENTS.md` → `commands/commands.md` |
+| `AGENTS.md` | Codex, GPT, and other agent harnesses | `AGENTS.md` → `commands/commands.md` |
 
 ## Directory layout
 
 ```
 ~/.cursor/
 ├── CLAUDE.md          — Claude Code adapter (routing only)
-├── AGENTS.md          — other-harness adapter (routing only)
-├── _CURSOR.md         — shared routing core; owns read order, ownership boundaries
-├── README.md          — this file
+├── AGENTS.md          — other-harness adapter (routing only)├── README.md          — this file
 ├── .collab.json         — checked-in collab repo marker
 ├── _core/             — cross-cutting invariants and contracts
 ├── _functions/        — slash command implementations
-├── _generated/        — framework-generated catalogs (do not edit by hand)
-├── _mdc/              — Cursor rule implementations (auto/ and shared/ sub-trees)
-├── _roles/            — role definitions for the collab framework
+├── _generated/        — framework-generated catalogs (do not edit by hand)├── _roles/            — role definitions for the collab framework
 ├── _templates/        — scaffolding templates
 ├── _tests/            — agent-facing QA harnesses for `/test`
-├── commands/          — command catalog and routing table
-├── rules/             — Cursor startup surfaces (auto.mdc, shared.mdc)
-└── tools/             — framework tooling (collab engine, cursor utilities)
+├── commands/          — command catalog and routing table└── tools/             — framework tooling (collab engine, framework utilities)
 ```
 
 ### `_generated/` discovery
@@ -51,5 +41,5 @@ Run `tools/cursor/audit.sh` to verify the framework surface. The audit exits 0 w
 - Runtime paths (`$HOME/.collabs/<projectId>/`, `.claude/`, `projects/`) are excluded from git
 - No accidental untracked payload
 - Every tracked file is reachable from an adapter, core, or catalog
-- Framework-generated output is distinguishable from IDE-produced output
+- Framework-generated output is distinguishable from generated output
 - Reference graph has no broken links

@@ -23,7 +23,7 @@ Display the recorded verification verdict metadata for a collaboration record.
 - **No verdict:** The helper aborts with `verdict unavailable for target` when no assessment verdict has been recorded.
 - **Read-only:** This route does not mutate registry state or transcript text.
 
-```cursor-arg
+```route-arg
 dispatch: (collab show verdict [<target>])
 param: name=<target>; required=optional; placeholder=<target>; class=dynamic; rule=collab slug, id, or #N; defaults to active collab; default=derived:active-collab
 ```

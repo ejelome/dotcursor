@@ -1,6 +1,6 @@
 # Command Argument
 
-Command argument contract for cursor routes. Routes adopt named flags by declaring a `cursor-flag` block, and routes with user-facing mutation gates declare a `cursor-gate` block.
+Command argument contract for cursor routes. Routes adopt named flags by declaring a `route-flag` block, and routes with user-facing mutation gates declare a `route-gate` block.
 
 ## Flag Parsing Semantics
 
@@ -8,11 +8,11 @@ Command argument contract for cursor routes. Routes adopt named flags by declari
 - **Exact case-sensitive match.** `--force` and `--Force` are distinct tokens; only the declared form matches.
 - **Flags appear immediately after the route selector and before positional arguments.** A route signature of the form `/agent install --force` places the flag after the command verb and before any positional.
 - **Flag-and-positional interleaving is not supported.** Interleaving flags with positional arguments is not supported. A future route requiring trailing flags must amend this document; the absence of that support is intentional, not an oversight.
-- **Unsupported flags abort before any route mutation.** A route that does not declare a `cursor-flag` block for a given flag must abort with a clear error when that flag is supplied; it must not silently ignore or pass through the flag.
+- **Unsupported flags abort before any route mutation.** A route that does not declare a `route-flag` block for a given flag must abort with a clear error when that flag is supplied; it must not silently ignore or pass through the flag.
 
-## `cursor-flag` Block Schema
+## `route-flag` Block Schema
 
-Every route that supports or explicitly rejects a named flag must carry a fenced `cursor-flag` block. The block is machine-readable and validated by `tools/check-cursor-flags.sh`.
+Every route that supports or explicitly rejects a named flag must carry a fenced `route-flag` block. The block is machine-readable and validated by `tools/check-route-flags.sh`.
 
 **Required fields**
 
@@ -27,11 +27,11 @@ Every route that supports or explicitly rejects a named flag must carry a fenced
 
 - `eligibility: eligible` + a `guard-class` listed in the ineligibility table -> lint error.
 - `eligibility: ineligible` + empty or absent `ineligibility-reason` -> lint error.
-- At most one `cursor-flag` block per `flag` value per route.
+- At most one `route-flag` block per `flag` value per route.
 
 **Example — eligible**
 
-````cursor-flag
+````route-flag
 flag: force
 eligibility: eligible
 guard-class: hard-abort
@@ -39,7 +39,7 @@ guard-class: hard-abort
 
 **Example — ineligible**
 
-````cursor-flag
+````route-flag
 flag: force
 eligibility: ineligible
 guard-class: registry-integrity
@@ -123,7 +123,7 @@ For destructive gates the full `<verb> <operand>` string must match — both ver
 
 ## Gate Declaration Block
 
-Every mutating route must carry a fenced `cursor-gate` block declaring its gate. The block is machine-readable and validated by `tools/check-cursor-gates.sh`.
+Every mutating route must carry a fenced `route-gate` block declaring its gate. The block is machine-readable and validated by `tools/check-route-gates.sh`.
 
 **Required fields**
 
@@ -138,7 +138,7 @@ Every mutating route must carry a fenced `cursor-gate` block declaring its gate.
 
 **Example — destructive gate**
 
-````cursor-gate
+````route-gate
 gate-class: destructive
 proceed: delete <slug>
 abort: cancel
@@ -149,7 +149,7 @@ re-prompt-template: Type "delete <slug>" to delete this collab, or "cancel" to a
 
 **Example — standard gate**
 
-````cursor-gate
+````route-gate
 gate-class: standard
 proceed: confirm
 abort: cancel
@@ -169,14 +169,14 @@ This file defines what the prompt must convey: proceed token, abort token, and a
 To add a verb to the closed destructive set:
 
 1. Amend the **Closed destructive verb set** in this file.
-2. Update `tools/check-cursor-gates.sh` to recognize the new verb.
+2. Update `tools/check-route-gates.sh` to recognize the new verb.
 3. Document the new verb's operand-format convention in this file.
 
 Never add a verb at the route level without amending this file first.
 
-## `cursor-arg` Block Schema
+## `route-arg` Block Schema
 
-Every route that declares user-facing arguments must carry a fenced `cursor-arg` block. The block is machine-readable and validated by `tools/cursor/audit.sh`.
+Every route that declares user-facing arguments must carry a fenced `route-arg` block. The block is machine-readable and validated by `tools/cursor/audit.sh`.
 
 **Required fields**
 
@@ -224,7 +224,7 @@ Optional keys:
 
 **Example**
 
-````cursor-arg
+````route-arg
 dispatch: (example cmd "<name>" [--target <role>] [--dry-run])
 param: name=<name>; required=required; placeholder=<name>; class=type; rule=title text
 param: name=--target; required=optional; placeholder=<role>; class=dynamic; source=tools/example/roles.py; default=none

@@ -37,7 +37,7 @@ Project: dotcursor · a13dba4ca8714205b217dca31da96eee
 - **Sort order:** Active collab always first. Among the rest: highest `#N` first (newest to oldest), then slug alphabetically as a tiebreaker when `#N` values are equal (not normally possible but stated for completeness).
 - **Registry boundary:** `/collab list` is read-only. It never creates, edits, archives, or selects a collab.
 
-```cursor-arg
+```route-arg
 dispatch: (collab list [--status <open|closed|archived>])
 param: name=--status; required=optional; placeholder=<open|closed|archived>; class=literal; values=open | closed | archived; default=literal:all
 ```

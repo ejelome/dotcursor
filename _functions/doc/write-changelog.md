@@ -23,7 +23,7 @@ Create or update `CHANGELOG.md`, `NEWS.md`, `HISTORY.md`, `RELEASE_NOTES.md`, an
 
 - **Route (atomic vs squash).** `atomic` → one bullet per non-merge commit in the resolved source range, chronological within each `###`. `squash` → one chosen squash commit; one bullet per accepted body line per the **Squash procedure**.
 - **Parameters:** `<atomic | squash>` — git replay mode (required). `atomic`: one bullet per commit in the resolved source range. `squash`: one bullet per accepted body line of a chosen squash commit. For "since last release" or a tag, anchor `git log` from that tag when named.
-- **Dependencies:** [shared-docs-precedence.mdc](../../_mdc/shared/shared-docs-precedence.mdc), [auto-docs-markdown.mdc](../../_mdc/auto/auto-docs-markdown.mdc); `/doc write changelog` directives take precedence over those rules on changelog paths. If either is unreadable when needed, **ABORT** per **`auto-context-gate.mdc`**.
+- **Dependencies:** [markdown-workflow](../../_core/markdown-workflow.md), [markdown-workflow](../../_core/markdown-workflow.md); `/doc write changelog` directives take precedence over those rules on changelog paths. If either is unreadable when needed, **ABORT** per **`context-gate.md`**.
 - **Post-run report:** After each run, emit a structured summary in this exact form — omit the "Squash OID" line for atomic mode: `Updated <path>. Mode: <atomic|squash>. Git range: <YYYY-MM-DD> → <YYYY-MM-DD>. [Squash OID: <sha>.] Ordering: <rule applied, e.g. "chronological within each category" or "body-line order of selected commit">. Sections written: ### <Category> (<N> items)[, …].` No unsolicited coaching unless asked.
 - **Voice:** Shared markdown defaults; changelog entry tense overridden here. **`[Unreleased]`:** imperative or simple present. **Dated / `[YANKED]`:** past tense.
 - **Document skeleton:** H1; short intro explaining the file purpose plus optional SemVer line; `## [Unreleased]`; then dated `##` newest first. **Title by filename:** `CHANGELOG*` → `# Changelog`; `NEWS.md` → `# News`; `HISTORY.md` → `# History`; `CHANGES*` → `# Changes`; `RELEASE_NOTES*` → `# Release notes` or match project. Dates use `YYYY-MM-DD`. Only non-empty `###`. List lines respect ~120 chars when caps exist elsewhere.
@@ -41,7 +41,7 @@ Create or update `CHANGELOG.md`, `NEWS.md`, `HISTORY.md`, `RELEASE_NOTES.md`, an
 - **List order in `[Unreleased]` and dated sections:** `atomic` is **chronological** within each `###` (oldest to newest in the week window, unless a task specifies **reverse**). `squash` **replay** lines follow the **body line order** of the chosen commit for those lines only. Merged, reconciled, or long-lived buffers may be **sorted alphabetically** per `###` for readability (declare which rule you used; do not interleave `feat` and `chore` without a mapping pass).
 - **Anti-patterns:** Past tense under `[Unreleased]`; category-verb bullet prefixes; inferring squash/atomic without user; trusting changelog over `git`; `git show` same OID twice in squash; paraphrasing commits; merging body lines; vague bullets; empty `###`; log dumps; dropping drift bullets silently; mixing modes in one run.
 
-```cursor-arg
+```route-arg
 dispatch: (doc write changelog <atomic | squash>)
 param: name=<atomic | squash>; required=required; placeholder=<atomic | squash>; class=literal; values=atomic | squash
 ```

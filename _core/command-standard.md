@@ -37,7 +37,7 @@ The `## Trigger` block declares three labeled sections in this order: **Slash**,
 
 **Slash** — the only terminal-invocable form; matches exactly as written. Lead with `**Slash:** /<namespace>` for public namespace files or `**Slash:** /<namespace> <route>` for private functions. Required route choices and positional arguments are declared in the **Signature** line directly after **Slash**.
 
-**Prose dispatch** — the routing-only `(<namespace> <route> <arg>...)` notation for non-Cursor agents. These agents follow the bootstrap chain (`CLAUDE.md` / `AGENTS.md` -> `~/.cursor/_CURSOR.md`) and then execute the corresponding slash command. It is not terminal-executable in Cursor; Cursor users invoke the slash form directly. Slash entries and prose-dispatch entries must still be unique across routes and must not appear under Search phrases. The `/test` router and `_functions/test/run.md` may mirror the same routed form because they describe one command surface and one implementation playbook, not two independently exposed routes.
+**Prose dispatch** — the routing-only `(<namespace> <route> <arg>...)` notation for non-Cursor agents. These agents follow the bootstrap chain (`CLAUDE.md` / `AGENTS.md` -> `~/.cursor/commands/commands.md`) and then execute the corresponding slash command. It is not terminal-executable in Cursor; Cursor users invoke the slash form directly. Slash entries and prose-dispatch entries must still be unique across routes and must not appear under Search phrases. The `/test` router and `_functions/test/run.md` may mirror the same routed form because they describe one command surface and one implementation playbook, not two independently exposed routes.
 
 **Search phrases** — discovery aids only; explicitly non-invocable; agents must not dispatch on a phrase match alone. For multi-mode functions, use a labeled group per mode: `**Search phrases (mode):**`.
 
@@ -156,7 +156,7 @@ One sentence — purpose of the route and when to use it.
 | **P8** | Title and opening line | H1 text is `# /<namespace>` or `# /<namespace> <route>` |
 | **P9** | Trigger contract | Every command/function file except `commands.md` declares `**Slash:**`, `**Prose dispatch:**`, and `**Search phrases:**` as three sections in that order |
 | **P10** | Signature and Notes contract | Signature placeholders, stage signatures, and Notes ordering stay consistent |
-| **P11** | Self-containment | Required dependencies stay inside `commands/`, `_functions/`, `_roles/`, `_core/`, `../rules/{auto,shared}.mdc`, `../_mdc/{auto,shared}/*.mdc`, or explicit QA harness targets |
+| **P11** | Self-containment | Required dependencies stay inside `commands/`, `_functions/`, `_roles/`, `_core/`, or explicit QA harness targets |
 
 ## Layout and length
 
@@ -165,10 +165,10 @@ One sentence — purpose of the route and when to use it.
 
 ## Link hygiene
 
-- Public command links may target sibling command files, `../_functions/**/*.md`, `../_core/*.md`, fragment-only anchors, `../rules/`, `../_mdc/`, and optional `https://` / `http://` context links.
-- Private function links may target sibling `_functions/**/*.md`, `../../_core/*.md`, `../../_roles/*.json`, `../../_mdc/**/*.mdc`, fragment-only anchors, and optional `https://` / `http://` context links.
-- Required authority for command behavior may come only from public command files, private function files, shared role JSON under `_roles/`, core contracts under `_core/`, rule router files under `../rules/`, private rule files under `../_mdc/`, or a `_functions/<ns>/_*.md` shared-dependency file within the same namespace.
-- `_functions/test/run.md` may also require `~/.cursor/_tests/commands.md`, `~/.cursor/_tests/rules.md`, `~/.cursor/_tests/_functions.md`, `~/.cursor/_tests/_mdc.md`, `~/.cursor/_tests/_core.md`, `~/.cursor/_tests/_roles.md`, `~/.cursor/_tests/_settings.md`, `~/.cursor/_tests/_tests.md`, and `REPOSITORY.md` at repo root.
+- Public command links may target sibling command files, `../_functions/**/*.md`, `../_core/*.md`, fragment-only anchors, and optional `https://` / `http://` context links.
+- Private function links may target sibling `_functions/**/*.md`, `../../_core/*.md`, `../../_roles/*.json`, fragment-only anchors, and optional `https://` / `http://` context links.
+- Required authority for command behavior may come only from public command files, private function files, shared role JSON under `_roles/`, core contracts under `_core/` or a `_functions/<ns>/_*.md` shared-dependency file within the same namespace.
+- `_functions/test/run.md` may also require `~/.cursor/_tests/commands.md`, `~/.cursor/_tests/_functions.md`, `~/.cursor/_tests/_core.md`, `~/.cursor/_tests/_roles.md`, `~/.cursor/_tests/_settings.md`, `~/.cursor/_tests/_tests.md`, and `REPOSITORY.md` at repo root.
 - External URLs are optional context only and never required authorities.
 
 ## QA cadence

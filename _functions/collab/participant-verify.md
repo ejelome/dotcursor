@@ -53,7 +53,7 @@ Execute the participant-verification sequence for an assigned role within `Compl
 - **Turn-budget trigger.** If any seal-attempt transcript exceeds 12 turns, open a follow-up DX audit on turn-budget management and `/compact` recovery ergonomics across participant verification.
 - **Post-state resume signal.** After `/collab participant verify` completes, run `tools/collab/registry.py speak-state --resume <target> <role>` to confirm the current state before any further action.
 
-```cursor-arg
+```route-arg
 dispatch: (collab participant verify [<role>])
 param: name=<role>; required=optional; placeholder=<role>; class=dynamic; rule=registered participant role key in the active collab; default=derived:next-participant-verification-role
 ```

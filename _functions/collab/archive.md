@@ -29,7 +29,7 @@ Soft-delete a collab by marking it archived so it is preserved on disk but exclu
 - **Clear notice:** The helper emits `{"message": "Run /clear before starting another collab.", "notice": "clear", "status": "archived"}` after archiving. Display this to the caller. Route docs describe the output; they do not reimplement it. See [_invariants.md](_invariants.md).
 - **Summary-emission invariant:** A `### Summary —` block is written to `## Completion` at archive; no follow-up step is required.
 
-```cursor-arg
+```route-arg
 dispatch: (collab archive [<target>])
 param: name=<target>; required=optional; placeholder=<target>; class=dynamic; rule=collab slug, id, or #N; defaults to active collab; default=derived:active-collab
 ```

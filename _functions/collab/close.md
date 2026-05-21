@@ -31,7 +31,7 @@ Mark a collaboration record closed so contribution and phase-advance routes stop
 - **Post-state resume signal:** After `/collab close` the collab is closed and `activeCollabId` is cleared. Run `/clear` before starting a new collab. No `speak-state --resume` applies — the closed record is no longer active.
 - **Sync contract compliance:** Step 5's narrative refinement call (`/collab rewrite summary`) is prose-rendered. The structural summary is helper-owned and does not require a sync-contract declaration. This is declared under the sync contract in [`_core/route-invariant.md`](../../_core/route-invariant.md).
 
-```cursor-arg
+```route-arg
 dispatch: (collab close [--no-summary])
 param: name=--no-summary; required=optional; placeholder=--no-summary; class=literal; values=present; default=literal:false
 ```

@@ -33,7 +33,7 @@ Add a test only when a source behavior requires executable proof; prefer shell-l
 
 `tests/*.test.sh` owns shell-executable CI contract validation; `_tests/*.md` owns agent-facing policy for the `/test` command surface.
 
-`tools/cursor/audit.sh` is the shell-layer owning gate for adapter routing, `_CURSOR.md` discovery, and runtime ignore rules; no Markdown harness is required for these behaviors.
+`tools/cursor/audit.sh` is the shell-layer owning gate for adapter routing, `commands/commands.md` discovery, and runtime ignore rules; no Markdown harness is required for these behaviors.
 
 `tests/run.sh` is the single entry point for the full test suite and is owned by three runtimes:
 

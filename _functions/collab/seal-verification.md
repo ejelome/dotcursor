@@ -83,7 +83,7 @@ Seal the `Completion.verification` sub-state after a reviewer pass, recording th
 - **writeScope reopen advisory:** When the reviewer surfaces out-of-scope work during verification, the legal exit is `/collab seal verification --cap-exit reopen-handoff`. The `seal-render` helper applies the cap-exit and transitions the collab to `Handoff` phase directly; no separate reopen command is needed for this path. The reviewer must not widen the scope informally; the cap-exit creates the audit trail. Registry field `handoff.roles.<role>.writeScope` is the reopen boundary source.
 - **Effort matrix:** This route's reviewer turn is `xhigh` and is a mandatory-declaration turn. See [`_agent-effort.md`](_agent-effort.md) (`Completion.verification` row).
 
-```cursor-arg
+```route-arg
 dispatch: (collab seal verification [--cap-exit <action>] [--outcome <outcome>] [--restore-target <target>] [--restore-reason <reason>] [--evidence <json>] [--failure-category <category>])
 param: name=--cap-exit; required=optional; placeholder=<action>; class=literal; values=reopen-action-plan | reopen-handoff | follow-up-collab | archive; default=literal:absent
 param: name=--outcome; required=optional; placeholder=<outcome>; class=literal; values=success | incomplete | failed; default=literal:absent

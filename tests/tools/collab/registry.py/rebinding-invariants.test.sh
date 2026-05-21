@@ -119,7 +119,7 @@ write(
     '\n'.join([
         '# /collab init',
         'Use --terminal seal|issue|none.',
-        '```cursor-arg',
+        '```route-arg',
         'param: name=--terminal; values=seal|issue|none; default=seal',
         '```',
     ]),

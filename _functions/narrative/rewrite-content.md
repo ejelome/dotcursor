@@ -2,7 +2,7 @@
 
 Audit narrative content for drift, align project rules against the global Cursor tree, and gate the result with content-baseline scope enforcement.
 
-**Narrative content:** repository-authored text (`*.md`, `*.mdc`) that conveys meaning rather than executing behavior. Code comments, config values, and executable scripts are out of scope unless the runner opts in.
+**Narrative content:** repository-authored text (`*.md`, rule files) that conveys meaning rather than executing behavior. Code comments, config values, and executable scripts are out of scope unless the runner opts in.
 
 ## Trigger
 
@@ -51,8 +51,8 @@ Audit narrative content for drift, align project rules against the global Cursor
   `gate` sections: `Handoff verification` — display-only; `Scope check` — display-only; `Source validation` — display-only; `Result` — display-only; `Failures or blockers` — display-only; `coveredConcerns` — display-only; `Next action` — display-only.
 - **Concern coverage hard gate:** Each phase artifact must include `coveredConcerns`. Verify that `coveredConcerns` is a superset of `concernRequirements[phase]` and that the artifact has non-empty content for every claimed concern. On a miss, emit the full artifact and name missing concern keys. For `audit` and `align`, **ABORT** after emitting the artifact; for `gate`, report `Result: fail`.
 - **Discovering `validationCommands`:** In `audit`, resolve the invocation repo's validation surface with `tools/narrative/state.py audit --role <key>`: check `REPOSITORY.md` for documented commands first; if not found, detect from `package.json` scripts; if not found, detect executable scripts under `tools/`. Write the resolved list to the state file. Gate reads `validationCommands` from state; it does not use hardcoded commands.
-- **Audit surfaces:** Every narrative file under `~/.cursor/` is a valid audit surface: `_core/`, `_functions/`, `commands/`, `_tests/`, `rules/`, and `_mdc/`.
-- **Align surface:** Project-local `*.mdc` files checked against their counterparts under `~/.cursor/rules/`. Failure modes: file present locally but absent globally, or present globally but absent locally.
+- **Audit surfaces:** Every narrative file under `~/.cursor/` is a valid audit surface: `_core/`, `_functions/`, `commands/`, `_tests/`, core policy, and core policy.
+- **Align surface:** Project-local rule files files checked against their counterparts under `project overlay`. Failure modes: file present locally but absent globally, or present globally but absent locally.
 - **Phase 1 — Audit:** Do not edit files. Resolve and write the state file with `tools/narrative/state.py audit --role <key>`, which writes `roleBindings.audit` and `concernRequirements.audit` from the resolved role. After emitting the artifact, verify `coveredConcerns` and write the artifact to `phaseOutputs.audit`; on coverage miss, emit the artifact, name missing keys, and **ABORT** before handing off. Emit:
 
 ```text
@@ -83,22 +83,22 @@ Next phase:
 Run `/narrative rewrite content align --role <key>` to check project rule alignment, then `/narrative rewrite content gate --role <key>`.
 ```
 
-- **Phase 2 — Align:** Read-only phase — do not edit any files. Call `tools/narrative/state.py align --role <key>` before comparing files to write `roleBindings.align` and `concernRequirements.align` from the resolved role. Enumerate project-local `*.mdc` files and compare each against `~/.cursor/rules/`. Read `phaseOutputs.audit` from state before producing output; if missing or malformed, **ABORT** naming `phaseOutputs.audit`. Report mismatches — do not auto-resolve. Verify `coveredConcerns` and write the artifact to `phaseOutputs.align`; on coverage miss, emit the artifact, name missing keys, and **ABORT** before handing off. Emit:
+- **Phase 2 — Align:** Read-only phase — do not edit any files. Call `tools/narrative/state.py align --role <key>` before comparing files to write `roleBindings.align` and `concernRequirements.align` from the resolved role. Enumerate project-local rule files files and compare each against `project overlay`. Read `phaseOutputs.audit` from state before producing output; if missing or malformed, **ABORT** naming `phaseOutputs.audit`. Report mismatches — do not auto-resolve. Verify `coveredConcerns` and write the artifact to `phaseOutputs.align`; on coverage miss, emit the artifact, name missing keys, and **ABORT** before handing off. Emit:
 
 ```text
 ### Phase 2 — Align
 
 Aligned:
-- <path>: matches ~/.cursor/rules/<counterpart>
+- <path>: matches project overlay counterpart
 
 Mismatched:
 - <path>: <local state> vs <global state>
 
 Missing locally:
-- <path>: present in ~/.cursor/rules/ but absent in project
+- <path>: present in project overlay but absent in project
 
 Missing globally:
-- <path>: present in project but absent in ~/.cursor/rules/
+- <path>: present in project but absent in project overlay
 
 coveredConcerns:
 - <concern key>
@@ -146,7 +146,7 @@ Next action:
 
 - **Stop points:** Stop after each phase. Do not feed unresolved contract guesses into gate. The next-phase instructions in each output block are the only data that should cross phase boundaries.
 
-```cursor-arg
+```route-arg
 dispatch: (narrative rewrite content <audit | align | gate> --role <key>)
 param: name=<audit | align | gate>; required=required; placeholder=<audit | align | gate>; class=literal; values=audit | align | gate
 param: name=--role; required=required; placeholder=<key>; class=dynamic; source=tools/collab/registry.py roles

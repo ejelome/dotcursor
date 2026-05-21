@@ -23,7 +23,7 @@ Select the active collab in the registry so subsequent routes do not need an exp
 - **Parameters:** `<record>` — required collab slug, id, or numeric `#N`.
 - **Active selection model:** the resolved registry stores one top-level `activeCollabId` pointer. `/collab activate` is the only normal route that changes that pointer directly.
 
-```cursor-arg
+```route-arg
 dispatch: (collab activate <record>)
 param: name=<record>; required=required; placeholder=<record>; class=dynamic; rule=collab slug, id, or #N from the registry
 ```

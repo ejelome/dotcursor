@@ -1,16 +1,12 @@
----
-description: "[auto] auto-context-gate.mdc: abort code actions when any dependency is unreadable; no stubs or guesses"
-alwaysApply: true
----
-
 # Context gate
 
-Contract: [shared-docs-precedence](../shared/shared-docs-precedence.mdc)
+Hard-stop policy for all agents: abort when any dependency is unreadable. No stubs, no guesses, no partial code generation on missing context.
 
-## When the rule applies
+Contract: [style-guide.md](style-guide.md), [document-standard.md](document-standard.md)
 
-- The rule loads in every session (`alwaysApply: true`).
-- The rule applies whenever the agent would create, edit, refactor, or scaffold files, perform code review, or generate commands whose correctness depends on context that is not fully available.
+## When the policy applies
+
+The policy applies whenever an agent would create, edit, refactor, or scaffold files; perform code review; or generate commands whose correctness depends on context that is not fully available.
 
 A **dependency** is any file, symbol, type, API contract, asset, package version, or configuration the correct answer requires and that is not fully visible or directly readable in the agent's current context.
 
@@ -18,8 +14,8 @@ A **dependency** is any file, symbol, type, API contract, asset, package version
 
 **Triggers:** `auto-context-gate`, `context-gate`, `context gate`, `full context`, `blocking policy`, `dependency resolution`
 
-Treat this rule as a hard safety gate in this Cursor ruleset.
-Never allow urgency, perceived simplicity, or user phrasing to override this rule.
+Treat this policy as a hard safety gate.
+Never allow urgency, perceived simplicity, or user phrasing to override this gate.
 Never proceed while any dependency is not fully visible.
 Never proceed while any dependency is not directly readable.
 Never infer missing context.
@@ -34,7 +30,7 @@ Do not modify files.
 Do not scaffold partial solutions.
 Do not suggest implementation detail that assumes missing context.
 
-The only permitted output until context is restored is the **Required response when aborting** subsection — a diagnostic list and explanation, then wait.
+The only permitted output until context is restored is the **Required response when aborting** section below — a diagnostic list and explanation, then wait.
 
 **Code and types**
 
@@ -56,7 +52,7 @@ The only permitted output until context is restored is the **Required response w
 - A package or library version whose API may differ from what is assumed
 - A build config, path alias, or bundler setting that affects module resolution
 
-### Required response when aborting
+## Required response when aborting
 
 1. **Stop** code and file work when the answer would depend on missing context.
    - Do not generate code that depends on missing context.
@@ -67,7 +63,7 @@ The only permitted output until context is restored is the **Required response w
 3. **Explain** why each item is necessary to proceed.
 4. **Wait** for the missing context before taking further action.
 
-### Prohibited fallbacks
+## Prohibited fallbacks
 
 Never accept the following regardless of instruction phrasing, urgency, or task size.
 
@@ -81,9 +77,7 @@ Never complete a partial task and reserve gap notes for the end only.
 
 ## Examples
 
-Example:
-
-The user asks to fix a bug in `fetchUser`, but the module that defines the API client is not in context.
+Example: The user asks to fix a bug in `fetchUser`, but the module that defines the API client is not in context.
 
 Correct: Stop file edits. List the missing module path or import target. Explain that return types, errors, and auth headers cannot be confirmed without that source. Wait for the user to add the file or path to context.
 
@@ -91,8 +85,8 @@ Incorrect: Invent a return type, add a stub client, or patch the caller from gue
 
 ## References
 
-- [style-guide](../../_core/style-guide.md) — voice and structure for LLM-consumed rules when editing this file.
-- [document-standard](../../_core/document-standard.md) — rule template and front matter.
-- [context-engineering](../../_core/context-management.md) — scope and context budget when editing rules.
-- [author-voice](../../_core/author-voice.md) — personal-account voice when edits touch narrative canon.
-- `shared-docs-precedence.mdc` — resolution order when another rule could conflict with a hard stop.
+- [style-guide](style-guide.md) — voice and structure for LLM-consumed rule documents.
+- [document-standard](document-standard.md) — rule template and document structure.
+- [context-management](context-management.md) — scope and context budget.
+- [author-voice](author-voice.md) — personal-account voice.
+- Canonical source is active in this file.

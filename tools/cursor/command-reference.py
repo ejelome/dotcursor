@@ -136,12 +136,12 @@ def parse_key_values(path: Path, raw: str) -> dict[str, str]:
         if not item:
             continue
         if "=" not in item:
-            raise ReferenceError(f"{path}: malformed cursor-arg field: {item}")
+            raise ReferenceError(f"{path}: malformed route-arg field: {item}")
         key, value = item.split("=", 1)
         key = key.strip()
         value = value.strip()
         if key in data:
-            raise ReferenceError(f"{path}: duplicate cursor-arg field: {key}")
+            raise ReferenceError(f"{path}: duplicate route-arg field: {key}")
         data[key] = value
     return data
 
@@ -167,14 +167,14 @@ def registry_role_keys() -> list[str]:
 
 
 def parse_cursor_arg(path: Path, text: str, slash: str, signature: str) -> tuple[str, list[Param]]:
-    blocks = fenced_blocks(text, "cursor-arg")
+    blocks = fenced_blocks(text, "route-arg")
     has_params = route_has_params(slash, signature)
     if not has_params:
         if blocks:
-            raise ReferenceError(f"{path}: cursor-arg block present on parameterless route")
+            raise ReferenceError(f"{path}: route-arg block present on parameterless route")
         return synth_dispatch(signature or slash), []
     if len(blocks) != 1:
-        raise ReferenceError(f"{path}: expected exactly one cursor-arg block for parameterized route")
+        raise ReferenceError(f"{path}: expected exactly one route-arg block for parameterized route")
 
     dispatch = ""
     params: list[Param] = []
@@ -188,11 +188,11 @@ def parse_cursor_arg(path: Path, text: str, slash: str, signature: str) -> tuple
             dispatch = line.split(":", 1)[1].strip()
             continue
         if not line.startswith("param:"):
-            raise ReferenceError(f"{path}: malformed cursor-arg line: {line}")
+            raise ReferenceError(f"{path}: malformed route-arg line: {line}")
         data = parse_key_values(path, line.split(":", 1)[1])
         for key in ("name", "required", "placeholder", "class"):
             if not data.get(key):
-                raise ReferenceError(f"{path}: cursor-arg param missing {key}")
+                raise ReferenceError(f"{path}: route-arg param missing {key}")
         value_class = data["class"]
         required = data["required"]
         if value_class not in VALID_CLASSES:
@@ -221,13 +221,13 @@ def parse_cursor_arg(path: Path, text: str, slash: str, signature: str) -> tuple
         name = data["name"]
         placeholder = data["placeholder"]
         if name not in signature and placeholder not in signature:
-            raise ReferenceError(f"{path}: cursor-arg param absent from Signature: {name}")
+            raise ReferenceError(f"{path}: route-arg param absent from Signature: {name}")
         params.append(Param(name, required, placeholder, value_class, detail))
 
     if not dispatch:
-        raise ReferenceError(f"{path}: cursor-arg block missing dispatch")
+        raise ReferenceError(f"{path}: route-arg block missing dispatch")
     if not params:
-        raise ReferenceError(f"{path}: cursor-arg block has no params")
+        raise ReferenceError(f"{path}: route-arg block has no params")
     return dispatch, params
 
 

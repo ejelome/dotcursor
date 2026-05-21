@@ -30,6 +30,6 @@ Surface-wide bare-input policy for cursor routes. Routes that declare `default=n
 
 - **Consistency requirement:** All three input shapes follow the same rule. There are no per-route exceptions to abort-on-empty; only the content of the contextual help differs by input shape.
 
-- **Cursor-arg link:** A `cursor-arg` parameter row with `default=none` declares that bare omission of that parameter triggers this policy. Routes must not silently dispatch when a required-optional parameter with `default=none` is absent. See [`_core/command-argument.md`](command-argument.md) → **`cursor-arg` Block Schema**.
+- **Route-arg link:** A `route-arg` parameter row with `default=none` declares that bare omission of that parameter triggers this policy. Routes must not silently dispatch when a required-optional parameter with `default=none` is absent. See [`_core/command-argument.md`](command-argument.md) → **`route-arg` Block Schema**.
 
 - **Scope:** This policy governs mutating and read-only routes equally. Defaulting a bare namespace to a mutating route is higher risk (side effects on exploratory input), but even read-only routes must not silently dispatch from a bare namespace.

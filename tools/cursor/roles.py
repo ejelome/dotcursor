@@ -97,7 +97,7 @@ def validate_command(roles_dir: Path) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description='Shared Cursor role helper.')
+    parser = argparse.ArgumentParser(description='Shared role helper.')
     parser.add_argument('--roles-dir', default=str(DEFAULT_ROLES_DIR))
     subparsers = parser.add_subparsers(dest='command', required=True)
 

@@ -27,9 +27,9 @@ require_dir() {
 
 is_source_path() {
   case "$1" in
-    .gitignore|.collab.json|CLAUDE.md|AGENTS.md|_CURSOR.md|README.md|REPOSITORY.md) return 0 ;;
+    .gitignore|.collab.json|CLAUDE.md|AGENTS.md|README.md|REPOSITORY.md) return 0 ;;
     .github/*) return 0 ;;
-    _core/*|_data/*|_functions/*|_generated/*|_mdc/*|_roles/*|_templates/*|_tests/*|commands/*|rules/*|tests/*|tools/*) return 0 ;;
+    _core/*|_data/*|_functions/*|_generated/*|_roles/*|_templates/*|_tests/*|commands/*|tests/*|tools/*) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -37,16 +37,12 @@ is_source_path() {
 check_required_surface() {
   require_file CLAUDE.md
   require_file AGENTS.md
-  require_file _CURSOR.md
   require_file README.md
   require_file .collab.json
   require_file commands/commands.md
-  require_file rules/auto.mdc
-  require_file rules/shared.mdc
   require_dir _core
   require_dir _functions
   require_dir _generated
-  require_dir _mdc
   require_dir _roles
   require_dir _tests
   require_dir tools/cursor
@@ -54,11 +50,8 @@ check_required_surface() {
 
 check_adapters() {
   grep -Fq 'AGENTS.md' CLAUDE.md || fail "CLAUDE.md does not route to AGENTS.md"
-  grep -Fq '_CURSOR.md' AGENTS.md || fail "AGENTS.md does not route to _CURSOR.md"
-  grep -Fq 'commands/commands.md' _CURSOR.md || fail "_CURSOR.md does not route to commands/commands.md"
-  grep -Fq 'alwaysApply: true' rules/auto.mdc || fail "rules/auto.mdc is not auto-applied"
-  grep -Fq 'alwaysApply: false' rules/shared.mdc || fail "rules/shared.mdc is not shared/on-request"
-  ok "adapter and Cursor entry surfaces are named"
+  grep -Fq 'commands/commands.md' AGENTS.md || fail "AGENTS.md does not route to commands/commands.md"
+  ok "adapter entry surfaces are named"
 }
 
 check_runtime_boundary() {
@@ -203,6 +196,8 @@ check_tracked_source_boundary() {
 }
 
 check_generated_freshness() {
+  python3 tools/cursor/check-cursor-migration.py --check || failures=$((failures + 1))
+  tools/cursor/sync-context-gate.sh --check || failures=$((failures + 1))
   tools/cursor/sync-commands-catalog.sh --check || failures=$((failures + 1))
   tools/cursor/sync-framework-boundaries.sh --check || failures=$((failures + 1))
   tools/cursor/sync-roles-roster.sh --check || failures=$((failures + 1))
@@ -241,7 +236,7 @@ from urllib.parse import unquote
 
 root = Path.cwd()
 tracked = subprocess.run(
-    ["git", "ls-files", "*.md", "*.mdc"],
+    ["git", "ls-files", "*.md"],
     cwd=root,
     check=True,
     text=True,
@@ -302,7 +297,7 @@ PY
   ((status == 0)) || failures=$((failures + 1))
 }
 
-check_cursor_arg_defaults() {
+check_route_arg_defaults() {
   python3 - <<'PY'
 from __future__ import annotations
 
@@ -324,15 +319,15 @@ for path in sorted(Path('_functions').rglob('*.md')):
             fields[key.strip()] = value.strip()
         required = fields.get('required')
         if required == 'optional' and 'default' not in fields:
-            failures.append(f'{path}:{number}: optional cursor-arg param missing default=')
+            failures.append(f'{path}:{number}: optional route-arg param missing default=')
         if required == 'required' and 'default' in fields:
-            failures.append(f'{path}:{number}: required cursor-arg param must not declare default=')
+            failures.append(f'{path}:{number}: required route-arg param must not declare default=')
 
 if failures:
     for failure in failures:
         print(f'FAIL: {failure}', file=sys.stderr)
     sys.exit(1)
-print('OK: cursor-arg optional defaults are declared')
+print('OK: route-arg optional defaults are declared')
 PY
   local status=$?
   ((status == 0)) || failures=$((failures + 1))
@@ -348,7 +343,7 @@ check_collab_registry_lock
 check_generated_freshness
 check_generated_boundary
 check_links
-check_cursor_arg_defaults
+check_route_arg_defaults
 
 if ((failures > 0)); then
   printf 'audit: failed with %d issue(s)\n' "$failures" >&2

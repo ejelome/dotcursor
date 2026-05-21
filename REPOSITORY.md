@@ -19,6 +19,8 @@ Authority is strict and ordered:
 1. Repo-owned executable checks and scripts:
    - `./tests/run.sh` (runs `./tools/cursor/audit.sh` then every `tests/**/*.test.sh`)
    - `./tools/cursor/audit.sh` (adapter routing, `_CURSOR.md` discovery, runtime ignore rules, role-key prose drift guard)
+   - `./tools/cursor/check-cursor-migration.py --check` (Cursor migration ledger schema, carrier inventory, and declared dependency scan)
+   - `./tools/cursor/sync-context-gate.sh --check` (context-gate canonical source/projection parity)
    - `./tools/cursor/audit-role-prose.sh` (role-key prose drift guard for Markdown and MDC prose surfaces)
    - `./tools/cursor/sync-commands-catalog.sh --check` (commands roster integrity)
    - `./tools/cursor/sync-framework-boundaries.sh` (framework boundary projections)
@@ -80,6 +82,8 @@ This repo projects runtime state under `~/.cursor/*` and generated mirrors under
 
 - `./tools/cursor/audit.sh`
   - includes `./tools/cursor/audit-role-prose.sh`
+  - includes `./tools/cursor/check-cursor-migration.py --check`
+  - includes `./tools/cursor/sync-context-gate.sh --check`
 - `./tools/cursor/sync-commands-catalog.sh --check`
 - `./tools/cursor/sync-framework-boundaries.sh` (run and diff `_generated/` if a `--check` flag is not supported)
 - `./tools/cursor/sync-roles-roster.sh` (run and diff `_generated/` if a `--check` flag is not supported)

@@ -15,7 +15,7 @@ Permanently remove a collab record from the registry and disk. This operation is
 2. Read the resolved registry and the resolved transcript path. If either is unreadable, **ABORT**: record unreadable; name the path.
 3. Require explicit confirmation before proceeding: display the collab slug, id, and transcript path. Gate the deletion per `_core/command-argument.md`:
 
-   ```cursor-gate
+   ```route-gate
    gate-class: destructive
    proceed: delete <slug>
    abort: cancel
@@ -37,7 +37,7 @@ Permanently remove a collab record from the registry and disk. This operation is
 - **Destructive by default:** `delete` is always a hard delete — it removes both the registry entry and the transcript file. For non-destructive deactivation, use `/collab archive` instead.
 - **Confirmation required:** Always show the target details before presenting the gate. Never skip the gate prompt. Gate contract: `_core/command-argument.md`.
 
-```cursor-arg
+```route-arg
 dispatch: (collab delete [<target>])
 param: name=<target>; required=optional; placeholder=<target>; class=dynamic; rule=collab slug, id, or #N; defaults to active collab; default=derived:active-collab
 ```

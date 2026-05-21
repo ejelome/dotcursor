@@ -7,7 +7,7 @@ Create a moderated collaboration record under the user-scope collab state root f
 ## Trigger
 
 **Slash:** `/collab init`
-**Signature:** `/collab init "<name>" [--reviewer <role>] [--terminal <seal|issue|none>] [--no-participant-verification] [--preview]`
+**Signature:** `/collab init "<name>" [--reviewer <role>] [--terminal <seal|issue>] [--no-participant-verification] [--preview]`
 **Prose dispatch:** `(collab init ...)` — for non-Cursor agents; not terminal-executable in Cursor.
 **Search phrases:** collab init, create collaboration record, start moderated discussion
 
@@ -25,7 +25,7 @@ Create a moderated collaboration record under the user-scope collab state root f
 
 ## Notes
 
-- **Parameters:** `"<name>"` — required title text; all tokens after `init` that are not declared helper flags belong to this value. `--agent-id <agentId>` — required helper flag supplied by the route from the active runtime harness. `--reviewer <role>` — optional flag; always writes `reviewerRole`, `reviewerMode`, and `reviewerOptionalPhases` to the registry entry unconditionally; adds a transcript note if the role is not yet a participant, but does not defer or skip the registry write. `--terminal <seal|issue|none>` — optional workflow-model selector; defaults to `seal`; writes the per-collab top-level `terminal` field. `--no-participant-verification` — optional boolean flag that disables the `Completion.verification.participant` gate; participant verification is on by default and allows exactly one reviewer pass; if the seal fails, the moderator decides whether to reopen. `--preview` — optional boolean flag; no value accepted. When present, passes the rendered path to the platform default browser; macOS users should set their default browser. See **`--preview` flag** in **Notes**.
+- **Parameters:** `"<name>"` — required title text; all tokens after `init` that are not declared helper flags belong to this value. `--agent-id <agentId>` — required helper flag supplied by the route from the active runtime harness. `--reviewer <role>` — optional flag; always writes `reviewerRole`, `reviewerMode`, and `reviewerOptionalPhases` to the registry entry unconditionally; adds a transcript note if the role is not yet a participant, but does not defer or skip the registry write. `--terminal <seal|issue>` — optional workflow-model selector; active values: `seal` (default); `issue` — reserved, not yet implemented, hard-aborts with guidance to use `--terminal seal` or omit the flag; writes the per-collab top-level `terminal` field. `--no-participant-verification` — optional boolean flag that disables the `Completion.verification.participant` gate; participant verification is on by default and allows exactly one reviewer pass; if the seal fails, the moderator decides whether to reopen. `--preview` — optional boolean flag; no value accepted. When present, passes the rendered path to the platform default browser; macOS users should set their default browser. See **`--preview` flag** in **Notes**.
 - **Helper contract:** `tools/collab/registry.py init` is canonical for the subcommand name, required `--agent-id <agentId>` flag, optional `--reviewer <role>` flag, optional `--terminal <seal|issue|none>` flag, optional `--no-participant-verification` flag, unknown flag output (`unknown flag: <token>`), and first output token (`records/`). Optional `--preview` flag (boolean; no value); when present, causes the helper to emit an `OPEN:` advisory line after the transcript path.
 - **Force flag:** `--force` is ineligible for this route per [_core/command-argument.md](../../_core/command-argument.md). The helper guards against duplicate records and registry corruption; forcing these writes would create state that other helpers assume cannot exist.
 - **Execution boundary:** `"<name>"` is a raw label only. Create the file and stop.
@@ -112,18 +112,18 @@ Agents must wait for the moderator to call `/collab speak` before contributing.
 **Execution history**
 ```
 
-```cursor-flag
+```route-flag
 flag: force
 eligibility: ineligible
 guard-class: registry-integrity
 ineligibility-reason: Steps 8 and 12 guard against duplicate records and registry corruption; forcing these writes would create state that other helpers assume cannot exist.
 ```
 
-```cursor-arg
-dispatch: (collab init "<name>" [--reviewer <role>] [--terminal <seal|issue|none>] [--no-participant-verification] [--preview])
+```route-arg
+dispatch: (collab init "<name>" [--reviewer <role>] [--terminal <seal|issue>] [--no-participant-verification] [--preview])
 param: name=<name>; required=required; placeholder=<name>; class=type; rule=title text
 param: name=--reviewer; required=optional; placeholder=<role>; class=dynamic; source=tools/collab/registry.py roles; default=none
-param: name=--terminal; required=optional; placeholder=<seal|issue|none>; class=literal; values=seal | issue | none; default=literal:seal
+param: name=--terminal; required=optional; placeholder=<seal|issue>; class=literal; values=seal | issue; default=literal:seal
 param: name=--no-participant-verification; required=optional; placeholder=--no-participant-verification; class=type; rule=boolean flag; default=none
 param: name=--preview; required=optional; placeholder=--preview; class=type; rule=boolean flag; default=none
 ```

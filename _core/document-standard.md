@@ -1,6 +1,6 @@
 # Document standard
 
-The document standard defines per-type templates for common `.md` and `.mdc` shapes across projects and notes. Every file must follow the [style guide](style-guide.md), including [file naming](style-guide.md#file-naming) for types the standard does not list. Where a template calls for narrative voice, follow [the author voice guide](author-voice.md). Context engineering for rules and commands lives in [context engineering](context-management.md).
+The document standard defines per-type templates for common `.md` and `markdown-workflow.md` shapes across projects and notes. Every file must follow the [style guide](style-guide.md), including [file naming](style-guide.md#file-naming) for types the standard does not list. Where a template calls for narrative voice, follow [the author voice guide](author-voice.md). Context engineering for rules and commands lives in [context engineering](context-management.md).
 
 Contract: [style-guide.md](style-guide.md)
 
@@ -10,13 +10,13 @@ Install layout and runtime symlink behavior are out of scope for the `_core/` ca
 
 ## LLM-consumed files
 
-### Rule (`.mdc`)
+### Rule (`markdown-workflow.md`)
 
 ```markdown
 ---
-description: "[auto] auto-example.mdc: one sentence — what the rule governs."
-alwaysApply: false
-globs: ["**/*.ts", "**/*.tsx"]
+description: "[auto] auto-examplerule file: one sentence — what the rule governs."
+activation: false
+path patterns: ["**/*.ts", "**/*.tsx"]
 ---
 # Rule name
 ## When the rule applies
@@ -27,7 +27,7 @@ globs: ["**/*.ts", "**/*.tsx"]
 
 When and Behavior sections use imperative voice, one instruction per sentence. Examples sections include at least one labeled `Example:`. References sections name dependent rules by filename (see [style guide — LLM-consumed files](style-guide.md#llm-consumed-files)).
 
-**Front matter:** `auto`-prefixed rules are main rules (not dependencies): set either `alwaysApply: true` (omit `globs`) or `alwaysApply: false` with path `globs`. Never set both `alwaysApply: true` and `globs` together. `shared`-prefixed rules are dependencies: keep `alwaysApply: false`; Cursor loads them via Agent Requested, path `globs`, or when other rules stack them — they are not standalone always-on main rules (see [style guide — File naming](style-guide.md#file-naming) and [context engineering](context-management.md)). References to `.mdc` rule paths elsewhere in the doc set in the Rule (`.mdc`) template section are illustrative examples; `_core/` has no operational dependency on that layer.
+**Front matter:** `auto`-prefixed rules are main rules (not dependencies): set either `activation: true` (omit `path patterns`) or `activation: false` with path `path patterns`. Never set both `activation: true` and `path patterns` together. `shared`-prefixed rules are dependencies: keep `activation: false`; the host loads them via Agent Requested, path `path patterns`, or when other rules stack them — they are not standalone always-on main rules (see [style guide — File naming](style-guide.md#file-naming) and [context engineering](context-management.md)). References to `markdown-workflow.md` rule paths elsewhere in the doc set in the Rule (`markdown-workflow.md`) template section are illustrative examples; `_core/` has no operational dependency on that layer.
 
 ### Command (`.md`)
 

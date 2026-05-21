@@ -29,7 +29,7 @@ Retract the current role's latest contribution in the active phase while preserv
 - **Already finalized:** In `Completion`, use `/collab rewrite execution` for execution-history correction or a moderator follow-up for governance context.
 - **Role boundary:** The helper enforces `--caller-role` equality with the subject role; one participant cannot retract another participant's contribution.
 
-```cursor-arg
+```route-arg
 dispatch: (collab retract speak [--reason <text>])
 param: name=--reason; required=optional; placeholder=<text>; class=type; rule=free text; default=literal:unspecified
 ```

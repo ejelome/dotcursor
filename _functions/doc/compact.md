@@ -12,7 +12,7 @@ Compact a Markdown document while preserving all facts, structure, and constrain
 ## Steps
 
 1. Resolve `<path>` from the first argument or attachment. If missing, **ABORT**: `<path>` is required.
-2. If **`shared-docs-precedence.mdc`**, **`auto-docs-markdown.mdc`**, or (when a TOC is in play) **`shared-docs-toc.mdc`** is required and unreadable, **ABORT** per **`auto-context-gate.mdc`**.
+2. If **`markdown-workflow.md`**, **`markdown-workflow.md`**, or (when a TOC is in play) **`markdown-workflow.md`** is required and unreadable, **ABORT** per **`context-gate.md`**.
 3. Run the same **preservation check** as **`/doc compare`**: refined (or working copy) must retain facts, numbers, caveats, constraints, examples, definitions, key terms, and headings. Restore gaps before finalizing.
 4. Execute steps 4a–4e in order:
    - **4a.** Duplicate the resolved document in memory as a working copy.
@@ -26,17 +26,17 @@ Compact a Markdown document while preserving all facts, structure, and constrain
 
 - **Parameters:** `<path>` — Markdown file path (required); attachment is equivalent.
 - **Force flag:** `--force` is ineligible for this route per [_core/command-argument.md](../../_core/command-argument.md). Step 4e is a default output-mode choice, not an artifact-conflict guard; `--force` on this route would teach users that the flag means "change behavior" rather than "overwrite an artifact."
-- **TOC:** Do not add by default. Preserve an existing TOC unless the user asks to drop it. Add only when the user asks; follow **`shared-docs-toc.mdc`**; place after title and short intro when present.
+- **TOC:** Do not add by default. Preserve an existing TOC unless the user asks to drop it. Add only when the user asks; follow **`markdown-workflow.md`**; place after title and short intro when present.
 - Do not add content beyond what the original supports.
 
-```cursor-flag
+```route-flag
 flag: force
 eligibility: ineligible
 guard-class: output-mode-policy
 ineligibility-reason: Step 4e is a default output-mode choice, not an artifact-conflict guard; --force on this route would teach users that the flag means "change behavior" rather than "overwrite an artifact."
 ```
 
-```cursor-arg
+```route-arg
 dispatch: (doc compact <path>)
 param: name=<path>; required=required; placeholder=<path>; class=type; rule=markdown file path or attachment
 ```

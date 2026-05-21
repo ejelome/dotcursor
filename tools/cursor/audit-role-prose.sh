@@ -58,8 +58,8 @@ INLINE_CODE_RE = re.compile(r"`([^`]*)`")
 def is_source_candidate(path: Path) -> bool:
     rel = path.as_posix()
     return (
-        rel in {".gitignore", ".collab.json", "CLAUDE.md", "AGENTS.md", "_CURSOR.md", "README.md", "REPOSITORY.md"}
-        or rel.startswith((".github/", "_core/", "_functions/", "_generated/", "_mdc/", "_roles/", "_templates/", "_tests/", "commands/", "rules/", "tests/", "tools/"))
+        rel in {".gitignore", ".collab.json", "CLAUDE.md", "AGENTS.md", "README.md", "REPOSITORY.md"}
+        or rel.startswith((".github/", "_core/", "_functions/", "_generated/", "_roles/", "_templates/", "_tests/", "commands/", "tests/", "tools/"))
     )
 
 
