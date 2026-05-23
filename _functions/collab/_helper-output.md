@@ -247,6 +247,22 @@ Exit-1 messages (exact):
 
 Exit-1 message (exact): `verification seal requires all execution entries to be completed`
 
+**Execution touched-path drift guard**
+
+When a structured Handoff state exists for the execution role and the entry
+carries `commits`, `seal-render` compares those commits' combined
+`git show --name-only` path set with the execution entry's declared
+`touchedPaths` before sealing.
+
+Exit-1 message prefix (exact): `EXECUTION-WRITESCOPE-OVERAGE:`
+
+**Execution agent-conflation guard**
+
+Before sealing, `seal-render` rejects a verification round where two role
+execution entries share the same concrete `agentId`.
+
+Exit-1 message prefix (exact): `PARTICIPANT-VERIFY-AGENT-CONFLATION:`
+
 **Round cap guard**
 
 Exit-1 message (exact): `round cap reached; reissue with --cap-exit reopen-action-plan, --cap-exit reopen-handoff, --cap-exit follow-up-collab, or --cap-exit archive`

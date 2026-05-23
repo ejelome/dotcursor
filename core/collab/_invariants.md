@@ -110,6 +110,19 @@ The following carry-forwards from the 2026-05-18 missed-and-deferred-goals audit
 - **Item 14 (PE Q4 carry-forward — pre-seal reopen primitive):** re-entry if a future protocol redesign reopens the pre-seal flow.
 - **Item 15 (CI scope items — required-status checks, secrets, deploy gates):** re-entry when merge-gating, authenticated workflows, or a deploy surface is introduced.
 
+**13. Direct-commit remediation**
+
+A direct commit (with no preceding collab execution flow) may close a Conclusion-enumerated remediation item when all four conditions hold:
+
+(a) The Conclusion enumerates the item as separately assignable to a single, named artifact — a patch-spec description naming one file or one bounded change, not a category of work.
+(b) All touched paths fall within the `writeScope` for the Conclusion item's assigned role.
+(c) Tests covering the changed behavior land in the same commit and pass at HEAD.
+(d) A verify pass runs after the commit and before any dependent work proceeds (e.g., before a pilot move that depends on the closed item).
+
+When all four conditions hold, the direct commit is accepted without a retroactive collab or execution record. When any condition fails, open a collab for the remediation and record the execution there.
+
+Codified from the reviewer's path-(a) decision in collab #36 (`2c14a36`). Does not retroactively absorb prior direct commits; authorizes future ones when conditions (a)–(d) are satisfied.
+
 **12. Routing-vs-rationale lifecycle**
 
 When a structured field is cleared on consume (e.g., during a phase restore transition), classify it before the transition:
@@ -122,3 +135,29 @@ When a structured field is cleared on consume (e.g., during a phase restore tran
 **Diagnostic frame:** for any transition that clears structured state, verify: (1) which cleared fields are routing (cleared on consume is correct); (2) which are rationale (require a write-time durable emission); (3) whether the durable surface carries the content, not merely a marker.
 
 Maintainer check: `grep -rn 'restoreReason' tools/collab/` enumerates verdict-write candidate sites. Each non-success verdict write path must have a paired durable rationale emission in the same atomic operation.
+
+**14. cap-exit follow-up-collab scope**
+
+cap-exit follow-up-collab is reserved for newly discovered scope; original-collab incomplete/failed verdicts MUST use restoreTarget action-plan or handoff.
+
+**15. rewrite-speak turn-order enforcement**
+
+/collab rewrite speak rejects when (a) the active phase has a reopen pointer newer than the rewriting role existing block AND (b) the calling role is not the current expectedRole; stale blocks must wait their turn or be retracted via /collab retract speak before rewrite.
+
+**16. Reviewer findings must cite evidence anchors**
+
+Every reviewer finding must cite at least one transcript anchor or committed path as evidence per claim. A finding accepted or rejected without citing a specific contribution anchor (e.g., a `#<phase>-<role>-<N>` anchor), commit SHA, or file path is a narrative dismissal. Narrative dismissal is not a valid finding form and is rejected at seal.
+
+**Maintainer check:** `seal-verification.md` step that evaluates reviewer findings must verify each finding names at least one anchor or path before accepting the finding block. Any finding block that passes without such a citation is a defect in the seal gate.
+
+**17. Success requires coverage of chartered deliverables**
+
+A seal verdict of `success` is rejected unless every item in the collab's `charteredDeliverables` list (declared in the moderator's Audit block) is covered by at least one cited committed path in the execution record. Scope-staging — deferring chartered work to a follow-up collab without explicit moderator re-chartering via a new `/collab init` — is not a valid closure path and is rejected at seal.
+
+**Maintainer check:** When `charteredDeliverables` is non-empty, `seal-verification.md` must cross-reference each item against `execution.<role>.touchedPaths` before emitting a `success` verdict. A success verdict emitted without this check is a defect.
+
+**18. Item tags required; `[defer]` rejected**
+
+Action Plan items must carry one of the recognized item tags immediately after the role label: `[execute]`, `[doc-fix]`, `[verify]`, `[precondition]`, `[verify-precondition]`, or `[verify-objective]`. Items carrying `[defer]` or no recognized tag are malformed. Deferral belongs in the `restoreReason` field or a follow-up collab opened via `/collab init`, not in the Action Plan checklist.
+
+**Enforcement note:** Runtime enforcement of item tags (extending the Invariant #9 shape validator) is a separate implementation item. This invariant documents the contract; the shape validator currently enforces only the `^- \[[ x]\] \*\*[a-z]+:\*\*` prefix. A future collab will add tag-level validation to `registry.py`.

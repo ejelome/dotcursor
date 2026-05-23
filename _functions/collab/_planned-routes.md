@@ -23,7 +23,7 @@ Called by `tools/collab/registry.py` via `validate_registry()` at load time. Cal
 
 ### Prerequisite semantics
 
-A **planned route** is any route that, if implemented, would activate a non-default workflow model. Detection: the gate inspects `commands/collab.md`, `commands/commands.md`, and the presence of `_functions/collab/export-issues.md` for known identifiers. When a planned route is detected, all named prerequisite artifacts must contain their required substrings before any registry operation proceeds.
+A **planned route** is any route that, if implemented, would activate a non-default workflow model. Detection: the gate inspects `commands/collab/index.md`, `commands/commands.md`, and the presence of `_functions/collab/export-issues.md` for known identifiers. When a planned route is detected, all named prerequisite artifacts must contain their required substrings before any registry operation proceeds.
 
 **Issue bridge** is the current planned route. Prerequisites:
 

@@ -11,7 +11,7 @@ Restore a collaboration from a non-success `Completion.verification` verdict to 
 
 ## Steps
 
-1. Read [_invariants.md](_invariants.md) before executing; call the helper fresh and do not trust prior reads from conversation context (Invariant #4). Resolve the target collab with **Registry targeting** in **Notes**.
+1. Read [_invariants.md](../../core/collab/_invariants.md) before executing; call the helper fresh and do not trust prior reads from conversation context (Invariant #4). Resolve the target collab with **Registry targeting** in **Notes**.
 2. Read the resolved registry and the resolved transcript path. If either is unreadable, **ABORT**: record unreadable; name the path.
 3. If `<phase>` is not `action-plan` or `handoff`, **ABORT**: reopen phase must be one of: action-plan, handoff.
 4. If the collab is archived, **ABORT**: record is archived.

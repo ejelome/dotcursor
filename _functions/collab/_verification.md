@@ -139,5 +139,5 @@ For reviewer-backed collabs, auto-close from `/collab run plan` alone is removed
 - [`seal-verification.md`](seal-verification.md) — invocable route spec for `/collab seal verification`
 - [`_registry.md`](_registry.md) — `verificationSeal` field schema and `completion.subState` field ownership
 - [`show-policy.md`](show-policy.md) — gate policy and phase-presence overview
-- [`_agent-effort.md`](_agent-effort.md) — effort matrix row for `Completion.verification`
+- [`_agent-effort.md`](../../core/collab/_agent-effort.md) — effort matrix row for `Completion.verification`
 - [`show-verdict.md`](show-verdict.md) — forthcoming route for verdict introspection over closed-collab metadata; surfaces `outcome`, `restoreTarget`, `evidence`, `failureCategory`, and `nullResult` without requiring direct registry JSON access

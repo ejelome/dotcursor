@@ -4,5 +4,5 @@
 ./_functions/collab/run-plan.md	collab-run-plan-layer1-abort-shape	execution completed blocked for role
 ./_functions/collab/run-plan.md	collab-run-plan-layer1-unchecked-count	unchecked assigned Action Plan item(s) remain
 ./_functions/collab/run-plan.md	collab-run-plan-layer1-recovery-path	mark all assigned items `[x]` in the transcript, then re-run `/collab run plan`
-./_functions/collab/speak.md	collab-speak-action-plan-shape	Action Plan checklist shape
+./commands/collab/speak/index.md	collab-speak-action-plan-shape	Action Plan checklist shape
 ./_tests/_tests.md	test-layer-ownership	`tests/*.test.sh` owns shell-executable CI contract validation

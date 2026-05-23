@@ -13,7 +13,7 @@ Rewrite the calling role's last contribution in-place within the active collab p
 
 **This command rewrites text only. Do not make file edits, run shell commands, or modify any codebase artifact outside the user-scope collab state root.**
 
-1. Read [_invariants.md](_invariants.md) before executing; call the relevant helper fresh and do not trust prior reads from conversation context (Invariant #4). Resolve the target collab with **Registry targeting** in **Notes**.
+1. Read [_invariants.md](../../core/collab/_invariants.md) before executing; call the relevant helper fresh and do not trust prior reads from conversation context (Invariant #4). Resolve the target collab with **Registry targeting** in **Notes**.
 2. Read the resolved registry and the resolved transcript path. If either is unreadable, **ABORT**: record unreadable; name the path.
 3. If the registry status is `closed` or `archived`, **ABORT**: record is closed.
 4. Resolve the active phase from registry `activePhase`. If missing or unknown, **ABORT**: active phase missing in metadata.
@@ -54,7 +54,7 @@ EFFORT OVERRIDE: high — delivery-or-migration-risk: Handoff scope revised afte
 Implementation scope is revised after verification found one missing route file.
 
 **writeScope**
-`commands/collab.md`
+`commands/collab/index.md`
 `_functions/collab/reopen.md`
 `tools/collab/registry.py`
 

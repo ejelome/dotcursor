@@ -11,7 +11,7 @@ Display the recorded verification verdict metadata for a collaboration record.
 
 ## Steps
 
-1. Read [_invariants.md](_invariants.md) before executing; call the helper fresh and do not trust prior reads from conversation context (Invariant #4). Resolve the target collab with **Registry targeting** in **Notes**.
+1. Read [_invariants.md](../../core/collab/_invariants.md) before executing; call the helper fresh and do not trust prior reads from conversation context (Invariant #4). Resolve the target collab with **Registry targeting** in **Notes**.
 2. Call `tools/collab/registry.py show-verdict <target>`.
 3. Display the helper output exactly. Stop.
 

@@ -39,15 +39,16 @@ After the move, re-run `sync-commands-catalog.sh` (write mode) to regenerate the
 
 Run the test suite scoped to the pilot namespace:
 
-- Every generated link resolves
-- Every inherited flag origin resolves
-- `audit-topology.sh` passes on the moved namespace
+- `audit-topology.sh --migration` passes — confirms both that every generated catalog link resolves and that the moved namespace topology is valid; run once after step 5 to satisfy both guarantees
+- Every inherited flag origin resolves — run `audit-flag-scope.sh`; it checks that each override declaration references an existing flag at the declared parent scope; the full effective-flag resolver (computing every inherited flag a command sees and proving each resolves to its declaring scope) is deferred until the first flag-bearing route migration
 
-Resolve any failures before proceeding to bulk moves.
+Resolve any failures in both criteria before proceeding to bulk moves.
 
 ### Step 7 — Bulk moves
 
 Remaining namespaces are mechanical repeats of steps 4–6 (catalog gate → move → test). Each namespace is moved and validated independently before the next begins.
+
+`audit-placement.sh --migration` (step 2) is a fixed pre-pilot gate and does not repeat per bulk namespace. If a future namespace acquires new cross-command shared material between bulk iterations, run a one-time placement re-run at that point rather than embedding the validator in every bulk pass.
 
 ## Correction Note
 

@@ -29,7 +29,7 @@ def write(rel: str, text: str) -> None:
     path.write_text(text)
 
 write('_functions/collab/export-issues.md', '# /collab export-issues\n')
-write('commands/collab.md', '# /collab\n')
+write('commands/collab/index.md', '# /collab\n')
 write('commands/commands.md', '# /commands\n')
 write(
     '_functions/collab/_helper-output.md',
@@ -147,14 +147,14 @@ try:
     os.chdir(init_tmp)
     registry = init_tmp / 'registry.json'
     try:
-        module.init_collab(registry, ['--agent-id', 'codex', '--terminal', 'issue', 'Issue Init'], root / '_roles')
+        module.init_collab(registry, ['--agent-id', 'codex', '--terminal', 'issue', 'Issue Init'], root / 'core/collab/_roles')
     except SystemExit as exc:
         assert str(exc) == '--terminal issue is reserved and not yet implemented; use --terminal seal or omit --terminal', exc
     else:
         raise AssertionError('init accepted reserved issue terminal selector')
     with redirect_stdout(StringIO()):
-        module.init_collab(registry, ['--agent-id', 'codex', '--terminal', 'seal', 'Seal Init'], root / '_roles')
-        module.init_collab(registry, ['--agent-id', 'codex', 'Default Init'], root / '_roles')
+        module.init_collab(registry, ['--agent-id', 'codex', '--terminal', 'seal', 'Seal Init'], root / 'core/collab/_roles')
+        module.init_collab(registry, ['--agent-id', 'codex', 'Default Init'], root / 'core/collab/_roles')
 finally:
     os.chdir(old_cwd)
 

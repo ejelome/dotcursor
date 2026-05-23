@@ -61,4 +61,35 @@ if ! grep -Fxq 'WARN: orphaned entry point: commands/demo/extra/index.md (no cat
   exit 1
 fi
 
+broken_link="$TMPDIR/broken-link"
+make_catalog "$broken_link"
+mkdir -p "$broken_link/commands/demo"
+printf '# /demo\n' >"$broken_link/commands/demo/index.md"
+set +e
+COMMAND_CONFIG_ROOT="$broken_link" "$ROOT/tools/command-system/audit-topology.sh" >"$TMPDIR/broken-link.out" 2>&1
+status=$?
+set -e
+if [[ "$status" -eq 0 ]]; then
+  printf 'FAIL: expected generated catalog link resolution to fail\n' >&2
+  exit 1
+fi
+if ! grep -Fxq 'ERROR: generated catalog link target missing: commands/demo/run/index.md' "$TMPDIR/broken-link.out"; then
+  printf 'FAIL: generated link output did not name missing target\n' >&2
+  cat "$TMPDIR/broken-link.out" >&2
+  exit 1
+fi
+
+migration="$TMPDIR/migration"
+make_catalog "$migration"
+python3 - "$migration/commands/commands.md" <<'PY'
+from pathlib import Path
+path = Path(__import__("sys").argv[1])
+text = path.read_text().replace("[demo](demo/index.md)", "[demo](demo.md)")
+path.write_text(text)
+PY
+mkdir -p "$migration/commands/demo/run"
+printf '# /demo flat\n' >"$migration/commands/demo.md"
+printf '# /demo run\n' >"$migration/commands/demo/run/index.md"
+COMMAND_CONFIG_ROOT="$migration" "$ROOT/tools/command-system/audit-topology.sh" --migration >/dev/null
+
 printf 'OK: topology audit enforces registered index.md entries and orphan warnings\n'

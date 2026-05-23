@@ -11,7 +11,7 @@ Remove one participant from the registry roster and transcript metadata when the
 
 ## Steps
 
-1. Read [_invariants.md](_invariants.md) before executing; call the relevant helper fresh and do not trust prior reads from conversation context (Invariant #4). Resolve the target collab with **Registry targeting** in **Notes**.
+1. Read [_invariants.md](../../core/collab/_invariants.md) before executing; call the relevant helper fresh and do not trust prior reads from conversation context (Invariant #4). Resolve the target collab with **Registry targeting** in **Notes**.
 2. Resolve `<role>` from the next positional token after `remove participant`. If missing, **ABORT**: `<role>` is required.
 3. Read the resolved registry and the resolved transcript path. If either is unreadable, **ABORT**: record unreadable; name the path.
 4. If `<role>` is not listed in registry `participants`, report that the role is already absent and stop.

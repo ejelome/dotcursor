@@ -11,7 +11,7 @@ Write a human-readable reference summary from an existing collaboration record.
 
 ## Steps
 
-1. Read [_invariants.md](_invariants.md) before executing; call the relevant helper fresh and do not trust prior reads from conversation context (Invariant #4). Resolve the target collab with **Registry targeting** in **Notes**.
+1. Read [_invariants.md](../../core/collab/_invariants.md) before executing; call the relevant helper fresh and do not trust prior reads from conversation context (Invariant #4). Resolve the target collab with **Registry targeting** in **Notes**.
 2. Read the resolved registry and the full resolved transcript. If either is unreadable, **ABORT**: record unreadable; name the path.
 3. Draft a concise reference summary from the record's existing content.
 4. Write the summary under `## Completion`. If `## Completion` already has content, append a new `### Summary — YYYY-MM-DD` subsection.

@@ -59,7 +59,7 @@ def is_source_candidate(path: Path) -> bool:
     rel = path.as_posix()
     return (
         rel in {".gitignore", ".collab.json", "CLAUDE.md", "AGENTS.md", "README.md", "REPOSITORY.md"}
-        or rel.startswith((".github/", "_core/", "_functions/", "_generated/", "_roles/", "_templates/", "_tests/", "commands/", "tests/", "tools/"))
+        or rel.startswith((".github/", "_core/", "_functions/", "_generated/", "_templates/", "_tests/", "commands/", "core/", "tests/", "tools/"))
     )
 
 
@@ -126,7 +126,7 @@ def strip_allowed_inline_code(line: str) -> str:
             return ""
         if value.endswith((".md", ".mdc", ".json", ".sh", ".py")):
             return ""
-        if value.startswith("_roles/"):
+        if value.startswith("core/collab/_roles/"):
             return ""
         return value
 
@@ -156,6 +156,8 @@ def is_metadata_or_carveout(line: str) -> bool:
 
 def scan_file(rel: Path) -> list[str]:
     path = root / rel
+    if not path.exists():
+        return []
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
     except UnicodeDecodeError:

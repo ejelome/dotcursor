@@ -29,7 +29,7 @@ is_source_path() {
   case "$1" in
     .gitignore|.collab.json|CLAUDE.md|AGENTS.md|README.md|REPOSITORY.md) return 0 ;;
     .github/*) return 0 ;;
-    _core/*|_data/*|_functions/*|_generated/*|_roles/*|_templates/*|_tests/*|commands/*|core/*|tests/*|tools/*) return 0 ;;
+    _core/*|_data/*|_functions/*|_generated/*|_templates/*|_tests/*|commands/*|core/*|tests/*|tools/*) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -43,7 +43,7 @@ check_required_surface() {
   require_dir _core
   require_dir _functions
   require_dir _generated
-  require_dir _roles
+  require_dir core/collab/_roles
   require_dir _tests
   require_dir tools/command-system
 }
@@ -252,6 +252,10 @@ check_tracked_source_boundary() {
 }
 
 check_generated_freshness() {
+  local topology_mode=()
+  if find commands -maxdepth 1 -type f -name '*.md' ! -name 'commands.md' | grep -q .; then
+    topology_mode=(--migration)
+  fi
   python3 tools/command-system/check-source-ledger.py --check || failures=$((failures + 1))
   tools/command-system/sync-context-gate.sh --check || failures=$((failures + 1))
   tools/command-system/sync-commands-catalog.sh --check || failures=$((failures + 1))
@@ -259,9 +263,9 @@ check_generated_freshness() {
   tools/command-system/sync-roles-roster.sh --check || failures=$((failures + 1))
   python3 tools/command-system/command-advisories.py --check || failures=$((failures + 1))
   python3 tools/command-system/command-reference.py --check || failures=$((failures + 1))
-  tools/command-system/audit-topology.sh || failures=$((failures + 1))
+  tools/command-system/audit-topology.sh "${topology_mode[@]}" || failures=$((failures + 1))
   tools/command-system/audit-flag-scope.sh || failures=$((failures + 1))
-  tools/command-system/audit-placement.sh || failures=$((failures + 1))
+  tools/command-system/audit-placement.sh "${topology_mode[@]}" || failures=$((failures + 1))
   tools/collab/lifecycle-doc.py --check || failures=$((failures + 1))
   tools/command-system/coverage-gate.sh || failures=$((failures + 1))
   tools/command-system/audit-role-prose.sh || failures=$((failures + 1))

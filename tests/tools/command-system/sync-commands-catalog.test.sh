@@ -58,6 +58,16 @@ if ! grep -Fq '| `/demo` | `/demo <run>` | [demo](demo/index.md) | [run](demo/ru
   cat "$fixture/commands/commands.md" >&2
   exit 1
 fi
+if grep -Fq '[commands](index.md)' "$fixture/commands/commands.md"; then
+  printf 'FAIL: root commands/index.md was exposed as a public router\n' >&2
+  cat "$fixture/commands/commands.md" >&2
+  exit 1
+fi
+if grep -Fq '| `/commands` |' "$fixture/commands/commands.md"; then
+  printf 'FAIL: root commands/index.md produced a slash roster row\n' >&2
+  cat "$fixture/commands/commands.md" >&2
+  exit 1
+fi
 if ! grep -Fq '| `/demo run` | [demo/run/index.md](demo/run/index.md) |' "$fixture/commands/commands.md"; then
   printf 'FAIL: generated route table did not link command index.md entry\n' >&2
   cat "$fixture/commands/commands.md" >&2

@@ -22,23 +22,32 @@ Any relative or repo-root-relative markdown link whose resolved path equals `F`.
 
 **Slash-dispatch token:**
 
-A bare path token that appears as a slash-dispatch reference, i.e. a line of the form:
+A bare path token that appears as a slash-dispatch reference, i.e. a line beginning with `/<ns>`. The reference target is the **final** token on the line:
 
 ```
 /<ns> <cmd> path/to/F
+/<ns> <cmd> <subcmd> path/to/F
 ```
 
-where `path/to/F` resolves to `F`.
+In both forms, `path/to/F` (the final token) resolves to `F`. Intermediate tokens such as `<subcmd>` are not treated as references.
 
 Both forms are treated as equivalent references for the purpose of counting.
 
 ## Traversal Scope
 
-The audit traverses only the `commands/` tree. Specifically:
+`audit-placement.sh` supports two modes.
 
-- Source files examined: `commands/<ns>/<cmd>/index.md` for every namespace and command
+**Default (post-migration):** Examines `commands/<ns>/<cmd>/index.md` sources only. Use after all namespaces in the move window have been converted to the directory layout.
+
+**`--migration` mode:** Also examines flat `commands/<ns>.md` sources alongside directory `commands/<ns>/<cmd>/index.md` sources. Use during the transition period when flat-layout and directory-layout namespaces coexist.
+
+While migration mode is active, shared targets under `_core/` and `_functions/` are retained shared surfaces and are not forced into `core/<ns>/`. This keeps per-namespace command moves executable before the later no-underscore cleanup cycle removes or classifies retained underscore paths.
+
+In both modes, the audit traverses only the `commands/` tree for **sources** of references. Specifically:
+
+- Source files examined: `commands/<ns>/<cmd>/index.md` (both modes) and `commands/<ns>.md` (`--migration` mode only)
 - Files from `_functions/`, `core/`, `_tests/`, `tools/`, or any path outside `commands/` are not examined as **sources** of references
-- However, the **targets** of references (the files being pointed to) may be located anywhere in the repository
+- The **targets** of references (the files being pointed to) may be located anywhere in the repository
 
 ## Multi-Command Threshold
 

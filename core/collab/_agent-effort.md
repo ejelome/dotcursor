@@ -15,11 +15,11 @@
 
 This document explains what effort levels mean, how to interpret the phase-role matrix, and how the advisory helper uses it.
 
-**Authoritative source:** [`_agent-effort.json`](_agent-effort.json). The table below is a human-readable rendering of that file; if they diverge, the JSON is correct.
+**Authoritative source:** [`_agent-effort.json`](../../_functions/collab/_agent-effort.json). The table below is a human-readable rendering of that file; if they diverge, the JSON is correct.
 
-**Cross-document authority:** When this file and [`_agent-model.md`](_agent-model.md) disagree on matrix values, `_agent-effort.json` is authoritative. `_agent-model.md` is a generated human-readable projection for the effort matrix; update the JSON source first, then regenerate or repair the projection. Drift is checked by `tools/collab/registry.py audit-effort-matrix`.
+**Cross-document authority:** When this file and [`_agent-model.md`](../../_functions/collab/_agent-model.md) disagree on matrix values, `_agent-effort.json` is authoritative. `_agent-model.md` is a generated human-readable projection for the effort matrix; update the JSON source first, then regenerate or repair the projection. Drift is checked by `tools/collab/registry.py audit-effort-matrix`.
 
-**audit-effort-matrix:** Run `tools/collab/registry.py audit-effort-matrix` to verify that the human-readable projection in [`_agent-model.md`](_agent-model.md) matches `_agent-effort.json`. Run before Handoff to catch projection drift before implementation commits the effort matrix as a documented contract. Drift between the two is a defect; resolve it by updating `_agent-effort.json` and regenerating the projection.
+**audit-effort-matrix:** Run `tools/collab/registry.py audit-effort-matrix` to verify that the human-readable projection in [`_agent-model.md`](../../_functions/collab/_agent-model.md) matches `_agent-effort.json`. Run before Handoff to catch projection drift before implementation commits the effort matrix as a documented contract. Drift between the two is a defect; resolve it by updating `_agent-effort.json` and regenerating the projection.
 
 **Change-motivation convention:** Every change to `_agent-effort.json` or to the escalation signal taxonomy in this file must cite the collab, signal, or rationale that motivated the change. This prevents invisible drift and gives reviewers an anchor for "this default is wrong" claims.
 
@@ -50,7 +50,7 @@ This matrix is rendered from `_agent-effort.json`. The helper's `EFFORT:` adviso
 
 **`—`** means the role is not on the turn-order roster for that phase by default. Optional admission is available via `reviewerOptionalPhases` in the registry (defaults to `["Discussion"]`; extended via `/collab set reviewer-optional-phases`); when admitted to a non-Discussion phase, the effort level is `xhigh`. Implemented by `reviewer_optional_phases` in `tools/collab/registry.py`.
 
-Roles that exist in `_roles/` but are absent from this advisory matrix receive the helper's open-roster fallback: `medium`. This keeps join and speak advisories non-blocking for newly added roles while preserving explicit matrix values for the curated roles.
+Roles that exist in `core/collab/_roles/` but are absent from this advisory matrix receive the helper's open-roster fallback: `medium`. This keeps join and speak advisories non-blocking for newly added roles while preserving explicit matrix values for the curated roles.
 
 ## How to use this
 
@@ -116,5 +116,5 @@ At the $100 Claude Code tier, declared effort levels are enforceable: the review
 
 ## See also
 
-- [`_agent-model.md`](_agent-model.md) — join-time model, harness, per-phase effort table, and fallback per role
-- [`_agent-lifecycle.md`](_agent-lifecycle.md) — when to run `/compact`, `/effort`, subagents, `/clear`, and `/exit`
+- [`_agent-model.md`](../../_functions/collab/_agent-model.md) — join-time model, harness, per-phase effort table, and fallback per role
+- [`_agent-lifecycle.md`](../../_functions/collab/_agent-lifecycle.md) — when to run `/compact`, `/effort`, subagents, `/clear`, and `/exit`

@@ -11,8 +11,8 @@ Apply current scaffold templates to an already-installed multi-agent scaffold in
 
 ## Steps
 
-1. Resolve the repo root as the directory where the command runs, using the target/global vocabulary in [_run-root.md](_run-root.md). If not inside a git repository, **ABORT**: must be run from a git repository root.
-2. Parse flags immediately after the route selector and before any positional arguments per [_core/command-argument.md](../../_core/command-argument.md). `--force` is supported only in that pre-positional slot. Unsupported or misplaced flags **ABORT** before any route mutation.
+1. Resolve the repo root as the target repository root: the git repository root for the project maintaining scaffold files. This may be the same path as the global runtime root at `~/.cursor`. If not inside a git repository, **ABORT**: must be run from a git repository root.
+2. Parse flags immediately after the route selector and before any positional arguments per [_core/command-argument.md](../../../_core/command-argument.md). `--force` is supported only in that pre-positional slot. Unsupported or misplaced flags **ABORT** before any route mutation.
 3. Verify `AGENTS.md`, `CLAUDE.md`, and `REPOSITORY.md` exist in the repo root. If any is missing, **ABORT** naming the missing path — run `/agent install` first.
 4. Read the installed `AGENTS.md` and locate the `<!-- scaffolded-at: <ISO-date> -->` marker line. If absent, **ABORT**: scaffolded-at marker not found in `AGENTS.md`; restore the marker manually or reinstall with `/agent install` in a fresh repo.
 5. Read `~/.cursor/_templates/AGENTS.md` and locate its `<!-- scaffolded-at: <ISO-date> -->` marker line.
@@ -40,7 +40,7 @@ Apply current scaffold templates to an already-installed multi-agent scaffold in
 
 - **Parameters:** `--force` — optional pre-positional flag. Default target is the repo root where the command runs.
 - **Examples:** `/agent upgrade`, `/agent upgrade --force`.
-- **Invocation context:** Run this command from the target repository root defined in [_run-root.md](_run-root.md). A checkout developed in place at `~/.cursor` is a valid target repository root.
+- **Invocation context:** Run this command from the target repository root. A checkout developed in place at `~/.cursor` is a valid target repository root, so a target path of `~/.cursor` is permitted.
 - **Boundary:** Reads installed scaffold files and `~/.cursor/_templates/`; writes only `AGENTS.md`, `CLAUDE.md`, and (when overlap-free) `REPOSITORY.md` in the repo root. Leaves template sources, command sources, rule sources, and agent settings JSON unchanged.
 - **Idempotency:** Re-running upgrade on an already-current scaffold reports "scaffold is up to date" and exits without modifying any file.
 - **Marker comparison:** Compare the full `<!-- scaffolded-at: <ISO-date> -->` comment line as a string using lexicographic equality. Do not parse the date or apply date arithmetic. Equal → up to date; not equal → present diff and confirm.

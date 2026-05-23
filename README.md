@@ -20,7 +20,7 @@ Each adapter is a thin routing-only file that points to `commands/commands.md` a
 ├── .collab.json         — checked-in collab repo marker
 ├── _core/             — cross-cutting invariants and contracts
 ├── _functions/        — slash command implementations
-├── _generated/        — framework-generated catalogs (do not edit by hand)├── _roles/            — role definitions for the collab framework
+├── _generated/        — framework-generated catalogs (do not edit by hand)├── core/              — shared cross-cutting policy files
 ├── _templates/        — scaffolding templates
 ├── _tests/            — agent-facing QA harnesses for `/test`
 ├── commands/          — command catalog and routing table└── tools/             — framework tooling (collab engine, framework utilities)

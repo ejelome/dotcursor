@@ -71,6 +71,54 @@ if ! grep -Fq 'required form: override: system — <reason>' "$TMPDIR/malformed.
   exit 1
 fi
 
+en_dash="$TMPDIR/en-dash"
+write_flag_tree "$en_dash" "override: system – bad delimiter" "override: namespace — command narrows behavior"
+set +e
+COMMAND_CONFIG_ROOT="$en_dash" "$ROOT/tools/command-system/audit-flag-scope.sh" >"$TMPDIR/en-dash.out" 2>&1
+status=$?
+set -e
+if [[ "$status" -eq 0 ]]; then
+  printf 'FAIL: expected en-dash delimiter to fail\n' >&2
+  exit 1
+fi
+if ! grep -Fq 'delimiter: found U+2013 en-dash; expected U+2014 em-dash' "$TMPDIR/en-dash.out"; then
+  printf 'FAIL: en-dash output did not name the near-miss delimiter\n' >&2
+  cat "$TMPDIR/en-dash.out" >&2
+  exit 1
+fi
+
+unresolved="$TMPDIR/unresolved"
+mkdir -p "$unresolved/commands/demo/run"
+cat >"$unresolved/commands/index.md" <<'MD'
+# Commands
+MD
+cat >"$unresolved/commands/demo/index.md" <<'MD'
+# /demo
+MD
+cat >"$unresolved/commands/demo/run/index.md" <<'MD'
+# /demo run
+
+```route-flag
+flag: force
+eligibility: eligible
+guard-class: command
+override: namespace — command narrows force
+```
+MD
+set +e
+COMMAND_CONFIG_ROOT="$unresolved" "$ROOT/tools/command-system/audit-flag-scope.sh" >"$TMPDIR/unresolved.out" 2>&1
+status=$?
+set -e
+if [[ "$status" -eq 0 ]]; then
+  printf 'FAIL: expected unresolved inherited flag origin to fail\n' >&2
+  exit 1
+fi
+if ! grep -Fq "ERROR: unresolved inherited flag origin for flag '--force' at command scope" "$TMPDIR/unresolved.out"; then
+  printf 'FAIL: unresolved origin output did not name command inherited origin\n' >&2
+  cat "$TMPDIR/unresolved.out" >&2
+  exit 1
+fi
+
 clean="$TMPDIR/clean"
 write_flag_tree "$clean" "override: system — namespace narrows force" "override: namespace — command narrows force"
 COMMAND_CONFIG_ROOT="$clean" "$ROOT/tools/command-system/audit-flag-scope.sh" >/dev/null

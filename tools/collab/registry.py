@@ -11,6 +11,7 @@ import html
 import json
 import os
 import re
+import subprocess
 import sys
 import webbrowser
 from contextlib import contextmanager
@@ -92,7 +93,7 @@ def resolve_config_root() -> Path:
 
 
 DEFAULT_CONFIG_ROOT = resolve_config_root()
-DEFAULT_ROLES_DIR = DEFAULT_CONFIG_ROOT / '_roles'
+DEFAULT_ROLES_DIR = DEFAULT_CONFIG_ROOT / 'core/collab/_roles'
 DEFAULT_EFFORT_PATH = DEFAULT_CONFIG_ROOT / '_functions/collab/_agent-effort.json'
 DEFAULT_AGENT_MODEL_PATH = DEFAULT_CONFIG_ROOT / '_functions/collab/_agent-model.md'
 DEFAULT_BUDGET_PATH = DEFAULT_CONFIG_ROOT / '_functions/collab/_contribution-budget.md'
@@ -115,7 +116,7 @@ SUMMARY_RE = re.compile(r'^<summary>(?P<role>[A-Za-z0-9_-]+)(?:\s+—\s+.+)?</su
 SUMMARY_HEADING_RE = re.compile(r'^### Summary \u2014 \d{4}-\d{2}-\d{2}$')
 LEGACY_EXPANDED_RE = re.compile(r'^\*\*(?P<role>[A-Za-z0-9_-]+)\s+—')
 LEGACY_HEADING_RE = re.compile(r'^###\s+(?P<role>[A-Za-z0-9_-]+)\s+—')
-DETAILS_OPEN_RE = re.compile(r'^<details(?:\s+[^>]*)?>$')
+DETAILS_OPEN_RE = re.compile(r'^<details(?:\s+[^>]*)?>(?:<summary>[^<]*</summary>)?$')
 DETAILS_CLOSE_RE = re.compile(r'^</details>$')
 DETAILS_CONTROL_LINE_RE = re.compile(r'^</?details(?:\s+[^>]*)?\s*>$')
 ANCHOR_RE = re.compile(r'^<a name="(?P<anchor>[A-Za-z0-9_-]+)"></a>$')
@@ -156,6 +157,12 @@ OLD_ENTRY_KEYS = {
     'turn_order',
 }
 ACTION_PLAN_SHAPE_EXAMPLE = '- [ ] **tw:** Update the route doc.'
+REVIEWER_DISCIPLINE_GATES = (
+    'DIRECTIVE TEST',
+    'AUDIT CONFIRMED',
+    'PRECEDENT CITED',
+    'LOOP CHECK',
+)
 
 
 def die(message: str) -> None:
@@ -704,6 +711,66 @@ def validate_participant_role_files(role_keys: list[str], roles_dir: Path, sourc
             die(f'{source}: participants role file unreadable for {role}: {roles_dir / f"{role}.json"}: {exc}')
 
 
+def chartered_deliverables(transcript: str) -> list[str]:
+    try:
+        audit_lines = phase_section(transcript, 'Audit')
+    except SystemExit:
+        return []
+    deliverables: list[str] = []
+    in_block = False
+    in_code = False
+    details_depth = 0
+    for raw_line in audit_lines:
+        line = raw_line.rstrip()
+        stripped = line.strip()
+        if stripped.startswith('```'):
+            in_code = not in_code
+            continue
+        if in_code:
+            continue
+        if DETAILS_OPEN_RE.match(stripped):
+            details_depth += 1
+            continue
+        if DETAILS_CLOSE_RE.match(stripped):
+            details_depth = max(0, details_depth - 1)
+            continue
+        if details_depth > 1:
+            continue
+        if not in_block:
+            if stripped == 'charteredDeliverables:':
+                in_block = True
+            continue
+        if not stripped:
+            break
+        if not stripped.startswith('- '):
+            break
+        deliverable = stripped[2:].strip()
+        if deliverable:
+            deliverables.append(deliverable)
+    return deliverables
+
+
+def chartered_deliverable_path(deliverable: str) -> str:
+    head = deliverable.split(':', 1)[0].strip()
+    return head.strip('`')
+
+
+def assert_chartered_deliverables_covered(entry: dict, transcript: str) -> None:
+    deliverables = chartered_deliverables(transcript)
+    if not deliverables:
+        return
+    touched = set(touched_paths_for_execution(entry))
+    missing = [
+        deliverable for deliverable in deliverables
+        if chartered_deliverable_path(deliverable) not in touched
+    ]
+    if missing:
+        die(
+            'CHARTERED-DELIVERABLE-MISSING: '
+            + ', '.join(chartered_deliverable_path(item) for item in missing)
+        )
+
+
 def handoff_abort(field: str, value: object) -> None:
     if isinstance(value, str):
         rendered = value
@@ -1183,6 +1250,9 @@ def active_execution_entries(entry: dict) -> list[dict]:
             'validationScope': state.get('validationScope'),
             'touchedPaths': list(state.get('touchedPaths', [])),
         }
+        commits = state.get('commits', [])
+        if commits:
+            row['commits'] = list(commits)
         if state.get('agentId'):
             row['agentId'] = state.get('agentId')
         rows.append(row)
@@ -1220,6 +1290,85 @@ def touched_paths_for_execution(entry: dict) -> list[str]:
             if isinstance(item, str) and item not in touched:
                 touched.append(item)
     return touched
+
+
+def git_commit_paths(ref: str) -> set[str] | None:
+    try:
+        probe = subprocess.run(
+            ['git', '-C', str(ROOT), 'cat-file', '-e', f'{ref}^{{commit}}'],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except FileNotFoundError:
+        return None
+    if probe.returncode != 0:
+        return None
+    result = subprocess.run(
+        ['git', '-C', str(ROOT), 'show', '--name-only', '--format=', ref],
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if result.returncode != 0:
+        die(f'EXECUTION-WRITESCOPE-OVERAGE: git show failed for execution commit {ref}')
+    return {line.strip() for line in result.stdout.splitlines() if line.strip()}
+
+
+def assert_no_execution_touched_path_drift(entry: dict) -> None:
+    for execution in active_execution_entries(entry):
+        role = execution.get('role')
+        if not isinstance(role, str) or handoff_state_for_role(entry, role) is None:
+            continue
+        commits = [
+            commit
+            for commit in execution.get('commits', [])
+            if isinstance(commit, str) and commit.strip()
+        ]
+        if not commits:
+            continue
+        declared_paths = {
+            item
+            for item in execution.get('touchedPaths', [])
+            if isinstance(item, str) and item.strip()
+        }
+        committed_paths: set[str] = set()
+        for commit in commits:
+            commit_paths = git_commit_paths(commit)
+            if commit_paths is not None:
+                committed_paths.update(commit_paths)
+        undeclared = sorted(committed_paths - declared_paths)
+        overdeclared = sorted(declared_paths - committed_paths)
+        if undeclared or overdeclared:
+            details: list[str] = []
+            if undeclared:
+                details.append(f'undeclared={json.dumps(undeclared, separators=(",", ":"))}')
+            if overdeclared:
+                details.append(f'overdeclared={json.dumps(overdeclared, separators=(",", ":"))}')
+            die(
+                'EXECUTION-WRITESCOPE-OVERAGE: '
+                f'execution commits {json.dumps(commits, separators=(",", ":"))} touchedPaths drift; '
+                + '; '.join(details)
+            )
+
+
+def assert_no_execution_agent_conflation(entry: dict) -> None:
+    seen: dict[str, str] = {}
+    for execution in active_execution_entries(entry):
+        agent_id = execution.get('agentId')
+        role = execution.get('role')
+        if not isinstance(agent_id, str) or not agent_id.strip():
+            continue
+        if agent_id == CALLER_DECLINED_AGENT_ID:
+            continue
+        if agent_id in seen and seen[agent_id] != role:
+            die(
+                'PARTICIPANT-VERIFY-AGENT-CONFLATION: '
+                f'roles {seen[agent_id]} and {role} share agentId {agent_id}'
+            )
+        if isinstance(role, str):
+            seen[agent_id] = role
 
 
 def invalidate_verification_seal(entry: dict, reason: str) -> None:
@@ -1599,6 +1748,11 @@ def validate_registry(data: dict, path: Path | None = None) -> None:
                 die(f'{source}: execution touchedPaths must be a list when present')
             if any(not isinstance(item, str) or not item.strip() for item in touched_paths):
                 die(f'{source}: execution touchedPaths must contain non-empty strings')
+            commits = state.get('commits', [])
+            if not isinstance(commits, list):
+                die(f'{source}: execution commits must be a list when present')
+            if any(not isinstance(item, str) or not item.strip() for item in commits):
+                die(f'{source}: execution commits must contain non-empty strings')
             entry_id = state.get('entryId')
             if entry_id is not None and (not isinstance(entry_id, str) or not entry_id.strip()):
                 die(f'{source}: execution entryId must be a non-empty string when present')
@@ -1923,6 +2077,17 @@ def phase_turn_order(entry: dict, phase: str) -> list[str]:
 
 def normalize_turn_order_for_phase(entry: dict, phase: str) -> None:
     entry['turnOrder'] = phase_turn_order(entry, phase)
+
+
+def assert_turn_order_not_drifted(entry: dict, phase: str) -> list[str]:
+    expected = phase_turn_order(entry, phase)
+    actual = effective_turn_order(entry)
+    if actual != expected:
+        die(
+            'TURN-ORDER-DRIFT: '
+            f'phase={phase}; actual={" ".join(actual)}; expected={" ".join(expected)}'
+        )
+    return expected
 
 
 def transition_notice(from_phase: str, to_phase: str) -> dict | None:
@@ -2664,6 +2829,47 @@ def assert_touched_paths_inside_handoff(entry: dict, role: str, touched_paths: l
             die(f'execution touched path outside declared writeScope: {touched_path}')
 
 
+def parse_execution_datetime(raw: str) -> dt.datetime | None:
+    try:
+        parsed = dt.datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=dt.datetime.now().astimezone().tzinfo)
+    return parsed
+
+
+def current_head_commit(date: str) -> str | None:
+    result = subprocess.run(
+        ['git', '-C', str(ROOT), 'rev-parse', 'HEAD'],
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if result.returncode != 0:
+        detail = result.stderr.strip() or result.stdout.strip() or 'unknown git error'
+        die(f'execution commit capture failed: {detail}')
+    commit = result.stdout.strip()
+    if not commit:
+        die('execution commit capture failed: git rev-parse HEAD returned empty output')
+    date_result = subprocess.run(
+        ['git', '-C', str(ROOT), 'show', '-s', '--format=%cI', commit],
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if date_result.returncode != 0:
+        detail = date_result.stderr.strip() or date_result.stdout.strip() or 'unknown git error'
+        die(f'execution commit date capture failed: {detail}')
+    execution_time = parse_execution_datetime(date)
+    commit_time = parse_execution_datetime(date_result.stdout.strip())
+    if execution_time is not None and commit_time is not None and commit_time > execution_time:
+        return None
+    return commit
+
+
 def execute_spawn(
     path: Path,
     target: str,
@@ -2916,6 +3122,14 @@ def validate_action_plan_shape(content: str, phase: str) -> None:
             'ABORT: Action Plan body contains no assignment lines after exempt content is removed '
             f"(Invariant #9, _invariants.md). Example: '{ACTION_PLAN_SHAPE_EXAMPLE}'"
         )
+
+
+def validate_reviewer_conclusion_gates(content: str, phase: str, role: str, entry: dict) -> None:
+    if phase != 'Conclusion' or role != reviewer_role(entry):
+        return
+    missing = [gate for gate in REVIEWER_DISCIPLINE_GATES if gate not in content]
+    if missing:
+        die('REVIEWER-CONCLUSION-GATE-MISSING: ' + ', '.join(missing))
 
 
 def validate_effort_override(content: str, phase: str, role: str, moderator_role: str) -> None:
@@ -3359,6 +3573,7 @@ def render_speak(
         reject_full_body_details_controls(full_body)
         enforce_contribution_budget(content, phase, role, current_entry['moderatorRole'], verbatim)
         validate_effort_override(content, phase, role, current_entry['moderatorRole'])
+        validate_reviewer_conclusion_gates(content, phase, role, current_entry)
         validate_action_plan_shape(content, phase)
         handoff_state = parse_handoff_content(content) if phase == 'Handoff' else None
 
@@ -3593,6 +3808,7 @@ def render_re_speak(
         reject_full_body_details_controls(full_body)
         enforce_contribution_budget(content, phase, role, entry['moderatorRole'], verbatim)
         validate_effort_override(content, phase, role, entry['moderatorRole'])
+        validate_reviewer_conclusion_gates(content, phase, role, entry)
         validate_action_plan_shape(content, phase)
         handoff_state = parse_handoff_content(content) if phase == 'Handoff' else None
         reviewer_notice = reviewer_notice_for_rewrite(entry, transcript, role)
@@ -3726,6 +3942,9 @@ def record_execution(
 
         execution_state = {'status': status, 'date': date}
         execution_state['entryId'] = execution_identity(role, date)
+        head_commit = current_head_commit(date)
+        if head_commit is not None:
+            execution_state['commits'] = [head_commit]
         if agent_id:
             execution_state['agentId'] = agent_id
         if validation_result:
@@ -4916,6 +5135,8 @@ def render_seal(
             if outcome == 'success' and seal.get('stale'):
                 reason = seal.get('staleReason') or 'unknown'
                 die(f'success verdict requires current non-stale verificationSeal; stale: {reason}')
+            if outcome == 'success':
+                assert_chartered_deliverables_covered(entry, transcript)
             verdict = build_verdict(
                 outcome,
                 restore_target,
@@ -4959,6 +5180,8 @@ def render_seal(
                 die('verification assessment is active; seal block is immutable; provide --outcome to record a verdict')
             if not all_execution_completed(entry):
                 die('verification seal requires all execution entries to be completed')
+            assert_no_execution_touched_path_drift(entry)
+            assert_no_execution_agent_conflation(entry)
             rounds = verification.get('rounds', 0)
             cap = verification.get('cap', DEFAULT_VERIFICATION_CAP)
             if rounds == 0:
@@ -5032,11 +5255,12 @@ def reopen_collab(
             die(f'transcript missing: {transcript_path}')
         transcript = transcript_path.read_text()
         findings_anchor = latest_reviewer_findings_anchor(transcript)
+        derived_turn_order = assert_turn_order_not_drifted(entry, phase)
         entry['status'] = 'open'
         entry['archived'] = False
         entry['activePhase'] = phase
         data['activeCollabId'] = entry['id']
-        normalize_turn_order_for_phase(entry, phase)
+        entry['turnOrder'] = derived_turn_order
         initialize_completion_state(entry, 'execution', reset_rounds=True)
         invalidate_verification_seal(entry, f'reopened {phase}')
         clear_verdict(entry)
@@ -5654,7 +5878,7 @@ def validate_source_contracts() -> None:
     require_source_text(seal_verification, '/collab run plan', 'restore-route rerun step')
     require_source_text(seal_verification, '/collab seal verification', 'restore-route reseal step')
 
-    invariants = DEFAULT_CONFIG_ROOT / '_functions/collab/_invariants.md'
+    invariants = DEFAULT_CONFIG_ROOT / 'core/collab/_invariants.md'
     require_source_text(invariants, 'Rollback triggers', 'rollback trigger section')
     require_source_text(invariants, 'Observation backlog', 'observation backlog section')
     validate_planned_route_prerequisites(DEFAULT_CONFIG_ROOT)

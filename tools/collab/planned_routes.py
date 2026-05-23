@@ -18,7 +18,7 @@ def issue_bridge_declared(config_root: Path) -> bool:
     if (config_root / '_functions/collab/export-issues.md').exists():
         return True
     command_text = '\n'.join([
-        source_text(config_root / 'commands/collab.md'),
+        source_text(config_root / 'commands/collab/index.md'),
         source_text(config_root / 'commands/commands.md'),
     ])
     return '/collab export-issues' in command_text or 'export issues' in command_text

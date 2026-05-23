@@ -11,12 +11,12 @@ Document the gate policy that decides when a collaboration needs a reviewer judg
 
 ## Steps
 
-1. Read [_invariants.md](_invariants.md) before executing; call the relevant helper fresh and do not trust prior reads from conversation context (Invariant #4). Read this policy when a collab needs judgment without depending on a specific participant being present.
+1. Read [_invariants.md](../../core/collab/_invariants.md) before executing; call the relevant helper fresh and do not trust prior reads from conversation context (Invariant #4). Read this policy when a collab needs judgment without depending on a specific participant being present.
 2. Treat the trigger set as role-agnostic conditions that can fire in any collab.
 3. Resolve the reviewer from registry `reviewerRole` when set; otherwise apply the **Reviewer fallback** in **Notes**.
 4. If a trigger fires and no safe assignee exists, pause the collab as gate-blocked instead of advancing.
 5. Do not mutate registry state from this documentation-only route.
-6. To list available roles, call `tools/collab/registry.py roles` from the repository root. This reads every file under `_roles/` and outputs one participant-row per role.
+6. To list available roles, call `tools/collab/registry.py roles` from the repository root. This reads every file under `core/collab/_roles/` and outputs one participant-row per role.
 
 ## Notes
 

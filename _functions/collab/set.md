@@ -11,7 +11,7 @@ Update collab metadata fields that do not already belong to a dedicated mutation
 
 ## Steps
 
-1. Read [_invariants.md](_invariants.md) before executing; call the relevant helper fresh and do not trust prior reads from conversation context (Invariant #4). Resolve the target collab with **Registry targeting** in **Notes**.
+1. Read [_invariants.md](../../core/collab/_invariants.md) before executing; call the relevant helper fresh and do not trust prior reads from conversation context (Invariant #4). Resolve the target collab with **Registry targeting** in **Notes**.
 2. Resolve `<field>` from the next positional token after `set`. If missing, **ABORT**: `<field>` is required.
 3. Resolve `<value>` from all remaining input after `<field>`, excluding an optional leading `--force` flag. If missing after trimming whitespace, **ABORT**: `<value>` is required.
 4. Read the resolved registry and the resolved transcript path. If either is unreadable, **ABORT**: record unreadable; name the path.

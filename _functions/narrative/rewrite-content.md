@@ -15,7 +15,7 @@ Audit narrative content for drift, align project rules against the global dotcur
 
 1. Resolve `<audit | align | gate>` from the first token after `/narrative rewrite content`. If missing or invalid, **ABORT** naming the token received. Recovery: re-invoke with one of `audit`, `align`, or `gate`.
 2. Resolve `--role <key>` from the remaining input. If missing, **ABORT**: `--role <key>` is required.
-3. Read `_roles/<key>.json`. If unreadable, **ABORT**: role file unreadable; name the expected path.
+3. Read `core/collab/_roles/<key>.json`. If unreadable, **ABORT**: role file unreadable; name the expected path.
 4. Validate the role JSON against [_core/agent-role.md](../../_core/agent-role.md): `key` must match `<key>`, and `displayName` and non-empty `concerns` must be present. If invalid, **ABORT**: invalid role JSON; name the failed field.
 5. For `audit`, run **Phase 1 — Audit**. Focus: meaning assessment — locating drift before scope is known.
 6. For `align`, resolve the state file through `tools/narrative/state.py align --role <key>`. If the state file is missing or `~/.cursor` resolves to the repository source tree, **ABORT** naming the failed path. Recovery: re-run `audit` to create state before continuing. Then run **Phase 2 — Align**. Focus: surface enumeration, verifiable match.

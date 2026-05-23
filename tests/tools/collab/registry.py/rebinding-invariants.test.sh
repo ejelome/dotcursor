@@ -112,7 +112,7 @@ def write(rel: str, text: str) -> None:
     path.write_text(text)
 
 write('_functions/collab/export-issues.md', '# /collab export-issues\n')
-write('commands/collab.md', '# /collab\n')
+write('commands/collab/index.md', '# /collab\n')
 write('commands/commands.md', '# /commands\n')
 write(
     '_functions/collab/init.md',

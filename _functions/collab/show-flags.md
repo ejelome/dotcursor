@@ -11,7 +11,7 @@ Display the generated collab flag inventory from the spec-owned flag taxonomy.
 
 ## Steps
 
-1. Read [_invariants.md](_invariants.md) before executing; call the relevant helper fresh and do not trust prior reads from conversation context (Invariant #4). Call `tools/collab/registry.py flag-inventory`.
+1. Read [_invariants.md](../../core/collab/_invariants.md) before executing; call the relevant helper fresh and do not trust prior reads from conversation context (Invariant #4). Call `tools/collab/registry.py flag-inventory`.
 2. Display the helper output exactly. The helper reads `_core/flag-taxonomy.md`, groups rows by class, and emits one block per class.
 3. Stop. This route is read-only and must not mutate the registry or transcript.
 

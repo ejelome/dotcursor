@@ -122,7 +122,7 @@ When work completes, report:
 - Each validation command executed and its pass/fail status, including any documented skips with rationale.
 - Whether root adapters (`CLAUDE.md`, `AGENTS.md`, `REPOSITORY.md`, `README.md`) and scaffold templates (`_templates/*`) were modified.
 - Whether any `_generated/*` file or the `COMMANDS_ROSTER` block in `commands/commands.md` was regenerated, and which sync script produced the change.
-- Any unresolved install or patch placeholder markers remaining in installed scaffold files (as defined in `_functions/agent/install.md` and `_functions/agent/patch.md`).
+- Any unresolved install or patch placeholder markers remaining in installed scaffold files (as defined in `commands/agent/install/index.md` and `commands/agent/patch/index.md`).
 - Any residual risks: known blockers in `_tests/*`, deferred test additions, or boundary cases (e.g. the documented `agent-honor-system` limit in `_tests/_tests.md`) that affected the run.
 - Any uncommitted state in ignored runtime directories (`.claude/`, `projects/`, etc.) or the user-scope collab state root that influenced behavior during the run.
 

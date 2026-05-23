@@ -11,7 +11,7 @@ Clear scoped collab metadata fields that have explicit empty-state semantics.
 
 ## Steps
 
-1. Read [_invariants.md](_invariants.md) before executing; call the relevant helper fresh and do not trust prior reads from conversation context (Invariant #4). Resolve the target collab with **Registry targeting** in **Notes**.
+1. Read [_invariants.md](../../core/collab/_invariants.md) before executing; call the relevant helper fresh and do not trust prior reads from conversation context (Invariant #4). Resolve the target collab with **Registry targeting** in **Notes**.
 2. Resolve `<field>` from the next positional token after `unset`. If missing, **ABORT**: `<field>` is required.
 3. Read the resolved registry and the resolved transcript path. If either is unreadable, **ABORT**: record unreadable; name the path.
 4. Validate field ownership against **Unsettable fields** in **Notes**. If `<field>` is not unsettable, **ABORT**: field not unsettable; name the field.

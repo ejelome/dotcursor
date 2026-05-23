@@ -1,6 +1,6 @@
 # QA — command commands
 
-Deterministic QA for public slash routers in `~/.cursor/commands/*.md`.
+Deterministic QA for public slash routers in `~/.cursor/commands/**/*.md`.
 
 ## Procedure
 
@@ -24,7 +24,8 @@ Public command files under `~/.cursor/commands/`:
 
 - `agent.md`
 - `commands.md`
-- `collab.md`
+- `collab/index.md`
+- `collab/speak/index.md`
 - `doc.md`
 - `quality.md`
 - `git.md`

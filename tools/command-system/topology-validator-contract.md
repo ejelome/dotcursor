@@ -4,7 +4,11 @@ Specifies what `tools/command-system/audit-topology.sh` must check once the comm
 
 ## Scope
 
-Applies only to the restructured `commands/` tree. Not applicable while namespaces still use the flat `commands/<ns>.md` form.
+`audit-topology.sh` supports two modes.
+
+**Default (post-migration):** Applies to the fully restructured `commands/` tree. Requires all catalog namespace entries to use the `commands/<ns>/index.md` layout. Not applicable while any namespace still uses the flat `commands/<ns>.md` form.
+
+**`--migration` mode:** Accepts both flat `commands/<ns>.md` and directory `commands/<ns>/index.md` namespace entries. Use during the transition period when flat-layout and directory-layout namespaces coexist. Also validates links generated in the `<!-- BEGIN GENERATED:COMMANDS_ROSTER -->` block to confirm all catalog roster targets exist on disk.
 
 ## Required Paths
 

@@ -55,6 +55,6 @@ Existing closed collabs are not migrated. `writeScope` and `validationCommands` 
 
 **See also**
 
-- [`_invariants.md`](_invariants.md) — Invariant #2 (registry/mirror model) and Invariant #6 (write-scope disjointness)
-- [`speak.md`](speak.md) — Handoff phase speak rules and one-speak constraint
+- [`_invariants.md`](../../core/collab/_invariants.md) — Invariant #2 (registry/mirror model) and Invariant #6 (write-scope disjointness)
+- [`commands/collab/speak/index.md`](../../commands/collab/speak/index.md) — Handoff phase speak rules and one-speak constraint
 - [`run-plan.md`](run-plan.md) — Handoff dependency parsing and `execute-spawn` scope consumption

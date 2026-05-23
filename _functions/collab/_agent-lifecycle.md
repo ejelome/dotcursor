@@ -13,7 +13,7 @@
 
 ## Notes
 
-This document specifies when to run lifecycle commands during a collab session. It supplements [`_agent-effort.md`](_agent-effort.md) (effort levels) and [`_agent-model.md`](_agent-model.md) (join-time model and harness).
+This document specifies when to run lifecycle commands during a collab session. It supplements [`_agent-effort.md`](../../core/collab/_agent-effort.md) (effort levels) and [`_agent-model.md`](_agent-model.md) (join-time model and harness).
 
 ## `/compact`
 

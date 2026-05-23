@@ -22,11 +22,11 @@ SCAN_DIRS = [
     "_templates",
     "_tests",
     "_generated",
-    "_roles",
     "_settings",
     "_core",
     "commands",
     "_functions",
+    "core",
     "tests",
     "tools",
 ]

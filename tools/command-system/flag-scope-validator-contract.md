@@ -30,7 +30,7 @@ Where:
 - ` — ` is the em-dash delimiter (U+2014), with a single space on each side
 - `<reason>` is a non-empty free-text explanation of why the narrower scope narrows or overrides the parent
 
-The hyphen form (`-`) is not valid. The validator enforces the em-dash delimiter.
+The hyphen form (U+002D, `-`) and en-dash form (U+2013, `–`) are not valid. The validator enforces the em-dash delimiter (U+2014).
 
 Example:
 
@@ -55,7 +55,7 @@ ERROR: flag '<name>' at <narrow-scope> scope shadows <broad-scope> scope without
 
 ### Malformed override declaration — error
 
-An `override:` line present but using the wrong delimiter (e.g. hyphen instead of em-dash) or missing the reason field also produces an error.
+An `override:` line present but using the wrong delimiter (e.g. hyphen (U+002D) or en-dash (U+2013) instead of em-dash (U+2014)) or missing the reason field also produces an error.
 
 Error message form:
 
@@ -64,6 +64,19 @@ ERROR: malformed override declaration for flag '<name>' at <narrow-scope> scope
   field: <path-to-flag-block>
   found: override: <found-text>
   required form: override: <parent-scope> — <reason>
+```
+
+### Unresolved inherited origin — error
+
+An `override:` line that is correctly formed (em-dash delimiter, non-empty reason) but declares a parent scope (`system` or `namespace`) where no matching flag exists produces an error. The override references an origin that does not exist in the tree.
+
+Error message form:
+
+```
+ERROR: unresolved inherited flag origin for flag '<name>' at <narrow-scope> scope
+  field: <path-to-flag-block>
+  found: override: <found-text>
+  missing origin: <parent-scope>
 ```
 
 ## Implementation Target

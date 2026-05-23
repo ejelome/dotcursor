@@ -13,7 +13,7 @@ Rewrite the most recent summary in-place within the Completion section of a coll
 
 **This command rewrites the summary only. Do not make file edits, run shell commands, or modify any codebase artifact outside the user-scope collab state root.**
 
-1. Read [_invariants.md](_invariants.md) before executing; call the relevant helper fresh and do not trust prior reads from conversation context (Invariant #4). Resolve the target collab with **Registry targeting** in **Notes**.
+1. Read [_invariants.md](../../core/collab/_invariants.md) before executing; call the relevant helper fresh and do not trust prior reads from conversation context (Invariant #4). Resolve the target collab with **Registry targeting** in **Notes**.
 2. Read the resolved registry and the resolved transcript path. If either is unreadable, **ABORT**: record unreadable; name the path.
 3. Locate the most recent `### Summary — YYYY-MM-DD` subsection under `## Completion`. If no such subsection exists, **ABORT**: nothing yet summarized; run `/collab write summary` first.
 4. Draft the replacement reference summary from the full record content, write it to a temporary summary file, then call `tools/collab/registry.py rewrite-summary <target> --summary-file <path>`. The helper replaces the content of the located summary subsection and updates the date in the subsection heading to the current date.

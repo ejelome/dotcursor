@@ -29,9 +29,27 @@ Format-preservation policy for moderator and other user-authored prose appended 
 
 Example: A moderator message with several related points may become bullets or short labeled lines, but every line and label must be traceable to the captured words. If you would otherwise write a "consensus" or "summary" in the moderator's name, do not: put that in your own turn or a section the moderator points to.
 
+## Audit block schema
+
+**`charteredDeliverables` field**
+
+When the moderator's Audit contribution declares explicit delivery commitments, it must include a `charteredDeliverables:` block immediately after the scope description. The block is a bulleted list; each bullet is a short artifact description (file name + change intent):
+
+```
+charteredDeliverables:
+- core/collab/_invariants.md: add Invariant #16
+- _functions/collab/init.md: add charteredDeliverables schema note
+```
+
+Format rules:
+- The label `charteredDeliverables:` must appear on its own line as a paragraph, not inside a heading or code block.
+- Each bullet begins with the path or artifact name, followed by a colon and short change description.
+- The field is optional. Omit it when no specific artifacts are chartered; Invariant #17 is a no-op for absent or empty lists.
+- Do not paraphrase or summarize; the artifact description must be specific enough for the reviewer to match it against an `execution.<role>.touchedPaths` entry at seal time.
+
 ## References
 
-- [speak.md](speak.md) — `/collab speak` route that invokes this formatting policy.
+- [collab/speak/index.md](../../commands/collab/speak/index.md) — `/collab speak` route that invokes this formatting policy.
 - [_moderator-polish.md](_moderator-polish.md) — structure-only polish transform applied to moderator contributions after append.
 - [style-guide](../../_core/style-guide.md) — imperative instruction shape and LLM-consumed document constraints.
 - [document-standard](../../_core/document-standard.md) — rule template and document structure.

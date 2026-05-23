@@ -11,7 +11,7 @@ Seal the `Completion.verification` sub-state after a reviewer pass, recording th
 
 ## Steps
 
-1. Read [_invariants.md](_invariants.md) before executing; call the relevant helper fresh and do not trust prior reads from conversation context (Invariant #4). Resolve the target collab with **Registry targeting** in **Notes**.
+1. Read [_invariants.md](../../core/collab/_invariants.md) before executing; call the relevant helper fresh and do not trust prior reads from conversation context (Invariant #4). Resolve the target collab with **Registry targeting** in **Notes**.
 <!-- abort: seal-verification-record-unreadable -->
 2. Read the resolved registry and the resolved transcript path. If either is unreadable, **ABORT**: record unreadable; name the path.
 <!-- abort: seal-verification-record-closed -->
@@ -81,7 +81,7 @@ Seal the `Completion.verification` sub-state after a reviewer pass, recording th
 - <a name="restore-route-recovery"></a>**Restore-route recovery:** After an `incomplete` or `failed` verdict, run `/collab show verdict` to inspect `restoreTarget`, `restoreReason`, evidence, and the next command. If `restoreTarget` is `Action Plan`, run `/collab reopen action-plan`; if it is `Handoff`, run `/collab reopen handoff`. Revise the reopened phase content, rerun assigned execution with `/collab run plan`, then reseal with `/collab seal verification`. After any `/compact`, agent swap, or subagent return during this path, re-establish context with `tools/collab/registry.py seal-state --resume <target> <role>` before continuing.
 - **Post-state resume signal:** After `/collab seal verification` completes, re-establish context with `tools/collab/registry.py seal-state --resume <target> <role>` after any `/compact`, agent swap, or subagent return before the next command.
 - **writeScope reopen advisory:** When the reviewer surfaces out-of-scope work during verification, the legal exit is `/collab seal verification --cap-exit reopen-handoff`. The `seal-render` helper applies the cap-exit and transitions the collab to `Handoff` phase directly; no separate reopen command is needed for this path. The reviewer must not widen the scope informally; the cap-exit creates the audit trail. Registry field `handoff.roles.<role>.writeScope` is the reopen boundary source.
-- **Effort matrix:** This route's reviewer turn is `xhigh` and is a mandatory-declaration turn. See [`_agent-effort.md`](_agent-effort.md) (`Completion.verification` row).
+- **Effort matrix:** This route's reviewer turn is `xhigh` and is a mandatory-declaration turn. See [`_agent-effort.md`](../../core/collab/_agent-effort.md) (`Completion.verification` row).
 
 ```route-arg
 dispatch: (collab seal verification [--cap-exit <action>] [--outcome <outcome>] [--restore-target <target>] [--restore-reason <reason>] [--evidence <json>] [--failure-category <category>])

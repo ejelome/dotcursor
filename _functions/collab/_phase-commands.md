@@ -51,4 +51,4 @@ Quick-reference table: the commands each role invokes in each collaboration phas
 
 ---
 
-For effort levels per phase and role, see [`_agent-effort.md`](_agent-effort.md).
+For effort levels per phase and role, see [`_agent-effort.md`](../../core/collab/_agent-effort.md).

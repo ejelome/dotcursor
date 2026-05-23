@@ -15,11 +15,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 CONFIG_ROOT = Path(os.environ.get("COMMAND_CONFIG_ROOT", ROOT)).expanduser().resolve()
 FUNCTIONS_DIR = CONFIG_ROOT / "_functions"
+COMMANDS_DIR = CONFIG_ROOT / "commands"
 ARTIFACT = CONFIG_ROOT / "_generated" / "command-reference.md"
 BEGIN_MARKER = "<!-- BEGIN GENERATED:COMMAND_REFERENCE -->"
 END_MARKER = "<!-- END GENERATED:COMMAND_REFERENCE -->"
 ROLE_SOURCE = "tools/collab/registry.py roles"
-ROLE_DYNAMIC_DETAIL = "role keys from _roles/"
+ROLE_DYNAMIC_DETAIL = "role keys from core/collab/_roles/"
 VALID_CLASSES = {"literal", "type", "dynamic"}
 VALID_REQUIRED = {"required", "optional"}
 ADVISORIES_PATH = ROOT / "tools" / "command-system" / "command-advisories.py"
@@ -65,7 +66,7 @@ def load_advisory_catalog():
         catalog = module.load_catalog(
             data_dir=CONFIG_ROOT / "_data",
             functions_dir=FUNCTIONS_DIR,
-            roles_dir=CONFIG_ROOT / "_roles",
+            roles_dir=CONFIG_ROOT / "core/collab/_roles",
         )
     except module.AdvisoryError as exc:
         raise ReferenceError(f"command advisories invalid: {exc}") from exc
@@ -246,6 +247,20 @@ def load_routes() -> list[Route]:
         namespace = rel.parts[0]
         route = path.stem
         routes.append(Route(path, namespace, route, slash, signature, dispatch, params))
+    if COMMANDS_DIR.exists():
+        for path in sorted(COMMANDS_DIR.glob("*/*/index.md")):
+            text = path.read_text(encoding="utf-8")
+            slash_label = first_label(text, "Slash")
+            if not slash_label or "reference only" in slash_label:
+                continue
+            slash = first_code_span(slash_label)
+            signature_label = first_label(text, "Signature")
+            signature = signature_label.replace("`", "") if signature_label else slash
+            dispatch, params = parse_route_arg(path, text, slash, signature)
+            rel = path.relative_to(COMMANDS_DIR)
+            namespace = rel.parts[0]
+            route = path.parent.name
+            routes.append(Route(path, namespace, route, slash, signature, dispatch, params))
     return routes
 
 

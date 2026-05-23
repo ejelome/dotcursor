@@ -156,7 +156,7 @@ One sentence — purpose of the route and when to use it.
 | **P8** | Title and opening line | H1 text is `# /<namespace>` or `# /<namespace> <route>` |
 | **P9** | Trigger contract | Every command/function file except `commands.md` declares `**Slash:**`, `**Prose dispatch:**`, and `**Search phrases:**` as three sections in that order |
 | **P10** | Signature and Notes contract | Signature placeholders, stage signatures, and Notes ordering stay consistent |
-| **P11** | Self-containment | Required dependencies stay inside `commands/`, `_functions/`, `_roles/`, `_core/`, or explicit QA harness targets |
+| **P11** | Self-containment | Required dependencies stay inside `commands/`, `_functions/`, `core/`, `_core/`, or explicit QA harness targets |
 
 ## Layout and length
 
@@ -166,8 +166,8 @@ One sentence — purpose of the route and when to use it.
 ## Link hygiene
 
 - Public command links may target sibling command files, `../_functions/**/*.md`, `../_core/*.md`, fragment-only anchors, and optional `https://` / `http://` context links.
-- Private function links may target sibling `_functions/**/*.md`, `../../_core/*.md`, `../../_roles/*.json`, fragment-only anchors, and optional `https://` / `http://` context links.
-- Required authority for command behavior may come only from public command files, private function files, shared role JSON under `_roles/`, core contracts under `_core/` or a `_functions/<ns>/_*.md` shared-dependency file within the same namespace.
+- Private function links may target sibling `_functions/**/*.md`, `../../_core/*.md`, `../../core/collab/_roles/*.json`, fragment-only anchors, and optional `https://` / `http://` context links.
+- Required authority for command behavior may come only from public command files, private function files, shared role JSON under `core/collab/_roles/`, core contracts under `_core/` or a `_functions/<ns>/_*.md` shared-dependency file within the same namespace.
 - `_functions/test/run.md` may also require `~/.cursor/_tests/commands.md`, `~/.cursor/_tests/_functions.md`, `~/.cursor/_tests/_core.md`, `~/.cursor/_tests/_roles.md`, `~/.cursor/_tests/_settings.md`, `~/.cursor/_tests/_tests.md`, and `REPOSITORY.md` at repo root.
 - External URLs are optional context only and never required authorities.
 

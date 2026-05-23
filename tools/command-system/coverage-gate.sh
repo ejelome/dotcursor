@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 DEFAULT_ROUTE_FILES = [
-    "commands/collab.md",
+    "commands/collab/index.md",
     "_functions/collab/activate.md",
     "_functions/collab/advance.md",
     "_functions/collab/archive.md",
@@ -32,7 +32,7 @@ DEFAULT_ROUTE_FILES = [
     "_functions/collab/rewrite-summary.md",
     "_functions/collab/run-plan.md",
     "_functions/collab/set.md",
-    "_functions/collab/speak.md",
+    "commands/collab/speak/index.md",
     "_functions/collab/unset.md",
     "_functions/collab/write-summary.md",
 ]
@@ -73,8 +73,8 @@ def route_files(args: argparse.Namespace) -> list[str]:
 def route_subcommand(path: str) -> str:
     if path.startswith("_functions/collab/") and path.endswith(".md"):
         return Path(path).stem
-    if path == "commands/collab.md":
-        return "collab"
+    if path.endswith("/index.md"):
+        return Path(path).parent.name
     return Path(path).stem
 
 

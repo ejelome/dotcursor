@@ -43,7 +43,7 @@ generate_block() {
   printf '\n'
   printf '%s\n' "| Key | Display name |"
   printf '%s\n' "|-----|--------------|"
-  python3 "$ROOT/tools/command-system/roles.py" --roles-dir "$COMMAND_CONFIG_ROOT/_roles" roster
+  python3 "$ROOT/tools/command-system/roles.py" --roles-dir "$COMMAND_CONFIG_ROOT/core/collab/_roles" roster
 }
 
 write_block() {

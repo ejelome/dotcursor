@@ -11,7 +11,7 @@ Retract the current role's latest contribution in the active phase while preserv
 
 ## Steps
 
-1. Read [_invariants.md](_invariants.md) before executing; call the relevant helper fresh and do not trust prior reads from conversation context (Invariant #4). Resolve the target collab with the same registry targeting rule used by `/collab speak`; when absent, use `activeCollabId`.
+1. Read [_invariants.md](../../core/collab/_invariants.md) before executing; call the relevant helper fresh and do not trust prior reads from conversation context (Invariant #4). Resolve the target collab with the same registry targeting rule used by `/collab speak`; when absent, use `activeCollabId`.
 2. Resolve the executing role from the current joined participant. If the role is not registered, **ABORT**: role not registered; run `/collab join --role <role>` first.
 3. If the record is closed, archived, or in `Completion`, **ABORT** before any write. Completed execution records are finalized by `/collab run plan` and are not retracted by this route.
 4. Call `tools/collab/registry.py retract-speak <target> <role> [--reason <text>] --caller-role <role>`.

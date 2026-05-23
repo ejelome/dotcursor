@@ -39,7 +39,7 @@ Reference document for the resolved collab `registry.json` schema and field owne
   | `status` | string | `open` \| `closed` \| `archived`. |
   | `activePhase` | string | Current phase: `Audit` \| `Discussion` \| `Conclusion` \| `Action Plan` \| `Handoff` \| `Completion`. `Completion` is further divided into `Completion.execution` (assigned roles run their Action Plan items) and `Completion.verification` (reviewer seals via `/collab seal verification`) for reviewer-backed collabs. |
   | `moderatorRole` | string | Key of the moderator participant. |
-  | `participants` | `{ role: string, agentId: string }[]` | Ordered list of registered participants. Each entry records the role key and the joining agent's at-join `agentId` per [_agent-id.md](_agent-id.md). |
+  | `participants` | `{ role: string, agentId: string }[]` | Ordered list of registered participants. Each entry records the role key and the joining agent's at-join `agentId` per [_agent-id.md](../../core/collab/_agent-id.md). |
   | `turnOrder` | string[] | Ordered cycle of speaking keys enforced by `speak`. When empty, `speak` falls back to `participants` order. |
   | `reviewerRole` | string | Optional reviewer key for collab-level judgment passes. May be written before the role is listed in `participants`; while pending, `speak-state` aborts before turn-order checks. |
   | `reviewerMode` | string | Optional reviewer behavior mode. Initial supported value: `last-in-convergent-phases`. |

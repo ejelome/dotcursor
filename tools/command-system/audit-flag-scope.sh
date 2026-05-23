@@ -84,6 +84,15 @@ def valid_override(text: str | None, parent: str) -> bool:
     return re.match(pattern, text) is not None
 
 
+def override_parent(text: str | None) -> str | None:
+    if text is None:
+        return None
+    parent = text.split(maxsplit=1)[0]
+    if parent in {"system", "namespace"}:
+        return parent
+    return None
+
+
 paths = sorted(commands_dir.glob("index.md"))
 paths.extend(sorted(commands_dir.glob("*/index.md")))
 paths.extend(sorted(commands_dir.glob("*/*/index.md")))
@@ -132,7 +141,23 @@ def report_malformed(narrow: FlagBlock, broad_scope: str) -> None:
     )
     print(f"  field: {narrow.field}", file=sys.stderr)
     print(f"  found: override: {narrow.override or ''}", file=sys.stderr)
+    if narrow.override and "–" in narrow.override:
+        print("  delimiter: found U+2013 en-dash; expected U+2014 em-dash", file=sys.stderr)
+    elif narrow.override and " - " in narrow.override:
+        print("  delimiter: found U+002D hyphen-minus; expected U+2014 em-dash", file=sys.stderr)
     print(f"  required form: override: {broad_scope} — <reason>", file=sys.stderr)
+    failures += 1
+
+
+def report_unresolved_origin(narrow: FlagBlock, parent: str) -> None:
+    global failures
+    print(
+        f"ERROR: unresolved inherited flag origin for flag '{narrow.flag}' at {narrow.scope} scope",
+        file=sys.stderr,
+    )
+    print(f"  field: {narrow.field}", file=sys.stderr)
+    print(f"  found: override: {narrow.override or ''}", file=sys.stderr)
+    print(f"  missing origin: {parent}", file=sys.stderr)
     failures += 1
 
 
@@ -147,6 +172,11 @@ for ns, flags in sorted(namespace_flags.items()):
     for flag, block in sorted(flags.items()):
         if flag in system_flags:
             check_override(block, "system")
+        elif override_parent(block.override) == "system":
+            if valid_override(block.override, "system"):
+                report_unresolved_origin(block, "system")
+            else:
+                report_malformed(block, "system")
 
 for (ns, cmd), flags in sorted(command_flags.items()):
     ns_flags = namespace_flags.get(ns, {})
@@ -155,6 +185,18 @@ for (ns, cmd), flags in sorted(command_flags.items()):
             check_override(block, "namespace")
         elif flag in system_flags:
             check_override(block, "system")
+        else:
+            parent = override_parent(block.override)
+            if parent == "namespace":
+                if valid_override(block.override, "namespace"):
+                    report_unresolved_origin(block, "namespace")
+                else:
+                    report_malformed(block, "namespace")
+            elif parent == "system":
+                if valid_override(block.override, "system"):
+                    report_unresolved_origin(block, "system")
+                else:
+                    report_malformed(block, "system")
 
 if failures:
     sys.exit(1)

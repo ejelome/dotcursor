@@ -12,7 +12,7 @@ Patch `REPOSITORY.md` in the current repository with repo-specific multi-agent m
 ## Steps
 
 1. Resolve the repo root as the directory where the command runs.
-2. Parse flags immediately after the route selector and before any positional arguments per [_core/command-argument.md](../../_core/command-argument.md). `--force` is supported only in that pre-positional slot. Unsupported or misplaced flags **ABORT** before any route mutation.
+2. Parse flags immediately after the route selector and before any positional arguments per [_core/command-argument.md](../../../_core/command-argument.md). `--force` is supported only in that pre-positional slot. Unsupported or misplaced flags **ABORT** before any route mutation.
 3. Verify `REPOSITORY.md` exists in the repo root. If absent, **ABORT**: `REPOSITORY.md` not found; run `/agent install` first.
 4. Read `REPOSITORY.md` in full.
 5. Locate all `<!-- TODO(patch): <description> -->` placeholders. If none are found, **ABORT**: no `<!-- TODO(patch): ... -->` placeholders found; `REPOSITORY.md` may already be patched or was not installed via `/agent install`.

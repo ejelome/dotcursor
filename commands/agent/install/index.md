@@ -11,11 +11,11 @@ Install the multi-agent scaffold into the current repository from `~/.cursor/_te
 
 ## Steps
 
-1. Resolve the repo root as the directory where the command runs, using the target/global vocabulary in [_run-root.md](_run-root.md). If not inside a git repository, **ABORT**: must be run from a git repository root.
+1. Resolve the repo root as the target repository root: the git repository root for the project receiving scaffold files. This may be the same path as the global runtime root at `~/.cursor`. If not inside a git repository, **ABORT**: must be run from a git repository root.
 2. Verify `~/.cursor/_templates/CLAUDE.md`, `~/.cursor/_templates/AGENTS.md`, and `~/.cursor/_templates/REPOSITORY.md` all exist. If any is missing, **ABORT** naming the missing path.
-3. Parse flags immediately after the route selector and before any positional arguments per [_core/command-argument.md](../../_core/command-argument.md). `--force` is supported only in that pre-positional slot. Unsupported or misplaced flags **ABORT** before any route mutation.
+3. Parse flags immediately after the route selector and before any positional arguments per [_core/command-argument.md](../../../_core/command-argument.md). `--force` is supported only in that pre-positional slot. Unsupported or misplaced flags **ABORT** before any route mutation.
 4. For each of `CLAUDE.md`, `AGENTS.md`, and `REPOSITORY.md`, check whether the file already exists in the repo root. If any exists and `--force` is absent, **ABORT**: file already exists; name every conflicting path. Do not overwrite.
-5. Compute `the candidate patch` for all three scaffold writes from the template contents. During candidate-patch computation, resolve every `<!-- TODO(install): ... -->` marker in `CLAUDE.md` and `AGENTS.md` from the target repository identity, then remove the marker. If any `TODO(install)` marker would survive in the candidate patch, **ABORT**: unresolved install placeholder. When `--force` is supplied and any scaffold file exists, render the diff from `the candidate patch`, and gate the write per [_core/command-argument.md](../../_core/command-argument.md):
+5. Compute `the candidate patch` for all three scaffold writes from the template contents. During candidate-patch computation, resolve every `<!-- TODO(install): ... -->` marker in `CLAUDE.md` and `AGENTS.md` from the target repository identity, then remove the marker. If any `TODO(install)` marker would survive in the candidate patch, **ABORT**: unresolved install placeholder. When `--force` is supplied and any scaffold file exists, render the diff from `the candidate patch`, and gate the write per [_core/command-argument.md](../../../_core/command-argument.md):
 
    ```route-gate
    gate-class: standard
@@ -36,7 +36,7 @@ Install the multi-agent scaffold into the current repository from `~/.cursor/_te
 ## Notes
 
 - **Precondition:** The global command surface (`~/.cursor/`) must be reachable before this route is invoked. In environments without it on the command path, invoke explicitly (e.g., `~/.cursor/...`) on first use. The requirement is reachability; the invocation form depends on the agent surface.
-- **Invocation context:** Run this command from the target repository root defined in [_run-root.md](_run-root.md). A checkout developed in place at `~/.cursor` is a valid target repository root.
+- **Invocation context:** Run this command from the target repository root. A checkout developed in place at `~/.cursor` is a valid target repository root, so a target path of `~/.cursor` is permitted.
 - **Placeholder standard:** `AGENTS.md` and `CLAUDE.md` use `<!-- TODO(install): <description> -->` markers resolved during install candidate-patch computation. `REPOSITORY.md` uses `<!-- TODO(patch): <description> -->` markers resolved by `/agent patch`.
 - **Parameters:** `--force` — optional pre-positional flag. Default target is the repo root where the command runs.
 - **Examples:** `/agent install`, `/agent install --force`.

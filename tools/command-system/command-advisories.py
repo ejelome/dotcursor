@@ -15,7 +15,8 @@ ROOT = Path(__file__).resolve().parents[2]
 CONFIG_ROOT = Path(os.environ.get("COMMAND_CONFIG_ROOT", ROOT)).expanduser().resolve()
 DATA_DIR = CONFIG_ROOT / "_data"
 FUNCTIONS_DIR = CONFIG_ROOT / "_functions"
-ROLES_DIR = CONFIG_ROOT / "_roles"
+COMMANDS_DIR = CONFIG_ROOT / "commands"
+ROLES_DIR = CONFIG_ROOT / "core/collab/_roles"
 ARTIFACT = CONFIG_ROOT / "_generated" / "command-reference.md"
 SCHEMA_PATH = DATA_DIR / "command-advisory.schema.json"
 BEGIN_MARKER = "<!-- BEGIN GENERATED:COMMAND_REFERENCE -->"
@@ -95,7 +96,7 @@ def route_name_from_slash(slash: str, namespace: str) -> str:
     return slash[len(prefix) + 1 :].strip()
 
 
-def load_routes(functions_dir: Path = FUNCTIONS_DIR) -> dict[str, dict[str, Route]]:
+def load_routes(functions_dir: Path = FUNCTIONS_DIR, commands_dir: Path = COMMANDS_DIR) -> dict[str, dict[str, Route]]:
     routes: dict[str, dict[str, Route]] = {}
     if not functions_dir.exists():
         raise AdvisoryError(f"functions directory missing: {functions_dir}")
@@ -114,6 +115,22 @@ def load_routes(functions_dir: Path = FUNCTIONS_DIR) -> dict[str, dict[str, Rout
         if route_name in by_namespace:
             raise AdvisoryError(f"duplicate invocable route name in {namespace}: {route_name}")
         by_namespace[route_name] = Route(namespace, route_name, slash, path)
+    if commands_dir.exists():
+        for path in sorted(commands_dir.glob("*/*/index.md")):
+            text = path.read_text(encoding="utf-8")
+            slash_label = first_label(text, "Slash")
+            if not slash_label or "reference only" in slash_label:
+                continue
+            slash = first_code_span(slash_label)
+            rel = path.relative_to(commands_dir)
+            namespace = rel.parts[0]
+            route_name = route_name_from_slash(slash, namespace)
+            if not route_name:
+                continue
+            by_namespace = routes.setdefault(namespace, {})
+            if route_name in by_namespace:
+                raise AdvisoryError(f"duplicate invocable route name in {namespace}: {route_name}")
+            by_namespace[route_name] = Route(namespace, route_name, slash, path)
     return routes
 
 

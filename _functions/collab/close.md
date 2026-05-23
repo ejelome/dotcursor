@@ -11,7 +11,7 @@ Mark a collaboration record closed so contribution and phase-advance routes stop
 
 ## Steps
 
-1. Read [_invariants.md](_invariants.md) before executing; call the relevant helper fresh and do not trust prior reads from conversation context (Invariant #4). Resolve the target collab with **Registry targeting** in **Notes**.
+1. Read [_invariants.md](../../core/collab/_invariants.md) before executing; call the relevant helper fresh and do not trust prior reads from conversation context (Invariant #4). Resolve the target collab with **Registry targeting** in **Notes**.
 2. Read the resolved registry and the resolved transcript path. If either is unreadable, **ABORT**: record unreadable; name the path.
 3. If the registry status is `closed`, report that the record is already closed and stop.
 4. Call `tools/collab/registry.py close <target>` to: Update the registry status to `closed`. Update the Status cell in the transcript state table from `open` to `closed`. If the closing collab id matches `activeCollabId`, clear `activeCollabId`. Do not change the active pointer when it selects a different collab. The first output line is `NEXT: Collab closed; run /clear before starting another collab.`
@@ -27,7 +27,7 @@ Mark a collaboration record closed so contribution and phase-advance routes stop
 - **Summary default:** The `close` helper emits a structural `### Summary —` block automatically; no route-level generation step is required. Pass `--no-summary` to skip narrative refinement. Use `/collab rewrite summary` on closed records to replace the narrative body.
 - **Summary-emission invariant:** A `### Summary —` block is written to `## Completion` at close; no follow-up step is required.
 - **Closed-record behavior:** `/collab speak` and `/collab advance` must refuse closed records.
-- **Clear notice:** The helper emits `NEXT: Collab closed; run /clear before starting another collab.` as the first output line and `{"message": "Run /clear before starting another collab.", "notice": "clear", "status": "closed"}` after closing. Display both to the caller. Route docs describe the output; they do not reimplement it. See [_invariants.md](_invariants.md).
+- **Clear notice:** The helper emits `NEXT: Collab closed; run /clear before starting another collab.` as the first output line and `{"message": "Run /clear before starting another collab.", "notice": "clear", "status": "closed"}` after closing. Display both to the caller. Route docs describe the output; they do not reimplement it. See [_invariants.md](../../core/collab/_invariants.md).
 - **Post-state resume signal:** After `/collab close` the collab is closed and `activeCollabId` is cleared. Run `/clear` before starting a new collab. No `speak-state --resume` applies — the closed record is no longer active.
 - **Sync contract compliance:** Step 5's narrative refinement call (`/collab rewrite summary`) is prose-rendered. The structural summary is helper-owned and does not require a sync-contract declaration. This is declared under the sync contract in [`_core/route-invariant.md`](../../_core/route-invariant.md).
 
