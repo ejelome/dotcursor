@@ -6,7 +6,7 @@ TMPDIR="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR"' EXIT
 
 cd "$TMPDIR"
-export CURSOR_COLLAB_STATE_HOME="$TMPDIR/state-home"
+export COLLAB_STATE_HOME="$TMPDIR/state-home"
 
 RUN_DATE="$(date +%Y-%m-%d)"
 TARGET="$RUN_DATE-participant-verify-flow"
@@ -27,12 +27,10 @@ registry = Path(sys.argv[1])
 data = json.loads(registry.read_text())
 entry = next(item for item in data['collabs'] if item['slug'] == 'participant-verify-flow')
 entry['handoff'] = {
-    'schemaVersion': 1,
     'roles': {
         'pe': {
-            'schemaVersion': 1,
             'writeScope': ['tools/collab/registry.py'],
-            'validationCommands': [['./tools/cursor/audit.sh']],
+            'validationCommands': [['./tools/command-system/audit.sh']],
         }
     },
 }
@@ -124,4 +122,32 @@ if [[ "$reviewer_speak_state" != *'"verificationReviewSubState": "seal"'* || "$r
   exit 1
 fi
 
-printf 'OK: participant verification writes an atomic three-turn sequence and opens seal state\n'
+seal_state="$("$ROOT/tools/collab/registry.py" seal-state "$TARGET" pa)"
+seal_revision="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["registryRevision"])' <<<"$seal_state")"
+"$ROOT/tools/collab/registry.py" seal-render "$TARGET" pa \
+  --observed-revision "$seal_revision" \
+  --caller-role pa >/dev/null
+
+assessment_state="$("$ROOT/tools/collab/registry.py" seal-state "$TARGET" pa)"
+assessment_revision="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["registryRevision"])' <<<"$assessment_state")"
+"$ROOT/tools/collab/registry.py" seal-render "$TARGET" pa \
+  --observed-revision "$assessment_revision" \
+  --outcome success \
+  --evidence '{"registryRevision":2,"committedPaths":["tools/collab/registry.py"],"executionEntryIds":["pe-2026-05-17t12-00-00-02-00"]}' \
+  --caller-role pa >/dev/null
+
+python3 - "$REGISTRY" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+registry = Path(sys.argv[1])
+entry = next(item for item in json.loads(registry.read_text())['collabs'] if item['slug'] == 'participant-verify-flow')
+transcript = (registry.parent / entry['transcriptPath']).read_text()
+assert entry['status'] == 'closed', entry
+assert entry['verdict']['outcome'] == 'success', entry.get('verdict')
+assert transcript.count('### Summary — ') == 1, transcript
+assert transcript.index('<summary>pe · final-audit</summary>') < transcript.index('### Summary — ')
+PY
+
+printf 'OK: participant verification writes an atomic three-turn sequence, seals, and closes with summary\n'

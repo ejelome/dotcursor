@@ -3,12 +3,12 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=/dev/null
-source "$SCRIPT_DIR/_verification_test_lib.sh"
+source "$SCRIPT_DIR/verification-test-lib.sh"
 
 TMPDIR="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR"' EXIT
 cd "$TMPDIR"
-export CURSOR_COLLAB_STATE_HOME="$TMPDIR/state-home"
+export COLLAB_STATE_HOME="$TMPDIR/state-home"
 
 init_reviewer_target "Verification Assessment Cap Exit" "verification-assessment-cap-exit"
 TARGET="$RUN_DATE-verification-assessment-cap-exit"
@@ -28,6 +28,7 @@ entry['verification']['cap'] = 1
 path.write_text(json.dumps(data, indent=2) + '\n')
 PY
 
+seed_paired_verification_round "$TARGET"
 state="$("$ROOT/tools/collab/registry.py" seal-state "$TARGET" pa)"
 revision="$(read_json_field registryRevision <<<"$state")"
 set +e
@@ -75,6 +76,7 @@ entry['verification']['cap'] = 1
 path.write_text(json.dumps(data, indent=2) + '\n')
 PY
 
+seed_paired_verification_round "$FOLLOW_TARGET"
 follow_state="$("$ROOT/tools/collab/registry.py" seal-state "$FOLLOW_TARGET" pa)"
 follow_revision="$(read_json_field registryRevision <<<"$follow_state")"
 set +e

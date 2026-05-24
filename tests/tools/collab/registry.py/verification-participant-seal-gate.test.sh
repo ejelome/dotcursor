@@ -3,12 +3,12 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=/dev/null
-source "$SCRIPT_DIR/_verification_test_lib.sh"
+source "$SCRIPT_DIR/verification-test-lib.sh"
 
 TMPDIR="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR"' EXIT
 cd "$TMPDIR"
-export CURSOR_COLLAB_STATE_HOME="$TMPDIR/state-home"
+export COLLAB_STATE_HOME="$TMPDIR/state-home"
 
 "$ROOT/tools/collab/registry.py" init --agent-id codex --reviewer pa "Verification Participant Seal Gate" >/dev/null
 TARGET="$RUN_DATE-verification-participant-seal-gate"

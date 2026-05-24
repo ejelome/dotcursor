@@ -7,11 +7,12 @@ import datetime as dt
 import fcntl
 import fnmatch
 import hashlib
+import html
 import json
 import os
 import re
+import subprocess
 import sys
-import uuid
 import webbrowser
 from contextlib import contextmanager
 from collections.abc import Callable
@@ -22,14 +23,27 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+COMMAND_SYSTEM_DIR = ROOT / 'tools' / 'command-system'
+if str(COMMAND_SYSTEM_DIR) not in sys.path:
+    sys.path.insert(0, str(COMMAND_SYSTEM_DIR))
 
-from tools.cursor.roles import load_role, participant_row, roles_command
+from roles import load_role, participant_row, roles_command
+from tools.collab.planned_routes import validate_issue_bridge_block, validate_planned_route_prerequisites
+from tools.collab.registry_state import (
+    PROJECT_ID_RE,
+    assert_registry_project_binding,
+    project_metadata_from_identity,
+    resolve_default_registry_path,
+    sync_registry_project_metadata,
+)
 
 
 PHASES = ['Audit', 'Discussion', 'Conclusion', 'Action Plan', 'Handoff', 'Completion']
 CONTENT_ONLY_GUARD = '<!-- collab:content-only; do-not-execute -->'
 HEADER_MANAGED_BEGIN = '<!-- collab:header-managed -->'
 HEADER_MANAGED_END = '<!-- collab:header-end -->'
+FULL_BODY_SUMMARY = 'Full contribution'
+FULL_BODY_SUMMARY_LINE = f'<summary>{FULL_BODY_SUMMARY}</summary>'
 ONE_SPEAK_PHASES = {'Audit', 'Conclusion', 'Action Plan', 'Handoff'}
 AUTO_ADVANCE_EXEMPT_PHASES = {'Discussion', 'Completion'}
 CONVERGENT_REVIEWER_PHASES = {'Audit', 'Conclusion'}
@@ -46,9 +60,15 @@ ACTIVE_PARTICIPANT_VERIFICATION_STAGES = {'audit', 'remediation', 'final-audit'}
 ALLOWED_VERDICT_OUTCOMES = {'success', 'incomplete', 'failed'}
 ALLOWED_VERDICT_RESTORE_TARGETS = {'Action Plan', 'Handoff'}
 ALLOWED_CAP_EXITS = {'reopen-action-plan', 'reopen-handoff', 'follow-up-collab', 'archive'}
-DEFAULT_VERIFICATION_CAP = 1
-HANDOFF_SCHEMA_VERSION = 1
-VERIFICATION_SEAL_SCHEMA_VERSION = 1
+ALLOWED_TERMINALS = {'seal', 'issue'}
+DEFAULT_TERMINAL = 'seal'
+TERMINAL_CHOICES_MESSAGE = 'seal, issue'
+RESERVED_ISSUE_TERMINAL_MESSAGE = (
+    '--terminal issue is reserved and not yet implemented; '
+    'use --terminal seal or omit --terminal'
+)
+DEFAULT_VERIFICATION_CAP = 3
+DISALLOWED_VERSION_FIELD = 'schema' + 'Version'
 MAX_HANDOFF_SCOPE_COUNT = 32
 MAX_HANDOFF_SCOPE_LENGTH = 200
 MAX_VALIDATION_COMMANDS = 16
@@ -60,31 +80,25 @@ DEFAULT_REVIEWER_OPTIONAL_PHASES = ['Discussion']
 INVALID_AGENT_ID_ALTERNATIVES = {'n/a', 'unspecified'}
 CALLER_DECLINED_AGENT_ID = 'caller-declined'
 DEFAULT_OPEN_ROSTER_EFFORT = 'medium'
-PROJECT_ID_FILENAME = '.collab.json'
-STATE_HOME_ENV = 'CURSOR_COLLAB_STATE_HOME'
-DEFAULT_STATE_HOME = Path.home() / '.collabs'
-PROJECT_ID_RE = re.compile(r'^[a-z0-9][a-z0-9-]{7,127}$')
 STALE_LOCK_SECONDS = 24 * 60 * 60
-RESOLVED_PROJECT_IDENTITY: dict | None = None
-def resolve_cursor_root() -> Path:
-    configured = os.environ.get('CURSOR_CONFIG_ROOT')
+
+
+def resolve_config_root() -> Path:
+    configured = os.environ.get('COMMAND_CONFIG_ROOT')
     if configured:
         return Path(configured).expanduser().resolve()
-    if (ROOT / 'commands').is_dir() and (ROOT / '_functions').is_dir():
+    if (ROOT / 'commands').is_dir():
         return ROOT
-    source_cursor = ROOT / 'cursor'
-    if (source_cursor / 'commands').is_dir() and (source_cursor / '_functions').is_dir():
-        return source_cursor.resolve()
     return ROOT
 
 
-DEFAULT_CURSOR_ROOT = resolve_cursor_root()
-DEFAULT_ROLES_DIR = DEFAULT_CURSOR_ROOT / '_roles'
-DEFAULT_EFFORT_PATH = DEFAULT_CURSOR_ROOT / '_functions/collab/_agent-effort.json'
-DEFAULT_AGENT_MODEL_PATH = DEFAULT_CURSOR_ROOT / '_functions/collab/_agent-model.md'
-DEFAULT_BUDGET_PATH = DEFAULT_CURSOR_ROOT / '_functions/collab/_contribution-budget.md'
-DEFAULT_MODERATOR_POLISH_PATH = DEFAULT_CURSOR_ROOT / '_functions/collab/_moderator-polish.md'
-DEFAULT_FLAG_TAXONOMY_PATH = DEFAULT_CURSOR_ROOT / '_functions/collab/_flag-taxonomy.md'
+DEFAULT_CONFIG_ROOT = resolve_config_root()
+DEFAULT_ROLES_DIR = DEFAULT_CONFIG_ROOT / 'core/collab/roles'
+DEFAULT_EFFORT_PATH = DEFAULT_CONFIG_ROOT / 'core/collab/agent-effort.json'
+DEFAULT_AGENT_MODEL_PATH = DEFAULT_CONFIG_ROOT / 'core/collab/agent-model.md'
+DEFAULT_BUDGET_PATH = DEFAULT_CONFIG_ROOT / 'core/collab/contribution-budget.md'
+DEFAULT_MODERATOR_POLISH_PATH = DEFAULT_CONFIG_ROOT / 'core/collab/moderator-polish.md'
+DEFAULT_FLAG_TAXONOMY_PATH = DEFAULT_CONFIG_ROOT / 'core/framework/flag-taxonomy.md'
 EFFORT_MODEL_MARKER = 'generated; do not edit'
 MODERATOR_ONLY_ACTIONS = {
     'advance',
@@ -102,8 +116,9 @@ SUMMARY_RE = re.compile(r'^<summary>(?P<role>[A-Za-z0-9_-]+)(?:\s+—\s+.+)?</su
 SUMMARY_HEADING_RE = re.compile(r'^### Summary \u2014 \d{4}-\d{2}-\d{2}$')
 LEGACY_EXPANDED_RE = re.compile(r'^\*\*(?P<role>[A-Za-z0-9_-]+)\s+—')
 LEGACY_HEADING_RE = re.compile(r'^###\s+(?P<role>[A-Za-z0-9_-]+)\s+—')
-DETAILS_OPEN_RE = re.compile(r'^<details(?:\s+[^>]*)?>$')
+DETAILS_OPEN_RE = re.compile(r'^<details(?:\s+[^>]*)?>(?:<summary>[^<]*</summary>)?$')
 DETAILS_CLOSE_RE = re.compile(r'^</details>$')
+DETAILS_CONTROL_LINE_RE = re.compile(r'^</?details(?:\s+[^>]*)?\s*>$')
 ANCHOR_RE = re.compile(r'^<a name="(?P<anchor>[A-Za-z0-9_-]+)"></a>$')
 TIMESTAMP_RE = re.compile(r'^<p><em>(?P<timestamp>.+)</em></p>$')
 ACTION_CHECKLIST_RE = re.compile(
@@ -111,6 +126,17 @@ ACTION_CHECKLIST_RE = re.compile(
 )
 ACTION_PLAN_SHAPE_RE = re.compile(r'^- \[[ x]\] \*\*[a-z]+:\*\*')
 ACTION_PLAN_EXEMPT_RE = re.compile(r'^\s*-\s+\[[ xX]\]\s+\*\*[A-Za-z0-9_-]+:\*\*')
+ACTION_PLAN_ITEM_TAG_RE = re.compile(r'^\s*(?P<tag>\[[a-z-]+\])(?:\s|$)')
+ACTION_PLAN_ALLOWED_ITEM_TAG_LIST = [
+    '[execute]',
+    '[doc-fix]',
+    '[verify]',
+    '[precondition]',
+    '[verify-precondition]',
+    '[verify-objective]',
+]
+ACTION_PLAN_ALLOWED_ITEM_TAGS = set(ACTION_PLAN_ALLOWED_ITEM_TAG_LIST)
+ACTION_PLAN_EXECUTE_TAG = '[execute]'
 UNLABELED_ACTION_CHECKBOX_RE = re.compile(r'^\s*-\s+\[ \]\s+(?!\*\*[A-Za-z0-9_-]+:\*\*)\S')
 EFFORT_OVERRIDE_RE = re.compile(
     r'^EFFORT OVERRIDE: (?:(matrix)|'
@@ -119,6 +145,10 @@ EFFORT_OVERRIDE_RE = re.compile(
 )
 EFFORT_OVERRIDE_COMMENT_RE = re.compile(
     r'^<!-- collab:effort-override b64:(?P<payload>[A-Za-z0-9_-]+={0,2}) -->$'
+)
+CONCLUSION_DIRECTIVE_LINE_RE = re.compile(r'^\*\*Directive:\*\*\s+"[^"]+"\s*$')
+CONCLUSION_ACTION_PLAN_LINE_RE = re.compile(
+    r'^\*\*Action Plan:\s*(?P<status>satisfies|partially satisfies|defers)\*\*(?P<detail>.*)$'
 )
 STRUCTURED_HANDOFF_HEADING_RE = re.compile(r'^\s*\*\*(?P<field>writeScope|validationCommands):?\*\*:?\s*(?P<rest>.*)$')
 CODE_SPAN_RE = re.compile(r'`([^`]+)`')
@@ -142,116 +172,16 @@ OLD_ENTRY_KEYS = {
     'turn_order',
 }
 ACTION_PLAN_SHAPE_EXAMPLE = '- [ ] **tw:** Update the route doc.'
+REVIEWER_DISCIPLINE_GATES = (
+    'DIRECTIVE TEST',
+    'AUDIT CONFIRMED',
+    'PRECEDENT CITED',
+    'LOOP CHECK',
+)
 
 
 def die(message: str) -> None:
     raise SystemExit(message)
-
-
-def find_project_identity_path(start: Path | None = None) -> Path | None:
-    current = (start or Path.cwd()).resolve()
-    for directory in [current, *current.parents]:
-        identity_path = directory / PROJECT_ID_FILENAME
-        if identity_path.exists():
-            return identity_path
-    return None
-
-
-def read_project_identity(path: Path) -> dict:
-    try:
-        data = json.loads(path.read_text())
-    except json.JSONDecodeError as exc:
-        die(f'project identity invalid JSON: {path}: {exc}')
-    if not isinstance(data, dict):
-        die(f'project identity must be an object: {path}')
-    schema_version = data.get('schemaVersion')
-    if schema_version != 1:
-        die(f'project identity schemaVersion must be 1: {path}')
-    project_id = data.get('projectId')
-    if not isinstance(project_id, str) or not PROJECT_ID_RE.match(project_id):
-        die(f'project identity projectId must be an opaque lowercase id: {path}')
-    label = data.get('label')
-    if label is not None and (not isinstance(label, str) or not label.strip()):
-        die(f'project identity label must be a non-empty string when present: {path}')
-    state = data.get('state')
-    if state is not None and not isinstance(state, dict):
-        die(f'project identity state must be an object when present: {path}')
-    return data
-
-
-def write_project_identity(project_root: Path, label: str | None = None) -> dict:
-    project_root.mkdir(parents=True, exist_ok=True)
-    identity_path = project_root / PROJECT_ID_FILENAME
-    if identity_path.exists():
-        return read_project_identity(identity_path)
-    project_id = uuid.uuid4().hex
-    data = {
-        'schemaVersion': 1,
-        'projectId': project_id,
-        'label': label or project_root.name or 'cursor-project',
-        'state': {
-            'mode': 'shared',
-            'isolation': 'opt-in',
-        },
-    }
-    identity_path.write_text(json.dumps(data, indent=2) + '\n')
-    return data
-
-
-def collab_state_home() -> Path:
-    configured = os.environ.get(STATE_HOME_ENV)
-    if configured:
-        return Path(configured).expanduser().resolve()
-    return DEFAULT_STATE_HOME
-
-
-def state_root_for_project(project_id: str) -> Path:
-    return collab_state_home() / project_id
-
-
-def project_metadata_from_identity(identity: dict | None = None) -> dict | None:
-    source = identity if identity is not None else RESOLVED_PROJECT_IDENTITY
-    if not isinstance(source, dict):
-        return None
-    project_id = source.get('projectId')
-    if not isinstance(project_id, str) or not project_id.strip():
-        return None
-    label = source.get('label')
-    if not isinstance(label, str) or not label.strip():
-        label = 'cursor-project'
-    return {'projectId': project_id, 'label': label.strip()}
-
-
-def sync_registry_project_metadata(data: dict) -> None:
-    metadata = project_metadata_from_identity()
-    if metadata is not None:
-        data['project'] = metadata
-
-
-def resolve_default_registry_path(command: str | None) -> tuple[Path, bool]:
-    global RESOLVED_PROJECT_IDENTITY
-    project_root = Path.cwd().resolve()
-    identity_path = find_project_identity_path(project_root)
-
-    if identity_path is None and command == 'init':
-        identity = write_project_identity(project_root)
-        identity_path = project_root / PROJECT_ID_FILENAME
-    elif identity_path is not None:
-        identity = read_project_identity(identity_path)
-        project_root = identity_path.parent
-    else:
-        die(f'project marker missing: {PROJECT_ID_FILENAME}; run /collab init from the project root')
-
-    RESOLVED_PROJECT_IDENTITY = identity
-    state_root = state_root_for_project(identity['projectId'])
-    label_path = state_root / 'label'
-    metadata = project_metadata_from_identity(identity)
-    if metadata:
-        current = metadata['label'] + '\n'
-        if not label_path.exists() or label_path.read_text() != current:
-            state_root.mkdir(parents=True, exist_ok=True)
-            label_path.write_text(current)
-    return state_root / 'registry.json', True
 
 
 def load_registry(path: Path) -> dict:
@@ -262,6 +192,7 @@ def load_registry(path: Path) -> dict:
     except json.JSONDecodeError as exc:
         die(f'registry invalid JSON: {path}: {exc}')
     validate_registry(data, path)
+    assert_registry_project_binding(data, path)
     return data
 
 
@@ -311,7 +242,7 @@ def registry_lock(path: Path):
 
 def load_registry_or_bootstrap(path: Path) -> dict:
     if not path.exists():
-        data = {'schemaVersion': 1, 'activeCollabId': None, 'collabs': []}
+        data = {'activeCollabId': None, 'collabs': []}
         sync_registry_project_metadata(data)
         return data
     data = load_registry(path)
@@ -375,10 +306,12 @@ def next_sequence(data: dict) -> int:
     return max(sequences, default=0) + 1
 
 
-def parse_init_tokens(tokens: list[str]) -> tuple[str, str, str | None, bool, bool]:
+def parse_init_tokens(tokens: list[str]) -> tuple[str, str, str | None, bool, bool, str]:
     name_tokens: list[str] = []
     agent_id: str | None = None
     reviewer: str | None = None
+    terminal = DEFAULT_TERMINAL
+    terminal_seen = False
     open_requested = False
     participant_verification = True
     index = 0
@@ -400,6 +333,16 @@ def parse_init_tokens(tokens: list[str]) -> tuple[str, str, str | None, bool, bo
             reviewer = tokens[index]
             if not ROLE_KEY_RE.match(reviewer):
                 die('--reviewer requires a role key')
+        elif token == '--terminal':
+            if terminal_seen:
+                die('duplicate flag: --terminal')
+            terminal_seen = True
+            index += 1
+            if index >= len(tokens) or tokens[index].startswith('--'):
+                die(f'--terminal requires one of: {TERMINAL_CHOICES_MESSAGE}')
+            terminal = tokens[index]
+            if terminal not in ALLOWED_TERMINALS:
+                die(f'--terminal requires one of: {TERMINAL_CHOICES_MESSAGE}')
         elif token == '--preview':
             if open_requested:
                 die('duplicate flag: --preview')
@@ -418,7 +361,7 @@ def parse_init_tokens(tokens: list[str]) -> tuple[str, str, str | None, bool, bo
     if not raw_title:
         die('<name> is required')
     title = normalize_title(raw_title)
-    return title, normalize_join_agent_id(agent_id), reviewer, open_requested, participant_verification
+    return title, normalize_join_agent_id(agent_id), reviewer, open_requested, participant_verification, terminal
 
 
 def summary_role(line: str) -> str | None:
@@ -540,6 +483,85 @@ def contribution_body_lines(block: list[str]) -> list[str]:
     return block[marker_index + 1:len(block) - 1]
 
 
+def details_block_end(lines: list[str], start: int, context: str) -> int:
+    depth = 1
+    line_index = start + 1
+    while line_index < len(lines):
+        stripped = lines[line_index].strip()
+        if DETAILS_OPEN_RE.match(stripped):
+            depth += 1
+        elif DETAILS_CLOSE_RE.match(stripped):
+            depth -= 1
+            if depth == 0:
+                return line_index + 1
+        line_index += 1
+    die(f'transcript details block not closed in {context}')
+
+
+def is_full_body_block_start(lines: list[str], index: int) -> bool:
+    return (
+        DETAILS_OPEN_RE.match(lines[index].strip()) is not None
+        and index + 1 < len(lines)
+        and lines[index + 1].strip() == FULL_BODY_SUMMARY_LINE
+    )
+
+
+def reject_hand_authored_excerpt_details(content: str) -> None:
+    for line_number, line in enumerate(content.splitlines(), start=1):
+        if DETAILS_CONTROL_LINE_RE.match(line.strip()):
+            die(
+                'excerpt must not contain hand-authored <details> blocks; '
+                f'use --full-body-file for {FULL_BODY_SUMMARY}; line {line_number}'
+            )
+
+
+def reject_full_body_details_controls(content: str | None) -> None:
+    if content is None:
+        return
+    for line_number, line in enumerate(content.splitlines(), start=1):
+        if DETAILS_CONTROL_LINE_RE.match(line.strip()):
+            die(
+                'full body must not contain hand-authored <details> control lines; '
+                f'the helper owns the {FULL_BODY_SUMMARY} envelope; line {line_number}'
+            )
+
+
+def strip_managed_full_body_lines(lines: list[str], context: str) -> list[str]:
+    stripped_lines: list[str] = []
+    index = 0
+    while index < len(lines):
+        if is_full_body_block_start(lines, index):
+            index = details_block_end(lines, index, context)
+            continue
+        stripped_lines.append(lines[index])
+        index += 1
+    return stripped_lines
+
+
+def managed_full_body_blocks(transcript: str) -> list[str]:
+    lines = transcript.splitlines()
+    blocks: list[str] = []
+    index = 0
+    while index < len(lines):
+        if is_full_body_block_start(lines, index):
+            end = details_block_end(lines, index, 'managed full-body block')
+            blocks.append('\n'.join(lines[index:end]))
+            index = end
+            continue
+        index += 1
+    return blocks
+
+
+def full_body_signature_for_transcript(transcript: str) -> str:
+    payload = json.dumps(managed_full_body_blocks(transcript), ensure_ascii=True, separators=(',', ':'))
+    return hashlib.sha256(payload.encode()).hexdigest()
+
+
+def rendered_transcript_without_full_bodies(transcript: str) -> str:
+    lines = strip_managed_full_body_lines(transcript.splitlines(), 'rendered transcript')
+    return '\n'.join(lines) + ('\n' if transcript.endswith('\n') else '')
+
+
 def contribution_is_retracted(block: list[str]) -> bool:
     for line in contribution_body_lines(block):
         stripped = line.strip()
@@ -560,17 +582,17 @@ def contribution_roles(text: str, phase: str) -> list[str]:
             start = index
             depth = 1
             end: int | None = None
-            cursor = index + 1
-            while cursor < len(lines):
-                nested = lines[cursor].strip()
+            line_index = index + 1
+            while line_index < len(lines):
+                nested = lines[line_index].strip()
                 if DETAILS_OPEN_RE.match(nested):
                     depth += 1
                 elif DETAILS_CLOSE_RE.match(nested):
                     depth -= 1
                     if depth == 0:
-                        end = cursor + 1
+                        end = line_index + 1
                         break
-                cursor += 1
+                line_index += 1
             if end is None:
                 die(f'transcript details block not closed in phase: {phase}')
             role = summary_role(lines[start + 1]) if start + 1 < end else None
@@ -585,6 +607,16 @@ def contribution_roles(text: str, phase: str) -> list[str]:
                 break
         index += 1
     return roles
+
+
+def action_plan_item_tag(text: str) -> str | None:
+    match = ACTION_PLAN_ITEM_TAG_RE.match(text)
+    if not match:
+        return None
+    tag = match.group('tag')
+    if tag not in ACTION_PLAN_ALLOWED_ITEM_TAGS:
+        return None
+    return tag
 
 
 def action_plan_checklist_items(transcript: str) -> list[dict]:
@@ -612,11 +644,13 @@ def action_plan_checklist_items(transcript: str) -> list[dict]:
             continue
         item_number += 1
         mark = match.group('mark').lower()
+        text = match.group('text').strip()
         items.append({
             'number': item_number,
             'role': match.group('role'),
             'checked': mark == 'x',
-            'text': match.group('text').strip(),
+            'tag': action_plan_item_tag(text),
+            'text': text,
         })
     return items
 
@@ -646,17 +680,17 @@ def tombstone_count(transcript: str) -> int:
             start = index
             depth = 1
             end: int | None = None
-            cursor = index + 1
-            while cursor < len(lines):
-                stripped = lines[cursor].strip()
+            line_index = index + 1
+            while line_index < len(lines):
+                stripped = lines[line_index].strip()
                 if DETAILS_OPEN_RE.match(stripped):
                     depth += 1
                 elif DETAILS_CLOSE_RE.match(stripped):
                     depth -= 1
                     if depth == 0:
-                        end = cursor + 1
+                        end = line_index + 1
                         break
-                cursor += 1
+                line_index += 1
             if end is None:
                 die(f'transcript details block not closed in phase: {phase}')
             if contribution_is_retracted(lines[start:end]):
@@ -694,6 +728,76 @@ def completed_execution_unchecked_items(entry: dict, transcript: str) -> list[di
         if count:
             violations.append({'role': role, 'uncheckedCount': count})
     return violations
+
+
+def validate_participant_role_files(role_keys: list[str], roles_dir: Path, source: str) -> None:
+    for role in role_keys:
+        try:
+            load_role(roles_dir, role)
+        except SystemExit as exc:
+            die(f'{source}: participants role file unreadable for {role}: {roles_dir / f"{role}.json"}: {exc}')
+
+
+def chartered_deliverables(transcript: str) -> list[str]:
+    try:
+        audit_lines = phase_section(transcript, 'Audit')
+    except SystemExit:
+        return []
+    deliverables: list[str] = []
+    in_block = False
+    in_code = False
+    details_depth = 0
+    for raw_line in audit_lines:
+        line = raw_line.rstrip()
+        stripped = line.strip()
+        if stripped.startswith('```'):
+            in_code = not in_code
+            continue
+        if in_code:
+            continue
+        if DETAILS_OPEN_RE.match(stripped):
+            details_depth += 1
+            continue
+        if DETAILS_CLOSE_RE.match(stripped):
+            details_depth = max(0, details_depth - 1)
+            continue
+        if details_depth > 1:
+            continue
+        if not in_block:
+            if stripped == 'charteredDeliverables:':
+                in_block = True
+            continue
+        if not stripped:
+            break
+        if not stripped.startswith('- '):
+            break
+        deliverable = stripped[2:].strip()
+        if deliverable:
+            deliverables.append(deliverable)
+    return deliverables
+
+
+def chartered_deliverable_path(deliverable: str) -> str:
+    head = deliverable.split(':', 1)[0].strip()
+    return head.strip('`')
+
+
+def assert_chartered_deliverables_covered(entry: dict, transcript: str) -> None:
+    deliverables = chartered_deliverables(transcript)
+    if not deliverables:
+        return
+    touched = set(touched_paths_for_execution(entry))
+    missing = [
+        deliverable for deliverable in deliverables
+        if chartered_deliverable_path(deliverable) not in touched
+    ]
+    if missing:
+        die(
+            'CHARTERED-DELIVERABLE-MISSING: '
+            + ', '.join(chartered_deliverable_path(item) for item in missing)
+            + '; loop target: Completion/Conclusion for missing objective evidence'
+        )
+
 
 
 def handoff_abort(field: str, value: object) -> None:
@@ -808,19 +912,17 @@ def validate_handoff_validation_commands(value: object) -> list[list[str]]:
     return [normalize_validation_command_entry(item) for item in value]
 
 
-def validate_handoff_state(value: object, source: str) -> dict:
+def validate_handoff_state(value: object, source: str, reject_version_field: bool = True) -> dict:
     if not isinstance(value, dict):
         die(f'{source}: handoff state must be an object')
-    schema_version = value.get('schemaVersion')
-    if schema_version != HANDOFF_SCHEMA_VERSION:
-        die(f'{source}: handoff schemaVersion must be {HANDOFF_SCHEMA_VERSION}')
+    if reject_version_field and DISALLOWED_VERSION_FIELD in value:
+        die(f'{source}: handoff state contains disallowed version field')
     write_scope = validate_handoff_write_scope(value.get('writeScope'))
     validation_commands = validate_handoff_validation_commands(value.get('validationCommands'))
     body = value.get('body')
     if body is not None and not isinstance(body, str):
         die(f'{source}: handoff body must be a string when present')
     normalized = dict(value)
-    normalized['schemaVersion'] = HANDOFF_SCHEMA_VERSION
     normalized['writeScope'] = write_scope
     normalized['validationCommands'] = validation_commands
     return normalized
@@ -1177,6 +1279,9 @@ def active_execution_entries(entry: dict) -> list[dict]:
             'validationScope': state.get('validationScope'),
             'touchedPaths': list(state.get('touchedPaths', [])),
         }
+        commits = state.get('commits', [])
+        if commits:
+            row['commits'] = list(commits)
         if state.get('agentId'):
             row['agentId'] = state.get('agentId')
         rows.append(row)
@@ -1187,6 +1292,13 @@ def execution_signature(entry: dict) -> str:
     entries = active_execution_entries(entry)
     encoded = json.dumps(entries, sort_keys=True, separators=(',', ':'))
     return base64.urlsafe_b64encode(encoded.encode()).decode().rstrip('=')
+
+
+def record_verification_round_for_execution(entry: dict, verification: dict) -> None:
+    signature = execution_signature(entry)
+    if verification.get('pairedExecutionSignature') != signature:
+        verification['rounds'] = verification.get('rounds', 0) + 1
+        verification['pairedExecutionSignature'] = signature
 
 
 def validation_scopes_for_execution(entry: dict) -> list[str]:
@@ -1209,6 +1321,96 @@ def touched_paths_for_execution(entry: dict) -> list[str]:
     return touched
 
 
+def git_commit_paths(ref: str) -> set[str] | None:
+    try:
+        probe = subprocess.run(
+            ['git', '-C', str(ROOT), 'cat-file', '-e', f'{ref}^{{commit}}'],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except FileNotFoundError:
+        return None
+    if probe.returncode != 0:
+        return None
+    result = subprocess.run(
+        ['git', '-C', str(ROOT), 'show', '--name-only', '--format=', ref],
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if result.returncode != 0:
+        die(f'EXECUTION-WRITESCOPE-OVERAGE: git show failed for execution commit {ref}')
+    return {line.strip() for line in result.stdout.splitlines() if line.strip()}
+
+
+def assert_no_execution_touched_path_drift(entry: dict) -> None:
+    # Match committed files against the UNION of every role's declared paths, not
+    # each role in isolation: one commit may legitimately hold several roles'
+    # scoped subsets. The safety property is "every committed file was declared by
+    # some role, and every declared path appears in some commit" — per-role exact
+    # matching falsely rejects a valid combined commit.
+    declared_paths: set[str] = set()
+    committed_paths: set[str] = set()
+    commits_seen: list[str] = []
+    for execution in active_execution_entries(entry):
+        role = execution.get('role')
+        if not isinstance(role, str) or handoff_state_for_role(entry, role) is None:
+            continue
+        commits = [
+            commit
+            for commit in execution.get('commits', [])
+            if isinstance(commit, str) and commit.strip()
+        ]
+        if not commits:
+            continue
+        for commit in commits:
+            if commit not in commits_seen:
+                commits_seen.append(commit)
+            commit_paths = git_commit_paths(commit)
+            if commit_paths is not None:
+                committed_paths.update(commit_paths)
+        declared_paths.update(
+            item
+            for item in execution.get('touchedPaths', [])
+            if isinstance(item, str) and item.strip()
+        )
+    if not commits_seen:
+        return
+    undeclared = sorted(committed_paths - declared_paths)
+    overdeclared = sorted(declared_paths - committed_paths)
+    if undeclared or overdeclared:
+        details: list[str] = []
+        if undeclared:
+            details.append(f'undeclared={json.dumps(undeclared, separators=(",", ":"))}')
+        if overdeclared:
+            details.append(f'overdeclared={json.dumps(overdeclared, separators=(",", ":"))}')
+        die(
+            'EXECUTION-WRITESCOPE-OVERAGE: '
+            f'execution commits {json.dumps(commits_seen, separators=(",", ":"))} touchedPaths drift; '
+            + '; '.join(details)
+        )
+
+
+def assert_no_execution_agent_conflation(entry: dict) -> None:
+    seen: dict[str, str] = {}
+    for execution in active_execution_entries(entry):
+        agent_id = execution.get('agentId')
+        role = execution.get('role')
+        if not isinstance(agent_id, str) or not agent_id.strip():
+            continue
+        if agent_id == CALLER_DECLINED_AGENT_ID:
+            continue
+        if agent_id in seen and seen[agent_id] != role:
+            die(
+                'PARTICIPANT-VERIFY-AGENT-CONFLATION: '
+                f'roles {seen[agent_id]} and {role} share agentId {agent_id}'
+            )
+        if isinstance(role, str):
+            seen[agent_id] = role
+
+
 def invalidate_verification_seal(entry: dict, reason: str) -> None:
     seal = entry.get('verificationSeal')
     if isinstance(seal, dict):
@@ -1217,6 +1419,17 @@ def invalidate_verification_seal(entry: dict, reason: str) -> None:
         if reviewer_backed(entry):
             set_verification_review_substate(entry, 'assessment')
         clear_verdict(entry)
+
+
+def invalidate_seal_on_full_body_drift(entry: dict, transcript: str) -> None:
+    seal = entry.get('verificationSeal')
+    if not isinstance(seal, dict) or seal.get('stale'):
+        return
+    sealed_signature = seal.get('fullBodySignature')
+    if not isinstance(sealed_signature, str):
+        return
+    if full_body_signature_for_transcript(transcript) != sealed_signature:
+        invalidate_verification_seal(entry, 'full body content changed')
 
 
 def pending_reviewer_role(entry: dict) -> str | None:
@@ -1409,8 +1622,8 @@ def validate_registry(data: dict, path: Path | None = None) -> None:
     old_root_keys = sorted(OLD_ROOT_KEYS.intersection(data))
     if old_root_keys:
         die(f'{source}: old registry keys are not allowed: {old_root_keys}')
-    if data.get('schemaVersion') != 1:
-        die(f'{source}: schemaVersion must be 1')
+    if DISALLOWED_VERSION_FIELD in data:
+        die(f'{source}: root contains disallowed version field')
     revision = data.get('revision', 0)
     if not isinstance(revision, int) or revision < 0:
         die(f'{source}: revision must be a non-negative integer when present')
@@ -1453,6 +1666,8 @@ def validate_registry(data: dict, path: Path | None = None) -> None:
         slug = entry.get('slug')
         title = entry.get('title')
         description = entry.get('description')
+        created_at = entry.get('createdAt')
+        terminal = entry.get('terminal')
         status = entry.get('status')
         activePhase = entry.get('activePhase')
         moderatorRole = entry.get('moderatorRole')
@@ -1485,6 +1700,12 @@ def validate_registry(data: dict, path: Path | None = None) -> None:
             die(f'{source}: collab status must be one of {sorted(ALLOWED_STATUSES)}')
         if activePhase not in PHASES:
             die(f'{source}: collab activePhase must be one of {PHASES}')
+        if created_at is not None and (not isinstance(created_at, str) or not created_at.strip()):
+            die(f'{source}: collab createdAt must be a non-empty string when present')
+        if terminal is not None and terminal not in ALLOWED_TERMINALS:
+            die(f'{source}: collab terminal must be one of {sorted(ALLOWED_TERMINALS)} when present')
+        if terminal is None and created_at is not None:
+            die(f'{source}: collab terminal must be one of {sorted(ALLOWED_TERMINALS)}')
         if not isinstance(entry.get('archived'), bool):
             die(f'{source}: collab archived must be a boolean')
         if sequence is not None:
@@ -1504,6 +1725,7 @@ def validate_registry(data: dict, path: Path | None = None) -> None:
         participant_role_keys = [p['role'] for p in participants]
         if len(set(participant_role_keys)) != len(participant_role_keys):
             die(f'{source}: participants must not contain duplicate roles')
+        validate_participant_role_files(participant_role_keys, DEFAULT_ROLES_DIR, source)
         if moderatorRole not in participant_role_keys:
             die(f'{source}: moderatorRole must be listed in participants')
 
@@ -1566,6 +1788,11 @@ def validate_registry(data: dict, path: Path | None = None) -> None:
                 die(f'{source}: execution touchedPaths must be a list when present')
             if any(not isinstance(item, str) or not item.strip() for item in touched_paths):
                 die(f'{source}: execution touchedPaths must contain non-empty strings')
+            commits = state.get('commits', [])
+            if not isinstance(commits, list):
+                die(f'{source}: execution commits must be a list when present')
+            if any(not isinstance(item, str) or not item.strip() for item in commits):
+                die(f'{source}: execution commits must contain non-empty strings')
             entry_id = state.get('entryId')
             if entry_id is not None and (not isinstance(entry_id, str) or not entry_id.strip()):
                 die(f'{source}: execution entryId must be a non-empty string when present')
@@ -1634,8 +1861,8 @@ def validate_registry(data: dict, path: Path | None = None) -> None:
         if verification_seal is not None:
             if not isinstance(verification_seal, dict):
                 die(f'{source}: verificationSeal must be an object when present')
-            if verification_seal.get('schemaVersion') != VERIFICATION_SEAL_SCHEMA_VERSION:
-                die(f'{source}: verificationSeal.schemaVersion must be {VERIFICATION_SEAL_SCHEMA_VERSION}')
+            if collab_id == active_id and DISALLOWED_VERSION_FIELD in verification_seal:
+                die(f'{source}: verificationSeal contains disallowed version field')
             observed = verification_seal.get('observedRevision')
             if not isinstance(observed, int) or observed < 0:
                 die(f'{source}: verificationSeal.observedRevision must be a non-negative integer')
@@ -1679,8 +1906,8 @@ def validate_registry(data: dict, path: Path | None = None) -> None:
         if handoff is not None:
             if not isinstance(handoff, dict):
                 die(f'{source}: handoff must be an object when present')
-            if handoff.get('schemaVersion') != HANDOFF_SCHEMA_VERSION:
-                die(f'{source}: handoff schemaVersion must be {HANDOFF_SCHEMA_VERSION}')
+            if collab_id == active_id and DISALLOWED_VERSION_FIELD in handoff:
+                die(f'{source}: handoff contains disallowed version field')
             handoff_roles = handoff.get('roles')
             if not isinstance(handoff_roles, dict):
                 die(f'{source}: handoff roles must be an object when present')
@@ -1689,7 +1916,7 @@ def validate_registry(data: dict, path: Path | None = None) -> None:
                     die(f'{source}: handoff role keys must be non-empty strings')
                 if role not in participant_role_keys:
                     die(f'{source}: handoff role must already be a participant: {role}')
-                validate_handoff_state(state, f'{source}: handoff.{role}')
+                validate_handoff_state(state, f'{source}: handoff.{role}', reject_version_field=collab_id == active_id)
 
         if collab_id in collab_map:
             die(f'{source}: duplicate collab id: {collab_id}')
@@ -1892,6 +2119,17 @@ def normalize_turn_order_for_phase(entry: dict, phase: str) -> None:
     entry['turnOrder'] = phase_turn_order(entry, phase)
 
 
+def assert_turn_order_not_drifted(entry: dict, phase: str) -> list[str]:
+    expected = phase_turn_order(entry, phase)
+    actual = effective_turn_order(entry)
+    if actual != expected:
+        die(
+            'TURN-ORDER-DRIFT: '
+            f'phase={phase}; actual={" ".join(actual)}; expected={" ".join(expected)}'
+        )
+    return expected
+
+
 def transition_notice(from_phase: str, to_phase: str) -> dict | None:
     transition = f'{from_phase}->{to_phase}'
     if transition == 'Discussion->Conclusion':
@@ -1905,7 +2143,7 @@ def transition_notice(from_phase: str, to_phase: str) -> dict | None:
             'notice': 'action-plan-shape',
             'transition': transition,
             'message': (
-                'Action Plan entries must follow _invariants.md Invariant #9: '
+                'Action Plan entries must follow invariants.md Invariant #9: '
                 r'^- \[[ x]\] \*\*[a-z]+:\*\*.'
             ),
         }
@@ -1990,21 +2228,9 @@ def completion_summary_empty(transcript: str) -> bool:
         if str(exc) == 'transcript phase missing: Completion':
             return True
         raise
-    saw_execution_history = False
     for line in lines:
-        stripped = line.strip()
-        if not stripped or stripped == CONTENT_ONLY_GUARD:
-            continue
-        if SUMMARY_HEADING_RE.match(stripped):
+        if SUMMARY_HEADING_RE.match(line.strip()):
             return False
-        if stripped == '**Execution history**':
-            saw_execution_history = True
-            continue
-        if saw_execution_history and re.match(r'^\d+\.\s+\*\*[^*]+:\*\*\s+', stripped):
-            continue
-        if stripped.startswith('<') and stripped.endswith('>'):
-            continue
-        return False
     return True
 
 
@@ -2315,11 +2541,15 @@ def audit_effort_matrix(effort_defaults_path: Path, model_path: Path) -> int:
         for failure in failures:
             print(f'effort matrix drift: {failure}', file=sys.stderr)
         return 1
-    print('OK: _agent-model.md effort projection matches _agent-effort.json')
+    print('OK: agent-model.md effort projection matches agent-effort.json')
     return 0
 
 
-def apply_speak_lifecycle_to_entry(entry: dict, contributors: list[str]) -> bool:
+def apply_speak_lifecycle_to_entry(
+    entry: dict,
+    contributors: list[str],
+    transcript: str | None = None,
+) -> bool:
     phase = entry['activePhase']
     order = effective_turn_order(entry)
     reviewer = reviewer_required_for_phase(entry, phase)
@@ -2341,6 +2571,8 @@ def apply_speak_lifecycle_to_entry(entry: dict, contributors: list[str]) -> bool
     next_phase = next_phase_name(phase)
     if next_phase is None:
         return False
+    if phase == 'Action Plan':
+        validate_action_plan_executable_scope(transcript if transcript is not None else read_transcript_for_entry(entry))
     entry['activePhase'] = next_phase
     if next_phase in MOD_EXCLUDED_PHASES:
         remove_moderator_from_turn_order(entry, order)
@@ -2349,9 +2581,13 @@ def apply_speak_lifecycle_to_entry(entry: dict, contributors: list[str]) -> bool
     return True
 
 
-def apply_speak_lifecycle_with_notice(entry: dict, contributors: list[str]) -> tuple[bool, dict | None]:
+def apply_speak_lifecycle_with_notice(
+    entry: dict,
+    contributors: list[str],
+    transcript: str | None = None,
+) -> tuple[bool, dict | None]:
     from_phase = entry['activePhase']
-    advanced = apply_speak_lifecycle_to_entry(entry, contributors)
+    advanced = apply_speak_lifecycle_to_entry(entry, contributors, transcript)
     notice = transition_notice(from_phase, entry['activePhase']) if advanced else None
     if not notice and from_phase == 'Discussion':
         notice = discussion_turn_notice(entry, contributors)
@@ -2509,17 +2745,17 @@ def unset_field(
         if current_entry['status'] in {'closed', 'archived'}:
             die('record is closed')
 
-        next_data = deepcopy(data)
-        next_entry = resolve_collab(next_data, target)
+        nextdata = deepcopy(data)
+        next_entry = resolve_collab(nextdata, target)
         clear_reviewer(next_entry)
-        validate_registry(next_data, path)
+        validate_registry(nextdata, path)
 
         transcript_path = Path(next_entry['transcriptPath'])
         if not transcript_path.exists():
             die(f'transcript missing: {transcript_path}')
         rendered, header_changed = render_managed_header_text(transcript_path.read_text(), next_entry, roles_dir)
         print_header_overwrite(header_changed)
-        commit_registry_and_transcript(path, next_data, transcript_path, rendered)
+        commit_registry_and_transcript(path, nextdata, transcript_path, rendered)
     print(next_entry['id'])
     return 0
 
@@ -2535,10 +2771,11 @@ def speak_lifecycle(path: Path, target: str, contributors: list[str]) -> int:
         for role in contributors:
             if not has_participant(entry, role):
                 die(f'contributor must already be a participant: {role}')
-        advanced, notice = apply_speak_lifecycle_with_notice(entry, contributors)
         transcript_path = Path(entry['transcriptPath'])
+        transcript = transcript_path.read_text() if transcript_path.exists() else None
+        advanced, notice = apply_speak_lifecycle_with_notice(entry, contributors, transcript)
         if transcript_path.exists():
-            rendered, header_changed = render_managed_header_text(transcript_path.read_text(), entry, DEFAULT_ROLES_DIR)
+            rendered, header_changed = render_managed_header_text(transcript or '', entry, DEFAULT_ROLES_DIR)
             notice = add_completion_summary_notice(notice, rendered)
             print_header_overwrite(header_changed)
             commit_registry_and_transcript(path, data, transcript_path, rendered)
@@ -2643,6 +2880,47 @@ def assert_touched_paths_inside_handoff(entry: dict, role: str, touched_paths: l
             die(f'execution touched path outside declared writeScope: {touched_path}')
 
 
+def parse_execution_datetime(raw: str) -> dt.datetime | None:
+    try:
+        parsed = dt.datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=dt.datetime.now().astimezone().tzinfo)
+    return parsed
+
+
+def current_head_commit(date: str) -> str | None:
+    result = subprocess.run(
+        ['git', '-C', str(ROOT), 'rev-parse', 'HEAD'],
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if result.returncode != 0:
+        detail = result.stderr.strip() or result.stdout.strip() or 'unknown git error'
+        die(f'execution commit capture failed: {detail}')
+    commit = result.stdout.strip()
+    if not commit:
+        die('execution commit capture failed: git rev-parse HEAD returned empty output')
+    date_result = subprocess.run(
+        ['git', '-C', str(ROOT), 'show', '-s', '--format=%cI', commit],
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if date_result.returncode != 0:
+        detail = date_result.stderr.strip() or date_result.stdout.strip() or 'unknown git error'
+        die(f'execution commit date capture failed: {detail}')
+    execution_time = parse_execution_datetime(date)
+    commit_time = parse_execution_datetime(date_result.stdout.strip())
+    if execution_time is not None and commit_time is not None and commit_time > execution_time:
+        return None
+    return commit
+
+
 def execute_spawn(
     path: Path,
     target: str,
@@ -2721,6 +2999,19 @@ def out_of_scope_patch(
     return 0
 
 
+def transcript_view(path: Path, target: str, phase: str, raw: bool = False) -> int:
+    if phase not in PHASES:
+        die(f'phase must be one of: {", ".join(PHASES)}')
+    data = load_registry(path)
+    entry = resolve_collab(data, target)
+    transcript = read_transcript_for_entry(entry)
+    rendered = transcript if raw or phase == 'Audit' else rendered_transcript_without_full_bodies(transcript)
+    lines = rendered.splitlines()
+    start, end = section_bounds(lines, f'## {phase}')
+    sys.stdout.write('\n'.join(lines[start:end]) + '\n')
+    return 0
+
+
 def speak_lifecycle_live(path: Path, target: str) -> int:
     with registry_lock(path):
         data = load_registry(path)
@@ -2732,7 +3023,7 @@ def speak_lifecycle_live(path: Path, target: str) -> int:
             die(f'transcript missing: {transcript_path}')
         transcript = transcript_path.read_text()
         state = speak_state_for_entry(entry, transcript)
-        advanced, notice = apply_speak_lifecycle_with_notice(entry, state['contributors'])
+        advanced, notice = apply_speak_lifecycle_with_notice(entry, state['contributors'], transcript)
         rendered, header_changed = render_managed_header_text(transcript, entry, DEFAULT_ROLES_DIR)
         print_header_overwrite(header_changed)
         commit_registry_and_transcript(path, data, transcript_path, rendered)
@@ -2749,6 +3040,12 @@ def read_content_file(path: Path) -> str:
     return content.rstrip('\n')
 
 
+def read_optional_content_file(path: Path | None) -> str | None:
+    if path is None:
+        return None
+    return read_content_file(path)
+
+
 def read_budget_spec(path: Path = DEFAULT_BUDGET_PATH) -> dict:
     if not path.exists():
         die(f'contribution budget spec missing: {path}')
@@ -2757,7 +3054,13 @@ def read_budget_spec(path: Path = DEFAULT_BUDGET_PATH) -> dict:
     if not limit_match:
         die(f'contribution budget spec missing word limit: {path}')
     classes = set(re.findall(r'\|\s*`([a-z0-9-]+)`\s*\|', text))
-    required = {'action-plan-checklist', 'conclusion-ratification', 'moderator-verbatim', 'effort-override-line'}
+    required = {
+        'action-plan-checklist',
+        'conclusion-ratification',
+        'moderator-verbatim',
+        'effort-override-line',
+        'contribution-full-body',
+    }
     missing = required - classes
     if missing:
         die(f'contribution budget spec missing exempt class: {sorted(missing)[0]}')
@@ -2775,7 +3078,8 @@ def is_conclusion_ratification_line(line: str) -> bool:
 
 def budget_countable_lines(content: str, phase: str) -> list[str]:
     countable: list[str] = []
-    for line in content.splitlines():
+    lines = strip_managed_full_body_lines(content.splitlines(), 'contribution body')
+    for line in lines:
         stripped = line.strip()
         if stripped == '<!-- collab:content-only; do-not-execute -->':
             continue
@@ -2802,13 +3106,16 @@ def enforce_contribution_budget(
     spec_path: Path = DEFAULT_BUDGET_PATH,
 ) -> None:
     spec = read_budget_spec(spec_path)
-    if verbatim or role == moderator_role:
+    if role == moderator_role:
         return
     countable_text = '\n'.join(budget_countable_lines(content, phase))
     count = len(countable_text.split())
     limit = spec['limit']
     if count > limit:
-        die(f'contribution body is {count} words; limit is {limit}')
+        die(
+            f'contribution excerpt is {count} words; limit is {limit}; '
+            'keep --content-file as a capped standalone excerpt and put complete detail in --full-body-file'
+        )
 
 
 def action_plan_label_advisory(content: str, phase: str) -> str | None:
@@ -2831,8 +3138,24 @@ def is_markdown_heading(line: str) -> bool:
 def action_plan_shape_abort(line_number: int, line: str) -> None:
     die(
         f"ABORT: line {line_number} does not match Action Plan shape '- [ ] **<role>:** ...' "
-        f"(Invariant #9, _invariants.md). Offending line: '{line}'. "
+        f"(Invariant #9, invariants.md). Offending line: '{line}'. "
         f"Example: '{ACTION_PLAN_SHAPE_EXAMPLE}'"
+    )
+
+
+def action_plan_tag_abort(line_number: int, line: str) -> None:
+    tags = ', '.join(ACTION_PLAN_ALLOWED_ITEM_TAG_LIST)
+    die(
+        f'ABORT: line {line_number} missing recognized Action Plan item tag; '
+        'loop target: Action Plan for missing executable scope. '
+        f'Expected one of: {tags}. Offending line: {line!r}.'
+    )
+
+
+def action_plan_executable_scope_abort() -> None:
+    die(
+        'ABORT: action-plan advance blocked: missing [execute] item for execution directive; '
+        'loop target: Action Plan for missing executable scope.'
     )
 
 
@@ -2858,14 +3181,82 @@ def validate_action_plan_shape(content: str, phase: str) -> None:
         if is_markdown_heading(line):
             continue
         if ACTION_PLAN_SHAPE_RE.match(line):
+            match = ACTION_CHECKLIST_RE.match(line)
+            if not match or action_plan_item_tag(match.group('text').strip()) is None:
+                action_plan_tag_abort(line_number, line)
             saw_assignment = True
             continue
         action_plan_shape_abort(line_number, line)
     if not saw_assignment:
         die(
             'ABORT: Action Plan body contains no assignment lines after exempt content is removed '
-            f"(Invariant #9, _invariants.md). Example: '{ACTION_PLAN_SHAPE_EXAMPLE}'"
+            f"(Invariant #9, invariants.md). Example: '{ACTION_PLAN_SHAPE_EXAMPLE}'"
         )
+
+
+def validate_action_plan_executable_scope(transcript: str) -> None:
+    items = action_plan_checklist_items(transcript)
+    if not items:
+        action_plan_executable_scope_abort()
+    if not any(item.get('tag') == ACTION_PLAN_EXECUTE_TAG for item in items):
+        action_plan_executable_scope_abort()
+
+
+def first_substantive_lines(content: str, limit: int) -> list[tuple[int, str]]:
+    lines: list[tuple[int, str]] = []
+    in_html_comment = False
+    for line_number, line in enumerate(content.splitlines(), start=1):
+        stripped = line.strip()
+        if in_html_comment:
+            if '-->' in stripped:
+                in_html_comment = False
+            continue
+        if stripped.startswith('<!--'):
+            if '-->' not in stripped[stripped.find('<!--') + 4:]:
+                in_html_comment = True
+            continue
+        if not stripped:
+            continue
+        if line_number == 1 and EFFORT_OVERRIDE_RE.match(stripped):
+            continue
+        lines.append((line_number, stripped))
+        if len(lines) >= limit:
+            break
+    return lines
+
+
+def conclusion_directive_gap_abort() -> None:
+    die(
+        'CONCLUSION-DIRECTIVE-GAP-MISSING: loop target: Completion/Conclusion '
+        'for missing directive-gap evidence. Expected first lines: '
+        '\'**Directive:** "<active directive>"\' and '
+        '\'**Action Plan: satisfies | partially satisfies | defers**\'.'
+    )
+
+
+def validate_conclusion_directive_gap(content: str, phase: str) -> None:
+    if phase != 'Conclusion':
+        return
+    lines = first_substantive_lines(content, 2)
+    if len(lines) < 2:
+        conclusion_directive_gap_abort()
+    directive_line = lines[0][1]
+    action_line = lines[1][1]
+    if not CONCLUSION_DIRECTIVE_LINE_RE.match(directive_line):
+        conclusion_directive_gap_abort()
+    match = CONCLUSION_ACTION_PLAN_LINE_RE.match(action_line)
+    if not match:
+        conclusion_directive_gap_abort()
+    if match.group('status') in {'partially satisfies', 'defers'} and not match.group('detail').strip():
+        conclusion_directive_gap_abort()
+
+
+def validate_reviewer_conclusion_gates(content: str, phase: str, role: str, entry: dict) -> None:
+    if phase != 'Conclusion' or role != reviewer_role(entry):
+        return
+    missing = [gate for gate in REVIEWER_DISCIPLINE_GATES if gate not in content]
+    if missing:
+        die('REVIEWER-CONCLUSION-GATE-MISSING: ' + ', '.join(missing))
 
 
 def validate_effort_override(content: str, phase: str, role: str, moderator_role: str) -> None:
@@ -2963,6 +3354,24 @@ def render_content_for_transcript(content: str) -> list[str]:
     return rendered
 
 
+def render_full_body_block(full_body: str) -> list[str]:
+    return [
+        '<details>',
+        FULL_BODY_SUMMARY_LINE,
+        '',
+        *full_body.rstrip('\n').splitlines(),
+        '',
+        '</details>',
+    ]
+
+
+def render_contribution_body(content: str, full_body: str | None = None) -> list[str]:
+    rendered = render_content_for_transcript(content)
+    if full_body is not None:
+        rendered.extend(['', *render_full_body_block(full_body)])
+    return rendered
+
+
 def handoff_field_sections(content: str) -> dict[str, list[str]]:
     sections: dict[str, list[str]] = {}
     current: str | None = None
@@ -3054,7 +3463,6 @@ def parse_handoff_content(content: str) -> dict:
     if 'validationCommands' not in sections:
         handoff_abort('validationCommands', 'missing')
     state = {
-        'schemaVersion': HANDOFF_SCHEMA_VERSION,
         'writeScope': parse_write_scope_section(sections['writeScope']),
         'validationCommands': parse_validation_commands_section(sections['validationCommands']),
         'body': '\n'.join(render_content_for_transcript(content)).rstrip('\n'),
@@ -3063,8 +3471,7 @@ def parse_handoff_content(content: str) -> dict:
 
 
 def set_handoff_state(entry: dict, role: str, state: dict) -> None:
-    handoff = entry.setdefault('handoff', {'schemaVersion': HANDOFF_SCHEMA_VERSION, 'roles': {}})
-    handoff['schemaVersion'] = HANDOFF_SCHEMA_VERSION
+    handoff = entry.setdefault('handoff', {'roles': {}})
     roles = handoff.setdefault('roles', {})
     if not isinstance(roles, dict):
         die('handoff roles must be an object')
@@ -3104,17 +3511,17 @@ def render_handoff_mirror_lines(body_lines: list[str], entry: dict) -> list[str]
         block_start = index
         depth = 1
         block_end: int | None = None
-        cursor = index + 1
-        while cursor < end:
-            stripped = rendered[cursor].strip()
+        line_index = index + 1
+        while line_index < end:
+            stripped = rendered[line_index].strip()
             if DETAILS_OPEN_RE.match(stripped):
                 depth += 1
             elif DETAILS_CLOSE_RE.match(stripped):
                 depth -= 1
                 if depth == 0:
-                    block_end = cursor + 1
+                    block_end = line_index + 1
                     break
-            cursor += 1
+            line_index += 1
         if block_end is None:
             die('transcript details block not closed in phase: Handoff')
         role = summary_role(rendered[block_start + 1]) if block_start + 1 < block_end else None
@@ -3203,6 +3610,7 @@ def polish_moderator_content(content: str, spec_path: Path = DEFAULT_MODERATOR_P
                 line = line[0].upper() + line[1:]
             if (
                 line
+                and not EFFORT_OVERRIDE_RE.match(line.strip())
                 and not line.endswith(('.', '?', '!', ':', '`'))
                 and not line.lstrip().startswith(('- ', '#', '|'))
             ):
@@ -3211,7 +3619,14 @@ def polish_moderator_content(content: str, spec_path: Path = DEFAULT_MODERATOR_P
     return '\n'.join(rendered).rstrip('\n')
 
 
-def render_contribution_block(phase: str, role: str, counter: int, content: str, timestamp: str) -> tuple[str, list[str]]:
+def render_contribution_block(
+    phase: str,
+    role: str,
+    counter: int,
+    content: str,
+    timestamp: str,
+    full_body: str | None = None,
+) -> tuple[str, list[str]]:
     anchor = f'{phase_slug(phase)}-{role}-{counter}'
     lines = [
         f'<a name="{anchor}"></a>',
@@ -3220,7 +3635,7 @@ def render_contribution_block(phase: str, role: str, counter: int, content: str,
         f'<p><em>{timestamp}</em></p>',
         CONTENT_ONLY_GUARD,
         '',
-        *render_content_for_transcript(content),
+        *render_contribution_body(content, full_body),
         '',
         '</details>',
     ]
@@ -3232,6 +3647,7 @@ def render_speak(
     target: str,
     role: str,
     content_file: Path,
+    full_body_file: Path | None = None,
     observed_revision: int | None = None,
     timestamp: str | None = None,
     emit_json: bool = False,
@@ -3239,6 +3655,7 @@ def render_speak(
     verbatim: bool = False,
 ) -> int:
     content = read_content_file(content_file)
+    full_body = read_optional_content_file(full_body_file)
     with registry_lock(path):
         data = load_registry(path)
         current_entry = resolve_collab(data, target)
@@ -3279,23 +3696,34 @@ def render_speak(
             die(f'duplicate phase contribution: {role} in {phase}\n{resume}')
         if role == current_entry['moderatorRole'] and not verbatim:
             content = polish_moderator_content(content)
-        validate_effort_override(content, phase, role, current_entry['moderatorRole'])
-        validate_action_plan_shape(content, phase)
+        reject_hand_authored_excerpt_details(content)
+        reject_full_body_details_controls(full_body)
         enforce_contribution_budget(content, phase, role, current_entry['moderatorRole'], verbatim)
+        validate_effort_override(content, phase, role, current_entry['moderatorRole'])
+        validate_conclusion_directive_gap(content, phase)
+        validate_reviewer_conclusion_gates(content, phase, role, current_entry)
+        validate_action_plan_shape(content, phase)
         handoff_state = parse_handoff_content(content) if phase == 'Handoff' else None
 
         lines = transcript.splitlines()
         counter = next_anchor_counter(lines, phase, role)
-        anchor, block = render_contribution_block(phase, role, counter, content, timestamp or format_timestamp())
+        anchor, block = render_contribution_block(
+            phase,
+            role,
+            counter,
+            content,
+            timestamp or format_timestamp(),
+            full_body,
+        )
         rendered_lines = append_phase_block(lines, phase, block)
 
-        next_data = deepcopy(data)
-        next_entry = resolve_collab(next_data, target)
+        nextdata = deepcopy(data)
+        next_entry = resolve_collab(nextdata, target)
         if handoff_state is not None:
             set_handoff_state(next_entry, role, handoff_state)
         rendered_text = '\n'.join(rendered_lines) + '\n'
         rendered_state = speak_state_for_entry(next_entry, rendered_text)
-        advanced, notice = apply_speak_lifecycle_with_notice(next_entry, rendered_state['contributors'])
+        advanced, notice = apply_speak_lifecycle_with_notice(next_entry, rendered_state['contributors'], rendered_text)
         rendered_text, header_changed = render_managed_header_text(rendered_text, next_entry, DEFAULT_ROLES_DIR)
         notice = add_completion_summary_notice(notice, rendered_text)
         print('BOUNDARY: transcript write only; no shell commands or source edits outside the user-scope collab state root')
@@ -3305,7 +3733,7 @@ def render_speak(
         label_advisory = action_plan_label_advisory(content, phase)
         if label_advisory:
             print(label_advisory)
-        commit_registry_and_transcript(path, next_data, transcript_path, rendered_text)
+        commit_registry_and_transcript(path, nextdata, transcript_path, rendered_text)
     print_post_action_advisories(
         next_entry,
         role,
@@ -3330,17 +3758,17 @@ def contribution_block_bounds(lines: list[str], phase: str, role: str) -> tuple[
             start = index
             depth = 1
             end: int | None = None
-            cursor = index + 1
-            while cursor < phase_end:
-                stripped = lines[cursor].strip()
+            line_index = index + 1
+            while line_index < phase_end:
+                stripped = lines[line_index].strip()
                 if DETAILS_OPEN_RE.match(stripped):
                     depth += 1
                 elif DETAILS_CLOSE_RE.match(stripped):
                     depth -= 1
                     if depth == 0:
-                        end = cursor + 1
+                        end = line_index + 1
                         break
-                cursor += 1
+                line_index += 1
             if end is None:
                 die(f'transcript details block not closed in phase: {phase}')
             summary = summary_role(lines[start + 1]) if start + 1 < end else None
@@ -3406,6 +3834,7 @@ def replace_latest_contribution(
     role: str,
     content: str,
     timestamp: str,
+    full_body: str | None = None,
 ) -> str:
     lines = transcript.splitlines()
     bounds = contribution_block_bounds(lines, phase, role)
@@ -3438,7 +3867,7 @@ def replace_latest_contribution(
     replacement = (
         block[:marker_index + 1]
         + ['']
-        + render_content_for_transcript(content)
+        + render_contribution_body(content, full_body)
         + ['']
         + history
         + [block[-1]]
@@ -3479,10 +3908,13 @@ def render_re_speak(
     target: str,
     role: str,
     content_file: Path,
+    full_body_file: Path | None = None,
     timestamp: str | None = None,
     caller_role: str | None = None,
+    verbatim: bool = False,
 ) -> int:
     content = read_content_file(content_file)
+    full_body = read_optional_content_file(full_body_file)
     with registry_lock(path):
         data = load_registry(path)
         entry = resolve_collab(data, target)
@@ -3497,19 +3929,29 @@ def render_re_speak(
         if not transcript_path.exists():
             die(f'transcript missing: {transcript_path}')
         transcript = transcript_path.read_text()
-        validate_action_plan_shape(content, entry['activePhase'])
-        handoff_state = parse_handoff_content(content) if entry['activePhase'] == 'Handoff' else None
+        phase = entry['activePhase']
+        if role == entry['moderatorRole'] and not verbatim:
+            content = polish_moderator_content(content)
+        reject_hand_authored_excerpt_details(content)
+        reject_full_body_details_controls(full_body)
+        enforce_contribution_budget(content, phase, role, entry['moderatorRole'], verbatim)
+        validate_effort_override(content, phase, role, entry['moderatorRole'])
+        validate_conclusion_directive_gap(content, phase)
+        validate_reviewer_conclusion_gates(content, phase, role, entry)
+        validate_action_plan_shape(content, phase)
+        handoff_state = parse_handoff_content(content) if phase == 'Handoff' else None
         reviewer_notice = reviewer_notice_for_rewrite(entry, transcript, role)
         rendered = replace_latest_contribution(
             transcript,
-            entry['activePhase'],
+            phase,
             role,
             content,
             timestamp or format_timestamp(),
+            full_body,
         )
         if handoff_state is not None:
             rendered_lines = rendered.splitlines()
-            bounds = contribution_block_bounds(rendered_lines, entry['activePhase'], role)
+            bounds = contribution_block_bounds(rendered_lines, phase, role)
             if bounds is None:
                 die('no prior contribution to rewrite; use /collab speak to create the first contribution')
             start, end = bounds
@@ -3520,6 +3962,13 @@ def render_re_speak(
         commit_registry_and_transcript(path, data, transcript_path, rendered)
     if reviewer_notice:
         print(reviewer_notice)
+    print_post_action_advisories(
+        entry,
+        role,
+        effort_phase_after_speak(phase),
+        None,
+        next_line_after_speak(entry, role, phase, rendered),
+    )
     print(entry['id'])
     return 0
 
@@ -3539,9 +3988,15 @@ def advance_phase(
             die('record is closed')
         index = PHASES.index(entry['activePhase'])
         from_phase = entry['activePhase']
+        transcript_path = Path(entry['transcriptPath'])
+        transcript = transcript_path.read_text() if transcript_path.exists() else None
         if direction == 'next':
             if index == len(PHASES) - 1:
                 die('no next phase')
+            if from_phase == 'Action Plan':
+                if transcript is None:
+                    die(f'transcript missing: {transcript_path}')
+                validate_action_plan_executable_scope(transcript)
             entry['activePhase'] = PHASES[index + 1]
             if entry['activePhase'] in MOD_EXCLUDED_PHASES:
                 remove_moderator_from_turn_order(entry)
@@ -3556,9 +4011,8 @@ def advance_phase(
                 invalidate_verification_seal(entry, f'restored to {entry["activePhase"]}')
 
         notice = transition_notice(from_phase, entry['activePhase'])
-        transcript_path = Path(entry['transcriptPath'])
         if transcript_path.exists():
-            rendered, header_changed = render_managed_header_text(transcript_path.read_text(), entry, DEFAULT_ROLES_DIR)
+            rendered, header_changed = render_managed_header_text(transcript or transcript_path.read_text(), entry, DEFAULT_ROLES_DIR)
             notice = add_completion_summary_notice(notice, rendered)
             print_header_overwrite(header_changed)
             commit_registry_and_transcript(path, data, transcript_path, rendered)
@@ -3616,12 +4070,16 @@ def record_execution(
             if unchecked_count:
                 die(
                     f'execution completed blocked for role {role}: '
-                    f'{unchecked_count} unchecked assigned Action Plan item(s) remain'
+                    f'{unchecked_count} unchecked assigned Action Plan item(s) remain; '
+                    'loop target: Handoff for missing execution evidence'
                 )
         assert_touched_paths_inside_handoff(entry, role, normalized_touched_paths)
 
         execution_state = {'status': status, 'date': date}
         execution_state['entryId'] = execution_identity(role, date)
+        head_commit = current_head_commit(date)
+        if head_commit is not None:
+            execution_state['commits'] = [head_commit]
         if agent_id:
             execution_state['agentId'] = agent_id
         if validation_result:
@@ -3810,10 +4268,10 @@ def header_timestamp_from_lines(lines: list[str]) -> str:
 
 
 def anchor_role_for_toc(lines: list[str], anchor_index: int, anchor: str) -> str:
-    for cursor in range(anchor_index + 1, min(len(lines), anchor_index + 8)):
-        if lines[cursor].startswith('## ') or ANCHOR_RE.match(lines[cursor].strip()):
+    for line_index in range(anchor_index + 1, min(len(lines), anchor_index + 8)):
+        if lines[line_index].startswith('## ') or ANCHOR_RE.match(lines[line_index].strip()):
             break
-        role = summary_role(lines[cursor])
+        role = summary_role(lines[line_index])
         if role:
             return role
     parts = anchor.split('-')
@@ -4198,11 +4656,11 @@ def seal_snapshot(
     entry: dict,
     observed_revision: int,
     role: str,
+    transcript: str,
     cap_exit: str | None = None,
     follow_up: dict | None = None,
 ) -> dict:
     seal = {
-        'schemaVersion': VERIFICATION_SEAL_SCHEMA_VERSION,
         'observedRevision': observed_revision,
         'executionEntries': active_execution_entries(entry),
         'validationScopes': validation_scopes_for_execution(entry),
@@ -4210,6 +4668,7 @@ def seal_snapshot(
         'sealedAt': dt.datetime.now().astimezone().isoformat(timespec='seconds'),
         'sealedBy': role,
         'executionSignature': execution_signature(entry),
+        'fullBodySignature': full_body_signature_for_transcript(transcript),
         'stale': False,
     }
     if cap_exit:
@@ -4264,17 +4723,10 @@ def seal_state(path: Path, target: str, role: str | None = None, resume: bool = 
                 verification['subState'] = 'participant' if participant_verification_enabled(entry) else 'seal'
             verification = verification_state(entry)
             sync_participant_verification_review_substate(entry)
-        verification = verification_state(entry) if reviewer_backed(entry) else {'rounds': 0, 'cap': DEFAULT_VERIFICATION_CAP}
-        if (
-            reviewer_backed(entry)
-            and verification_substate(entry) == 'verification'
-            and verification_review_substate(entry) == 'seal'
-            and all_execution_completed(entry)
-        ):
-            signature = execution_signature(entry)
-            if verification.get('pairedExecutionSignature') != signature:
-                verification['rounds'] = verification.get('rounds', 0) + 1
-                verification['pairedExecutionSignature'] = signature
+        if reviewer_backed(entry):
+            verification_state(entry)
+        if isinstance(entry.get('verificationSeal'), dict):
+            invalidate_seal_on_full_body_drift(entry, read_transcript_for_entry(entry))
         save_registry(path, data)
         data = load_registry(path)
         entry = resolve_collab(data, target)
@@ -4512,6 +4964,7 @@ def participant_verify_render(
         rendered = append_participant_verify_block(rendered, role, 'remediation', remediation_content, rendered_timestamp, agent_line)
         rendered = append_participant_verify_block(rendered, role, 'final-audit', final_audit_content, rendered_timestamp)
         if status == 'completed' and all_participant_verification_completed(entry):
+            record_verification_round_for_execution(entry, verification)
             verification['subState'] = 'seal'
         rendered, header_changed = render_managed_header_text(rendered, entry, DEFAULT_ROLES_DIR)
         print_header_overwrite(header_changed)
@@ -4535,6 +4988,9 @@ def apply_cap_exit(entry: dict, data: dict, cap_exit: str | None) -> dict | None
             'message': 'Verification seal recorded; reviewer assessment required.',
         }
     if cap_exit == 'archive':
+        # Route prose reserves archive for unresolved findings. Participant
+        # verification findings are transcript prose, not structured registry
+        # fields, so clean-vs-remediated distinction remains caller-asserted.
         entry['status'] = 'archived'
         entry['archived'] = True
         set_verification_review_substate(entry, 'assessment')
@@ -4569,6 +5025,133 @@ def assessment_next_line(entry: dict, verdict: dict) -> str:
     target = verdict.get('restoreTarget', 'Action Plan')
     phase_token = 'handoff' if target == 'Handoff' else 'action-plan'
     return f'NEXT: Moderator should run /collab reopen {phase_token} {entry["id"]}.'
+
+
+def verdict_reopen_command(entry: dict, verdict: dict) -> str:
+    target = verdict.get('restoreTarget', 'Action Plan')
+    phase_token = 'handoff' if target == 'Handoff' else 'action-plan'
+    return f'/collab reopen {phase_token} {entry["id"]}'
+
+
+def evidence_list(evidence: dict, key: str) -> str:
+    values = evidence.get(key)
+    if not isinstance(values, list) or not values:
+        return '[]'
+    return json.dumps(values, ensure_ascii=True, separators=(',', ':'))
+
+
+def affected_summary(evidence: dict) -> str:
+    pieces: list[str] = []
+    for key in ('committedPaths', 'executionEntryIds', 'transcriptIds'):
+        values = evidence.get(key)
+        if isinstance(values, list) and values:
+            pieces.append(f'{key}={json.dumps(values, ensure_ascii=True, separators=(",", ":"))}')
+    return '; '.join(pieces) if pieces else 'none'
+
+
+def next_reviewer_findings_counter(transcript: str) -> int:
+    highest = 0
+    for line in transcript.splitlines():
+        match = ANCHOR_RE.match(line.strip())
+        if not match:
+            continue
+        anchor = match.group('anchor')
+        if not anchor.startswith('reviewer-findings-'):
+            continue
+        suffix = anchor[len('reviewer-findings-'):]
+        if suffix.isdigit():
+            highest = max(highest, int(suffix))
+    return highest + 1
+
+
+def latest_reviewer_findings_anchor(transcript: str) -> str | None:
+    latest: tuple[int, str] | None = None
+    for line in transcript.splitlines():
+        match = ANCHOR_RE.match(line.strip())
+        if not match:
+            continue
+        anchor = match.group('anchor')
+        if not anchor.startswith('reviewer-findings-'):
+            continue
+        suffix = anchor[len('reviewer-findings-'):]
+        if not suffix.isdigit():
+            continue
+        ordinal = int(suffix)
+        if latest is None or ordinal > latest[0]:
+            latest = (ordinal, anchor)
+    return latest[1] if latest else None
+
+
+def append_reviewer_findings_block(
+    transcript: str,
+    entry: dict,
+    role: str,
+    verdict: dict,
+    timestamp: str,
+    next_line: str,
+) -> str:
+    if verdict.get('outcome') == 'success':
+        return transcript
+    evidence = verdict.get('evidence') if isinstance(verdict.get('evidence'), dict) else {}
+    failure_category = verdict.get('failureCategory') or 'uncategorized'
+    restore_target = verdict.get('restoreTarget', 'Action Plan')
+    restore_reason = verdict.get('restoreReason', '')
+    anchor = f'reviewer-findings-{next_reviewer_findings_counter(transcript)}'
+    command = verdict_reopen_command(entry, verdict)
+    block = [
+        '',
+        f'<a name="{anchor}"></a>',
+        '<details>',
+        f'<summary>{html.escape(role)} · reopen brief ({html.escape(verdict["outcome"])}, {html.escape(failure_category)})</summary>',
+        f'<p><em>{timestamp}</em></p>',
+        CONTENT_ONLY_GUARD,
+        '',
+        f'restoreReason: {restore_reason}',
+        f'restoreTarget: {restore_target}',
+        f'failureCategory: {failure_category}',
+        'evidence:',
+    ]
+    if 'registryRevision' in evidence:
+        block.append(f'  registryRevision: {evidence["registryRevision"]}')
+    block.extend([
+        f'  committedPaths: {evidence_list(evidence, "committedPaths")}',
+        f'  executionEntryIds: {evidence_list(evidence, "executionEntryIds")}',
+        f'  transcriptIds: {evidence_list(evidence, "transcriptIds")}',
+        '',
+        'commandPacket:',
+        f'  NEXT: {command}',
+        f'  REASON: {restore_reason}',
+        f'  AFFECTED: {affected_summary(evidence)}',
+        f'  RETURN: {restore_target}',
+        '',
+        f'helperNext: {next_line}',
+        '',
+        '</details>',
+    ])
+    lines = transcript.splitlines()
+    _start, end = section_bounds(lines, '## Completion')
+    return '\n'.join(lines[:end] + block + lines[end:]) + '\n'
+
+
+def insert_reopen_pointer(transcript: str, phase: str, findings_anchor: str | None, expected_role: str | None) -> str:
+    if findings_anchor is None:
+        return transcript
+    lines = transcript.splitlines()
+    start, end = section_bounds(lines, f'## {phase}')
+    link = f'[reviewer findings](#{findings_anchor})'
+    role_label = expected_role or 'none'
+    note = f'> Reopened from {link}; next expected role: `{role_label}`.'
+    if any(line.strip() == note for line in lines[start:end]):
+        return transcript
+    insert_at = start + 1
+    while insert_at < end and lines[insert_at].strip() in {'', CONTENT_ONLY_GUARD}:
+        insert_at += 1
+    block = [note, '']
+    if insert_at > start + 1 and lines[insert_at - 1].strip() != '':
+        block = ['', *block]
+    if insert_at < len(lines) and lines[insert_at].strip() == '':
+        block = block[:-1]
+    return '\n'.join(lines[:insert_at] + block + lines[insert_at:]) + '\n'
 
 
 def assessment_notice(verdict: dict) -> dict | None:
@@ -4671,6 +5254,8 @@ def render_seal(
         if not transcript_path.exists():
             die(f'transcript missing: {transcript_path}')
         transcript = transcript_path.read_text()
+        invalidate_seal_on_full_body_drift(entry, transcript)
+        review_substate = verification_review_substate(entry)
 
         if has_verdict_args:
             if cap_exit is not None:
@@ -4685,6 +5270,8 @@ def render_seal(
             if outcome == 'success' and seal.get('stale'):
                 reason = seal.get('staleReason') or 'unknown'
                 die(f'success verdict requires current non-stale verificationSeal; stale: {reason}')
+            if outcome == 'success':
+                assert_chartered_deliverables_covered(entry, transcript)
             verdict = build_verdict(
                 outcome,
                 restore_target,
@@ -4705,15 +5292,17 @@ def render_seal(
                 verdict_detail = 'verdict success'
             else:
                 verdict_detail = f"verdict {outcome}; restore {verdict['restoreTarget']}"
+            rendered_timestamp = format_timestamp()
             assessment_line = (
-                f"{number}. **{role}:** assessed {format_timestamp()} \u2014 "
+                f"{number}. **{role}:** assessed {rendered_timestamp} \u2014 "
                 f"{verdict_detail}; assessment; {len(touched_paths_for_execution(entry))} paths."
             )
+            next_line = assessment_next_line(entry, verdict)
             rendered = append_completion_history_line(transcript, assessment_line)
+            rendered = append_reviewer_findings_block(rendered, entry, role, verdict, rendered_timestamp, next_line)
             rendered, header_changed = render_managed_header_text(rendered, entry, DEFAULT_ROLES_DIR)
             if entry['status'] == 'closed' and completion_summary_empty(rendered):
-                rendered = append_completion_summary(rendered, default_close_summary(entry), summary_date_from_timestamp(format_timestamp()))
-            next_line = assessment_next_line(entry, verdict)
+                rendered = append_completion_summary(rendered, default_close_summary(entry), summary_date_from_timestamp(rendered_timestamp))
         else:
             if participant_verification_incomplete(entry):
                 verification['subState'] = 'participant'
@@ -4724,19 +5313,22 @@ def render_seal(
                 review_substate = 'seal'
             if review_substate != 'seal':
                 die('verification assessment is active; seal block is immutable; provide --outcome to record a verdict')
+            if not all_execution_completed(entry):
+                die('verification seal requires all execution entries to be completed')
+            assert_no_execution_touched_path_drift(entry)
+            assert_no_execution_agent_conflation(entry)
             rounds = verification.get('rounds', 0)
             cap = verification.get('cap', DEFAULT_VERIFICATION_CAP)
             if rounds == 0:
                 die('zero verification rounds; at least one reviewer-executor paired event is required before sealing')
+            rounds = verification.get('rounds', 0)
             if cap_exit is None and rounds >= cap:
                 die(
                     'round cap reached; reissue with --cap-exit reopen-action-plan, '
                     '--cap-exit reopen-handoff, --cap-exit follow-up-collab, or --cap-exit archive'
                 )
-            if not all_execution_completed(entry):
-                die('verification seal requires all execution entries to be completed')
             clear_verdict(entry)
-            seal = seal_snapshot(entry, observed_revision, role, cap_exit, follow_up)
+            seal = seal_snapshot(entry, observed_revision, role, transcript, cap_exit, follow_up)
             entry['verificationSeal'] = seal
             notice = apply_cap_exit(entry, data, cap_exit)
             number = next_completion_history_number(transcript)
@@ -4793,18 +5385,23 @@ def reopen_collab(
         if restore_target != phase:
             expected_token = 'handoff' if restore_target == 'Handoff' else 'action-plan'
             die(f'/collab reopen phase mismatch: verdict restoreTarget is {restore_target}; expected {expected_token}')
+        transcript_path = Path(entry['transcriptPath'])
+        if not transcript_path.exists():
+            die(f'transcript missing: {transcript_path}')
+        transcript = transcript_path.read_text()
+        findings_anchor = latest_reviewer_findings_anchor(transcript)
+        derived_turn_order = assert_turn_order_not_drifted(entry, phase)
         entry['status'] = 'open'
         entry['archived'] = False
         entry['activePhase'] = phase
         data['activeCollabId'] = entry['id']
-        normalize_turn_order_for_phase(entry, phase)
+        entry['turnOrder'] = derived_turn_order
         initialize_completion_state(entry, 'execution', reset_rounds=True)
         invalidate_verification_seal(entry, f'reopened {phase}')
         clear_verdict(entry)
-        transcript_path = Path(entry['transcriptPath'])
-        if not transcript_path.exists():
-            die(f'transcript missing: {transcript_path}')
-        rendered, header_changed = render_managed_header_text(transcript_path.read_text(), entry, DEFAULT_ROLES_DIR)
+        expected_role = next((item for item in effective_turn_order(entry) if item != entry['moderatorRole']), None)
+        transcript = insert_reopen_pointer(transcript, phase, findings_anchor, expected_role)
+        rendered, header_changed = render_managed_header_text(transcript, entry, DEFAULT_ROLES_DIR)
         print_header_overwrite(header_changed)
         commit_registry_and_transcript(path, data, transcript_path, rendered)
     print_post_action_advisories(entry, None, None, None, next_line_for_state(entry))
@@ -4829,7 +5426,6 @@ def show_verdict(path: Path, target: str) -> int:
     }
     if isinstance(seal, dict):
         output['verificationSeal'] = {
-            'schemaVersion': seal.get('schemaVersion'),
             'observedRevision': seal.get('observedRevision'),
             'sealedAt': seal.get('sealedAt'),
             'sealedBy': seal.get('sealedBy'),
@@ -4997,7 +5593,9 @@ def init_collab(
     roles_dir: Path,
     opener: Callable[[str], bool] = webbrowser.open_new_tab,
 ) -> int:
-    title, agent_id, reviewer, open_requested, participant_verification = parse_init_tokens(tokens)
+    title, agent_id, reviewer, open_requested, participant_verification, terminal = parse_init_tokens(tokens)
+    if terminal == 'issue':
+        die(RESERVED_ISSUE_TERMINAL_MESSAGE)
     with registry_lock(path):
         data = load_registry_or_bootstrap(path)
         date = dt.date.today().isoformat()
@@ -5026,6 +5624,8 @@ def init_collab(
             'slug': slug,
             'title': title,
             'description': f'Moderated discussion of {title}.',
+            'createdAt': dt.datetime.now().astimezone().isoformat(timespec='seconds'),
+            'terminal': terminal,
             'status': 'open',
             'activePhase': 'Audit',
             'moderatorRole': 'mod',
@@ -5049,12 +5649,12 @@ def init_collab(
                 'participants': {},
             }
 
-        next_data = deepcopy(data)
-        count_caller_declined_agent_id_write(next_data, agent_id)
-        next_data['collabs'].append(entry)
-        next_data['activeCollabId'] = collab_id
+        nextdata = deepcopy(data)
+        count_caller_declined_agent_id_write(nextdata, agent_id)
+        nextdata['collabs'].append(entry)
+        nextdata['activeCollabId'] = collab_id
         rendered = render_initial_transcript(title, entry, roles_dir, format_banner_timestamp())
-        commit_new_registry_and_transcript(path, next_data, transcript_path, rendered)
+        commit_new_registry_and_transcript(path, nextdata, transcript_path, rendered)
     print(transcript_path)
     if open_requested:
         file_uri = transcript_path.resolve().as_uri()
@@ -5091,11 +5691,11 @@ def join_participants(
                     f'supplied agentId {normalized_agent_id} ignored'
                 )
 
-        next_data = deepcopy(data)
-        next_entry = resolve_collab(next_data, target)
+        nextdata = deepcopy(data)
+        next_entry = resolve_collab(nextdata, target)
         if add_participant_to_entry(next_entry, role, normalized_agent_id):
-            count_caller_declined_agent_id_write(next_data, normalized_agent_id)
-        validate_registry(next_data, path)
+            count_caller_declined_agent_id_write(nextdata, normalized_agent_id)
+        validate_registry(nextdata, path)
 
         transcript_path = Path(next_entry['transcriptPath'])
         if not transcript_path.exists():
@@ -5104,7 +5704,7 @@ def join_participants(
 
         rendered, header_changed = render_managed_header_text(transcript, next_entry, roles_dir)
         print_header_overwrite(header_changed)
-        commit_registry_and_transcript(path, next_data, transcript_path, rendered)
+        commit_registry_and_transcript(path, nextdata, transcript_path, rendered)
     print_post_action_advisories(
         next_entry,
         role,
@@ -5195,7 +5795,10 @@ def close_collab(
             details = ', '.join(
                 f"{item['role']}={item['uncheckedCount']}" for item in violations
             )
-            die(f'close blocked: completed execution has unchecked assigned Action Plan item(s): {details}')
+            die(
+                'close blocked: completed execution has unchecked assigned Action Plan item(s): '
+                f'{details}; loop target: Handoff for missing execution evidence'
+            )
         if reviewer_backed(entry) and entry['activePhase'] == 'Completion':
             seal = entry.get('verificationSeal')
             if not isinstance(seal, dict):
@@ -5380,8 +5983,40 @@ def validate_command(path: Path) -> int:
     stale_lock = stale_registry_lock_message(path)
     if stale_lock:
         die(stale_lock)
+    validate_source_contracts()
     print('registry OK')
     return 0
+
+
+def require_source_text(path: Path, needle: str, label: str) -> None:
+    if not path.exists():
+        die(f'source contract missing {label}: {path.relative_to(DEFAULT_CONFIG_ROOT)}')
+    if needle not in path.read_text():
+        die(f'source contract missing {label}: {path.relative_to(DEFAULT_CONFIG_ROOT)}')
+
+
+def source_text(path: Path) -> str:
+    if not path.exists():
+        return ''
+    return path.read_text()
+
+
+def validate_source_contracts() -> None:
+    if not DEFAULT_FLAG_TAXONOMY_PATH.exists():
+        die(f'source contract missing flag taxonomy: {DEFAULT_FLAG_TAXONOMY_PATH.relative_to(DEFAULT_CONFIG_ROOT)}')
+
+    seal_verification = DEFAULT_CONFIG_ROOT / 'commands/collab/seal-verification/index.md'
+    require_source_text(seal_verification, 'restore-route-recovery', 'restore-route recovery anchor')
+    require_source_text(seal_verification, '/collab show verdict', 'restore-route verdict inspection')
+    require_source_text(seal_verification, '/collab reopen action-plan', 'restore-route action-plan reopen')
+    require_source_text(seal_verification, '/collab reopen handoff', 'restore-route handoff reopen')
+    require_source_text(seal_verification, '/collab run plan', 'restore-route rerun step')
+    require_source_text(seal_verification, '/collab seal verification', 'restore-route reseal step')
+
+    invariants = DEFAULT_CONFIG_ROOT / 'core/collab/invariants.md'
+    require_source_text(invariants, 'Rollback triggers', 'rollback trigger section')
+    require_source_text(invariants, 'Observation backlog', 'observation backlog section')
+    validate_planned_route_prerequisites(DEFAULT_CONFIG_ROOT)
 
 
 def registry_path_command(path: Path) -> int:
@@ -5470,11 +6105,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     init_parser = subparsers.add_parser(
         'init',
-        usage='%(prog)s --agent-id <agentId> [--reviewer <role>] [--no-participant-verification] [--preview] <name>',
+        usage=(
+            '%(prog)s --agent-id <agentId> [--reviewer <role>] '
+            '[--terminal <seal|issue>] [--no-participant-verification] [--preview] <name>'
+        ),
         description='Create a registry-backed collab record.',
     )
     init_parser.add_argument('--agent-id', action='append')
     init_parser.add_argument('--reviewer', action='append')
+    init_parser.add_argument('--terminal', action='append')
     init_parser.add_argument('--no-participant-verification', dest='participant_verification', action='store_false', default=True)
     init_parser.add_argument('--preview', action='store_true')
     init_parser.add_argument('name', nargs='*')
@@ -5532,6 +6171,7 @@ def build_parser() -> argparse.ArgumentParser:
     speak_render_parser.add_argument('target')
     speak_render_parser.add_argument('role')
     speak_render_parser.add_argument('--content-file', required=True)
+    speak_render_parser.add_argument('--full-body-file')
     speak_render_parser.add_argument('--observed-revision', type=int, required=True)
     speak_render_parser.add_argument('--timestamp')
     speak_render_parser.add_argument('--json', action='store_true')
@@ -5542,8 +6182,10 @@ def build_parser() -> argparse.ArgumentParser:
     re_speak_render_parser.add_argument('target')
     re_speak_render_parser.add_argument('role')
     re_speak_render_parser.add_argument('--content-file', required=True)
+    re_speak_render_parser.add_argument('--full-body-file')
     re_speak_render_parser.add_argument('--timestamp')
     re_speak_render_parser.add_argument('--caller-role')
+    re_speak_render_parser.add_argument('--verbatim', action='store_true')
 
     retract_speak_parser = subparsers.add_parser('retract-speak')
     retract_speak_parser.add_argument('target')
@@ -5583,6 +6225,11 @@ def build_parser() -> argparse.ArgumentParser:
     out_of_scope_patch_parser.add_argument('role')
     out_of_scope_patch_parser.add_argument('--path', required=True)
     out_of_scope_patch_parser.add_argument('--caller-role')
+
+    transcript_view_parser = subparsers.add_parser('transcript-view')
+    transcript_view_parser.add_argument('target')
+    transcript_view_parser.add_argument('phase', choices=PHASES)
+    transcript_view_parser.add_argument('--raw', action='store_true')
 
     participant_verify_state_parser = subparsers.add_parser('participant-verify-state')
     participant_verify_state_parser.add_argument('target')
@@ -5676,7 +6323,7 @@ def main(argv: list[str]) -> int:
                 if item.startswith('--'):
                     die(f'unknown flag: {item}')
         parser.error(f'unrecognized arguments: {" ".join(unknown_args)}')
-    for path_arg in ('content_file', 'summary_file'):
+    for path_arg in ('content_file', 'full_body_file', 'summary_file'):
         if hasattr(args, path_arg) and getattr(args, path_arg):
             setattr(args, path_arg, str(Path(getattr(args, path_arg)).resolve()))
 
@@ -5719,6 +6366,8 @@ def main(argv: list[str]) -> int:
             tokens.extend(['--agent-id', agent_id])
         for reviewer in args.reviewer or []:
             tokens.extend(['--reviewer', reviewer])
+        for terminal in args.terminal or []:
+            tokens.extend(['--terminal', terminal])
         if not args.participant_verification:
             tokens.append('--no-participant-verification')
         if args.preview:
@@ -5748,6 +6397,7 @@ def main(argv: list[str]) -> int:
             args.target,
             args.role,
             Path(args.content_file),
+            Path(args.full_body_file) if args.full_body_file else None,
             args.observed_revision,
             args.timestamp,
             args.json,
@@ -5755,7 +6405,16 @@ def main(argv: list[str]) -> int:
             args.verbatim,
         )
     if args.command == 'rewrite-speak-render':
-        return render_re_speak(path, args.target, args.role, Path(args.content_file), args.timestamp, args.caller_role)
+        return render_re_speak(
+            path,
+            args.target,
+            args.role,
+            Path(args.content_file),
+            Path(args.full_body_file) if args.full_body_file else None,
+            args.timestamp,
+            args.caller_role,
+            args.verbatim,
+        )
     if args.command == 'retract-speak':
         return retract_latest_contribution(path, args.target, args.role, args.reason, args.timestamp, args.caller_role)
     if args.command == 'advance':
@@ -5782,6 +6441,8 @@ def main(argv: list[str]) -> int:
         return transcript_repair(path, args.target, args.touch_execution_evidence, args.caller_role)
     if args.command == 'out-of-scope-patch':
         return out_of_scope_patch(path, args.target, args.role, args.path, args.caller_role)
+    if args.command == 'transcript-view':
+        return transcript_view(path, args.target, args.phase, args.raw)
     if args.command == 'participant-verify-state':
         return participant_verify_state(path, args.target, args.role, args.resume)
     if args.command == 'participant-verify-render':

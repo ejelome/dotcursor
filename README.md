@@ -1,19 +1,15 @@
 # dotcursor
 
-Configuration framework for `~/.cursor` — Cursor IDE, Claude Code, and agent harnesses.
+Configuration framework for `~/.cursor` command routes and agent harnesses.
 
 ## Entry points
 
-Each adapter is a thin routing-only file that points to `_CURSOR.md` as the shared core.
+Each adapter is a thin routing-only file that points to `commands/commands.md` as the shared command catalog.
 
 | Adapter | For | Bootstrap chain |
 |---|---|---|
-| `CLAUDE.md` | Claude Code CLI | `CLAUDE.md` → `_CURSOR.md` → `commands/commands.md` |
-| `AGENTS.md` | Codex, GPT, and other agent harnesses | `AGENTS.md` → `_CURSOR.md` → `commands/commands.md` |
-| `rules/auto.mdc` | Cursor IDE (auto-applied at startup) | `rules/auto.mdc` → `_mdc/auto/*` |
-| `rules/shared.mdc` | Cursor IDE (applied on request) | `rules/shared.mdc` → `_mdc/shared/*` |
-
-Cursor reads `~/.cursor/rules/*.mdc` at startup. `auto.mdc` is `alwaysApply: true`; `shared.mdc` is `alwaysApply: false`. No separate adapter file is needed — the rules directory is the native Cursor entry surface.
+| `CLAUDE.md` | Claude Code CLI | `CLAUDE.md` → `AGENTS.md` → `commands/commands.md` |
+| `AGENTS.md` | Codex, GPT, and other agent harnesses | `AGENTS.md` → `commands/commands.md` |
 
 ## Directory layout
 
@@ -21,35 +17,31 @@ Cursor reads `~/.cursor/rules/*.mdc` at startup. `auto.mdc` is `alwaysApply: tru
 ~/.cursor/
 ├── CLAUDE.md          — Claude Code adapter (routing only)
 ├── AGENTS.md          — other-harness adapter (routing only)
-├── _CURSOR.md         — shared routing core; owns read order, ownership boundaries
 ├── README.md          — this file
-├── .collab.json         — checked-in collab repo marker
-├── _core/             — cross-cutting invariants and contracts
-├── _functions/        — slash command implementations
-├── _generated/        — framework-generated catalogs (do not edit by hand)
-├── _mdc/              — Cursor rule implementations (auto/ and shared/ sub-trees)
-├── _roles/            — role definitions for the collab framework
-├── _templates/        — scaffolding templates
-├── _tests/            — agent-facing QA harnesses for `/test`
-├── commands/          — command catalog and routing table
-├── rules/             — Cursor startup surfaces (auto.mdc, shared.mdc)
-└── tools/             — framework tooling (collab engine, cursor utilities)
+├── .collab.json       — checked-in collab repo marker
+├── core/framework/             — cross-cutting invariants and contracts
+├── generated/        — framework-generated catalogs (do not edit by hand)
+├── core/              — shared cross-cutting policy files
+├── templates/        — scaffolding templates
+├── tests/specs/            — agent-facing QA harnesses for `/test`
+├── commands/          — command catalog, routers, and route playbooks
+└── tools/             — framework tooling (collab engine, framework utilities)
 ```
 
-### `_generated/` discovery
+### `generated/` discovery
 
-Files under `_generated/` are produced by scripts in `tools/cursor/`. Edit the source files or templates, then re-run the relevant sync script — do not edit `_generated/` directly.
+Files under `generated/` are produced by scripts in `tools/command-system/`. Edit the source files or templates, then re-run the relevant sync script — do not edit `generated/` directly.
 
 ## Setup
 
-Run `tools/cursor/install-git-hooks.sh` to install pre-commit and pre-push hooks that run the full test suite before history moves. Pass `--no-verify` to `git commit` or `git push` to skip the hooks. Force-push blocking and deletion blocking on `main` are manual GitHub repository settings, not a source patch.
+Run `tools/command-system/install-git-hooks.sh` to install pre-commit and pre-push hooks that run the full test suite before history moves. Pass `--no-verify` to `git commit` or `git push` to skip the hooks. Force-push blocking and deletion blocking on `main` are manual GitHub repository settings, not a source patch.
 
 ## Done signal
 
-Run `tools/cursor/audit.sh` to verify the framework surface. The audit exits 0 when:
+Run `tools/command-system/audit.sh` to verify the framework surface. The audit exits 0 when:
 
 - Runtime paths (`$HOME/.collabs/<projectId>/`, `.claude/`, `projects/`) are excluded from git
 - No accidental untracked payload
 - Every tracked file is reachable from an adapter, core, or catalog
-- Framework-generated output is distinguishable from IDE-produced output
+- Framework-generated output is distinguishable from generated output
 - Reference graph has no broken links

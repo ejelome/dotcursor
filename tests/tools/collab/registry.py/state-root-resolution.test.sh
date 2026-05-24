@@ -6,16 +6,28 @@ TMPDIR="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR"' EXIT
 
 cd "$TMPDIR"
-export CURSOR_COLLAB_STATE_HOME="$TMPDIR/state-home"
+export COLLAB_STATE_HOME="$TMPDIR/state-home"
 
 RUN_DATE="$(date +%Y-%m-%d)"
+
+python3 - "$ROOT" <<'PY'
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(sys.argv[1])))
+from tools.collab import registry_state
+
+assert registry_state.STATE_ROOT_PROOF_COMMAND == './tests/tools/collab/registry.py/state-root-resolution.test.sh'
+assert callable(registry_state.resolve_default_registry_path)
+assert callable(registry_state.assert_registry_project_binding)
+PY
 
 "$ROOT/tools/collab/registry.py" init --agent-id codex "Home State Init" >/dev/null
 REGISTRY="$("$ROOT/tools/collab/registry.py" registry-path)"
 LIST_OUTPUT="$("$ROOT/tools/collab/registry.py" list)"
 LOCK_PATH="${REGISTRY}.lock"
 
-python3 - "$REGISTRY" "$CURSOR_COLLAB_STATE_HOME" "$RUN_DATE-home-state-init" "$LIST_OUTPUT" <<'PY'
+python3 - "$REGISTRY" "$COLLAB_STATE_HOME" "$RUN_DATE-home-state-init" "$LIST_OUTPUT" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -25,7 +37,7 @@ state_home = Path(sys.argv[2]).resolve()
 target = sys.argv[3]
 list_output = sys.argv[4]
 identity = json.loads(Path('.collab.json').read_text())
-assert identity['schemaVersion'] == 1
+assert 'schema' + 'Version' not in identity
 assert identity['projectId']
 assert identity['label'] == Path.cwd().name
 assert registry == state_home / identity['projectId'] / 'registry.json'
@@ -46,7 +58,7 @@ from pathlib import Path
 
 path = Path('.collab.json')
 identity = json.loads(path.read_text())
-identity['label'] = 'renamed-dotcursor'
+identity['label'] = 'renamed-system'
 path.write_text(json.dumps(identity, indent=2) + '\n')
 PY
 UPDATED_LIST_OUTPUT="$("$ROOT/tools/collab/registry.py" list)"

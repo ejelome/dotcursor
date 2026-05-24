@@ -5,12 +5,12 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=/dev/null
-source "$SCRIPT_DIR/_verification_test_lib.sh"
+source "$SCRIPT_DIR/verification-test-lib.sh"
 
 TMPDIR="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR"' EXIT
 cd "$TMPDIR"
-export CURSOR_COLLAB_STATE_HOME="$TMPDIR/state-home"
+export COLLAB_STATE_HOME="$TMPDIR/state-home"
 
 init_reviewer_target "Verification Assessment Post Cap Rounds" "verification-assessment-post-cap-rounds"
 TARGET="$RUN_DATE-verification-assessment-post-cap-rounds"
@@ -29,6 +29,7 @@ entry = next(item for item in data['collabs'] if item['slug'] == 'verification-a
 entry['verification']['cap'] = 1
 path.write_text(json.dumps(data, indent=2) + '\n')
 PY
+seed_paired_verification_round "$TARGET"
 
 registry_rounds() {
   python3 - "$TARGET" "$REGISTRY" <<'PY'
@@ -57,10 +58,10 @@ state="$("$ROOT/tools/collab/registry.py" seal-state "$TARGET" pa)"
 rounds="$(read_json_field verificationRounds <<<"$state")"
 revision="$(read_json_field registryRevision <<<"$state")"
 if [[ "$rounds" != "1" ]]; then
-  printf 'FAIL: seal-state did not record exactly one verification round\n%s\n' "$state" >&2
+  printf 'FAIL: seal-state did not expose the existing paired verification round\n%s\n' "$state" >&2
   exit 1
 fi
-assert_rounds "paired reviewer-executor round" 1
+assert_rounds "paired reviewer-executor state read" 1
 
 set +e
 cap_output="$("$ROOT/tools/collab/registry.py" seal-render "$TARGET" pa --observed-revision "$revision" --caller-role pa 2>&1)"
