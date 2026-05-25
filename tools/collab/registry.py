@@ -36,6 +36,7 @@ from tools.collab.registry_state import (
     resolve_default_registry_path,
     sync_registry_project_metadata,
 )
+from tools.collab import transcript_readers
 
 
 PHASES = ['Audit', 'Discussion', 'Conclusion', 'Action Plan', 'Handoff', 'Completion']
@@ -154,6 +155,8 @@ STRUCTURED_HANDOFF_HEADING_RE = re.compile(r'^\s*\*\*(?P<field>writeScope|valida
 CODE_SPAN_RE = re.compile(r'`([^`]+)`')
 SHELL_PATTERN_RE = re.compile(r'[;&|<>`$\\\r\n]')
 GLOB_PATTERN_RE = re.compile(r'[*?\[]')
+CHARTERED_DELIVERABLES_LABEL = 'charteredDeliverables:'
+CHARTERED_DELIVERABLES_LABEL_NORMALIZED = re.sub(r'\s+', '', CHARTERED_DELIVERABLES_LABEL.rstrip(':')).lower()
 MANDATORY_EFFORT_OVERRIDE_TURNS = {
     ('Audit', 'pa'),
     ('Conclusion', 'pa'),
@@ -365,29 +368,11 @@ def parse_init_tokens(tokens: list[str]) -> tuple[str, str, str | None, bool, bo
 
 
 def summary_role(line: str) -> str | None:
-    match = SUMMARY_RE.match(line.strip())
-    if not match:
-        return None
-    return match.group('role')
+    return transcript_readers.summary_role(line)
 
 
 def phase_section(text: str, phase: str) -> list[str]:
-    lines = text.splitlines()
-    heading = f'## {phase}'
-    start: int | None = None
-    for index, line in enumerate(lines):
-        if line.strip() == heading:
-            start = index + 1
-            break
-    if start is None:
-        die(f'transcript phase missing: {phase}')
-
-    end = len(lines)
-    for index in range(start, len(lines)):
-        if lines[index].startswith('## ') and lines[index].strip() in {f'## {item}' for item in PHASES}:
-            end = index
-            break
-    return lines[start:end]
+    return transcript_readers.phase_section(text, phase)
 
 
 def phase_slug(phase: str) -> str:
@@ -473,14 +458,7 @@ def append_phase_block(lines: list[str], phase: str, block: list[str]) -> list[s
 
 
 def contribution_body_lines(block: list[str]) -> list[str]:
-    marker_index: int | None = None
-    for index, line in enumerate(block):
-        if line.strip() == CONTENT_ONLY_GUARD:
-            marker_index = index
-            break
-    if marker_index is None:
-        return []
-    return block[marker_index + 1:len(block) - 1]
+    return transcript_readers.contribution_body_lines(block)
 
 
 def details_block_end(lines: list[str], start: int, context: str) -> int:
@@ -563,106 +541,23 @@ def rendered_transcript_without_full_bodies(transcript: str) -> str:
 
 
 def contribution_is_retracted(block: list[str]) -> bool:
-    for line in contribution_body_lines(block):
-        stripped = line.strip()
-        if not stripped:
-            continue
-        return stripped.startswith('RETRACTED:')
-    return False
+    return transcript_readers.contribution_is_retracted(block)
 
 
 def contribution_roles(text: str, phase: str) -> list[str]:
-    roles: list[str] = []
-    lines = phase_section(text, phase)
-    index = 0
-    while index < len(lines):
-        line = lines[index]
-        stripped = line.strip()
-        if DETAILS_OPEN_RE.match(stripped):
-            start = index
-            depth = 1
-            end: int | None = None
-            line_index = index + 1
-            while line_index < len(lines):
-                nested = lines[line_index].strip()
-                if DETAILS_OPEN_RE.match(nested):
-                    depth += 1
-                elif DETAILS_CLOSE_RE.match(nested):
-                    depth -= 1
-                    if depth == 0:
-                        end = line_index + 1
-                        break
-                line_index += 1
-            if end is None:
-                die(f'transcript details block not closed in phase: {phase}')
-            role = summary_role(lines[start + 1]) if start + 1 < end else None
-            if role is not None and not contribution_is_retracted(lines[start:end]):
-                roles.append(role)
-            index = end
-            continue
-        for pattern in (LEGACY_EXPANDED_RE, LEGACY_HEADING_RE):
-            match = pattern.match(stripped)
-            if match:
-                roles.append(match.group('role'))
-                break
-        index += 1
-    return roles
+    return transcript_readers.contribution_roles(text, phase)
 
 
 def action_plan_item_tag(text: str) -> str | None:
-    match = ACTION_PLAN_ITEM_TAG_RE.match(text)
-    if not match:
-        return None
-    tag = match.group('tag')
-    if tag not in ACTION_PLAN_ALLOWED_ITEM_TAGS:
-        return None
-    return tag
+    return transcript_readers.action_plan_item_tag(text)
 
 
 def action_plan_checklist_items(transcript: str) -> list[dict]:
-    items: list[dict] = []
-    details_depth = 0
-    item_number = 0
-    try:
-        action_plan_lines = phase_section(transcript, 'Action Plan')
-    except SystemExit as exc:
-        if str(exc) == 'transcript phase missing: Action Plan':
-            return []
-        raise
-    for line in action_plan_lines:
-        stripped = line.strip()
-        if DETAILS_OPEN_RE.match(stripped):
-            details_depth += 1
-            continue
-        if DETAILS_CLOSE_RE.match(stripped):
-            details_depth = max(0, details_depth - 1)
-            continue
-        if details_depth > 1:
-            continue
-        match = ACTION_CHECKLIST_RE.match(line)
-        if not match:
-            continue
-        item_number += 1
-        mark = match.group('mark').lower()
-        text = match.group('text').strip()
-        items.append({
-            'number': item_number,
-            'role': match.group('role'),
-            'checked': mark == 'x',
-            'tag': action_plan_item_tag(text),
-            'text': text,
-        })
-    return items
+    return transcript_readers.action_plan_checklist_items(transcript)
 
 
 def unchecked_assigned_items_by_role(transcript: str) -> dict[str, int]:
-    counts: dict[str, int] = {}
-    for item in action_plan_checklist_items(transcript):
-        role = item['role']
-        counts.setdefault(role, 0)
-        if not item['checked']:
-            counts[role] += 1
-    return counts
+    return transcript_readers.unchecked_assigned_items_by_role(transcript)
 
 
 def tombstone_count(transcript: str) -> int:
@@ -711,7 +606,7 @@ def action_plan_label_summary(transcript: str) -> str:
 
 
 def unchecked_assigned_item_count(transcript: str, role: str) -> int:
-    return unchecked_assigned_items_by_role(transcript).get(role, 0)
+    return transcript_readers.unchecked_assigned_item_count(transcript, role)
 
 
 def completed_execution_unchecked_items(entry: dict, transcript: str) -> list[dict]:
@@ -739,42 +634,11 @@ def validate_participant_role_files(role_keys: list[str], roles_dir: Path, sourc
 
 
 def chartered_deliverables(transcript: str) -> list[str]:
-    try:
-        audit_lines = phase_section(transcript, 'Audit')
-    except SystemExit:
-        return []
-    deliverables: list[str] = []
-    in_block = False
-    in_code = False
-    details_depth = 0
-    for raw_line in audit_lines:
-        line = raw_line.rstrip()
-        stripped = line.strip()
-        if stripped.startswith('```'):
-            in_code = not in_code
-            continue
-        if in_code:
-            continue
-        if DETAILS_OPEN_RE.match(stripped):
-            details_depth += 1
-            continue
-        if DETAILS_CLOSE_RE.match(stripped):
-            details_depth = max(0, details_depth - 1)
-            continue
-        if details_depth > 1:
-            continue
-        if not in_block:
-            if stripped == 'charteredDeliverables:':
-                in_block = True
-            continue
-        if not stripped:
-            break
-        if not stripped.startswith('- '):
-            break
-        deliverable = stripped[2:].strip()
-        if deliverable:
-            deliverables.append(deliverable)
-    return deliverables
+    return transcript_readers.chartered_deliverables(transcript)
+
+
+def is_chartered_deliverables_label(stripped: str) -> bool:
+    return transcript_readers.is_chartered_deliverables_label(stripped)
 
 
 def chartered_deliverable_path(deliverable: str) -> str:
@@ -785,6 +649,14 @@ def chartered_deliverable_path(deliverable: str) -> str:
 def assert_chartered_deliverables_covered(entry: dict, transcript: str) -> None:
     deliverables = chartered_deliverables(transcript)
     if not deliverables:
+        return
+    non_path = [item for item in deliverables if ' ' in chartered_deliverable_path(item)]
+    if non_path:
+        print(
+            'CHARTER-NOTICE: charteredDeliverables label(s) are not file paths; '
+            + 'coverage gate skipped per Invariant #19: '
+            + ', '.join(chartered_deliverable_path(item) for item in non_path)
+        )
         return
     touched = set(touched_paths_for_execution(entry))
     missing = [
@@ -1343,6 +1215,59 @@ def git_commit_paths(ref: str) -> set[str] | None:
     if result.returncode != 0:
         die(f'EXECUTION-WRITESCOPE-OVERAGE: git show failed for execution commit {ref}')
     return {line.strip() for line in result.stdout.splitlines() if line.strip()}
+
+
+def git_index_or_staged_paths(paths: list[str]) -> set[str]:
+    if not paths:
+        return set()
+    commands = [
+        ['git', '-C', str(ROOT), 'ls-files', '--', *paths],
+        ['git', '-C', str(ROOT), 'diff', '--cached', '--name-only', '--', *paths],
+    ]
+    found: set[str] = set()
+    for command in commands:
+        result = subprocess.run(
+            command,
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        if result.returncode != 0:
+            detail = result.stderr.strip() or result.stdout.strip() or 'unknown git error'
+            die(f'SEAL-GIT-STATE: git state check failed: {detail}')
+        found.update(line.strip() for line in result.stdout.splitlines() if line.strip())
+    return found
+
+
+def git_unstaged_paths(paths: list[str]) -> set[str]:
+    if not paths:
+        return set()
+    result = subprocess.run(
+        ['git', '-C', str(ROOT), 'diff', '--name-only', '--', *paths],
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if result.returncode != 0:
+        detail = result.stderr.strip() or result.stdout.strip() or 'unknown git error'
+        die(f'SEAL-GIT-STATE: git unstaged check failed: {detail}')
+    return {line.strip() for line in result.stdout.splitlines() if line.strip()}
+
+
+def assert_execution_touched_paths_in_git_state(entry: dict) -> None:
+    touched = touched_paths_for_execution(entry)
+    if not touched:
+        return
+    in_git = git_index_or_staged_paths(touched)
+    unstaged = git_unstaged_paths(touched)
+    invalid = sorted(path for path in touched if path not in in_git or path in unstaged)
+    if invalid:
+        die(
+            'SEAL-GIT-STATE: implementation not in git; '
+            f'unstaged and uncommitted touchedPath(s): {json.dumps(invalid, separators=(",", ":"))}'
+        )
 
 
 def assert_no_execution_touched_path_drift(entry: dict) -> None:
@@ -5315,6 +5240,7 @@ def render_seal(
                 die('verification assessment is active; seal block is immutable; provide --outcome to record a verdict')
             if not all_execution_completed(entry):
                 die('verification seal requires all execution entries to be completed')
+            assert_execution_touched_paths_in_git_state(entry)
             assert_no_execution_touched_path_drift(entry)
             assert_no_execution_agent_conflation(entry)
             rounds = verification.get('rounds', 0)

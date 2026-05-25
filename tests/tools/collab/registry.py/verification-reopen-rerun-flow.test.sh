@@ -22,7 +22,7 @@ cat >handoff.md <<'HANDOFF'
 EFFORT OVERRIDE: high — implementation-density: test handoff setup
 
 **writeScope**
-`tools/collab/registry.py`
+`tools/command-system/audit.sh`
 
 **validationCommands**
 `[["./tools/command-system/audit.sh"]]`
@@ -37,7 +37,7 @@ HANDOFF
   --assigned-role pe \
   --validation-result passed \
   --validation-scope scoped \
-  --touched-path tools/collab/registry.py \
+  --touched-path tools/command-system/audit.sh \
   --caller-role pe >/dev/null
 
 seal_target "$TARGET"
@@ -48,7 +48,7 @@ output="$("$ROOT/tools/collab/registry.py" seal-render "$TARGET" pa \
   --restore-target Handoff \
   --restore-reason "The Handoff scope missed the route function file." \
   --failure-category out-of-scope \
-  --evidence '{"registryRevision":2,"transcriptIds":["handoff-pe-1"],"committedPaths":["tools/collab/registry.py"],"executionEntryIds":["pe-2026-05-17t10-00-00-02-00"]}' \
+  --evidence '{"registryRevision":2,"transcriptIds":["handoff-pe-1"],"committedPaths":["tools/command-system/audit.sh"],"executionEntryIds":["pe-2026-05-17t10-00-00-02-00"]}' \
   --caller-role pa)"
 
 if [[ "$output" != *"NEXT: Moderator should run /collab reopen handoff $TARGET."* ]]; then
@@ -81,7 +81,7 @@ EFFORT OVERRIDE: high — implementation-density: revised test handoff setup
 Scope revised after verification found the route function file missing.
 
 **writeScope**
-`tools/collab/registry.py`
+`tools/command-system/audit.sh`
 `commands/collab/reopen/index.md`
 
 **validationCommands**
@@ -100,7 +100,7 @@ from pathlib import Path
 registry = Path(sys.argv[1])
 entry = next(item for item in json.loads(registry.read_text())['collabs'] if item['slug'] == 'verification-reopen-rerun-flow')
 state = entry['handoff']['roles']['pe']
-assert state['writeScope'] == ['tools/collab/registry.py', 'commands/collab/reopen/index.md']
+assert state['writeScope'] == ['tools/command-system/audit.sh', 'commands/collab/reopen/index.md']
 assert state['validationCommands'] == [['./tools/command-system/audit.sh'], ['./tests/run.sh']]
 assert 'Scope revised after verification' in state['body']
 assert 'Previous revision,' in state['body']
@@ -131,7 +131,7 @@ PY
   --assigned-role pe \
   --validation-result passed \
   --validation-scope scoped \
-  --touched-path tools/collab/registry.py \
+  --touched-path tools/command-system/audit.sh \
   --touched-path commands/collab/reopen/index.md \
   --caller-role pe >/dev/null
 
@@ -140,7 +140,7 @@ revision="$(assessment_revision "$TARGET")"
 "$ROOT/tools/collab/registry.py" seal-render "$TARGET" pa \
   --observed-revision "$revision" \
   --outcome success \
-  --evidence '{"registryRevision":3,"transcriptIds":["handoff-pe-1"],"committedPaths":["tools/collab/registry.py","commands/collab/reopen/index.md"],"executionEntryIds":["pe-2026-05-17t10-30-00-02-00"]}' \
+  --evidence '{"registryRevision":3,"transcriptIds":["handoff-pe-1"],"committedPaths":["tools/command-system/audit.sh","commands/collab/reopen/index.md"],"executionEntryIds":["pe-2026-05-17t10-30-00-02-00"]}' \
   --caller-role pa >/dev/null
 
 python3 - "$REGISTRY" <<'PY'
