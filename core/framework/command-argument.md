@@ -59,7 +59,6 @@ ineligibility-reason: Bypass would create state that other helpers assume cannot
 | Guard class | Ineligibility reason | Governing contract |
 |-------------|----------------------|--------------------|
 | `registry-integrity` | Bypass would create state that other helpers assume cannot exist. | `collab/init` steps 8, 12; shared-state invariants |
-| `output-mode-policy` | Guard is a default output-mode choice, not an artifact-conflict guard. | `doc/compact` step 4e |
 | `lifecycle-gate` | Guard enforces phase or completion state, not an overwritable artifact. | Phase gating contracts |
 | `role-gate` | Guard enforces role membership or reviewer presence. | Role and reviewer contracts |
 | `schema-validation` | Guard enforces structural correctness of role JSON or configuration. | `core/framework/agent-role.md` schema |

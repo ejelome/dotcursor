@@ -973,6 +973,23 @@ def sync_participant_verification_review_substate(entry: dict) -> None:
         verification_state(entry)['subState'] = 'seal'
 
 
+def reset_participant_verification_stages(entry: dict) -> None:
+    """Clear per-role participant-verification progress so a round reset can
+    restart the cycle. Without this, sync_participant_verification_review_substate
+    sees stale "completed" stages and bounces subState back to "seal", leaving a
+    record that is neither sealable (rounds 0) nor re-verifiable (stages done)."""
+    if not participant_verification_enabled(entry):
+        return
+    participants = verification_state(entry).get('participants')
+    if not isinstance(participants, dict):
+        return
+    for role in participant_verification_roles(entry):
+        state = participants.get(role)
+        if isinstance(state, dict):
+            state.pop('stage', None)
+            state['attempts'] = 0
+
+
 def initialize_completion_state(entry: dict, substate: str = 'execution', reset_rounds: bool = False) -> None:
     if not reviewer_backed(entry):
         return
@@ -983,6 +1000,8 @@ def initialize_completion_state(entry: dict, substate: str = 'execution', reset_
     verification = verification_state(entry)
     if reset_rounds:
         verification['rounds'] = 0
+        verification.pop('pairedExecutionSignature', None)
+        reset_participant_verification_stages(entry)
         verification['subState'] = 'participant' if participant_verification_enabled(entry) else 'seal'
     elif substate == 'verification' and verification.get('subState') not in ALLOWED_VERIFICATION_SUBSTATES:
         verification['subState'] = 'seal'
@@ -1240,6 +1259,22 @@ def git_index_or_staged_paths(paths: list[str]) -> set[str]:
     return found
 
 
+def git_committed_deletion_paths(paths: list[str]) -> set[str]:
+    if not paths:
+        return set()
+    result = subprocess.run(
+        ['git', '-C', str(ROOT), 'log', '--diff-filter=D', '--name-only', '--format=', '--', *paths],
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if result.returncode != 0:
+        detail = result.stderr.strip() or result.stdout.strip() or 'unknown git error'
+        die(f'SEAL-GIT-STATE: git committed deletion check failed: {detail}')
+    return {line.strip() for line in result.stdout.splitlines() if line.strip()}
+
+
 def git_unstaged_paths(paths: list[str]) -> set[str]:
     if not paths:
         return set()
@@ -1256,13 +1291,28 @@ def git_unstaged_paths(paths: list[str]) -> set[str]:
     return {line.strip() for line in result.stdout.splitlines() if line.strip()}
 
 
+def working_tree_path_exists(path: str) -> bool:
+    return os.path.lexists(ROOT / path)
+
+
 def assert_execution_touched_paths_in_git_state(entry: dict) -> None:
     touched = touched_paths_for_execution(entry)
     if not touched:
         return
     in_git = git_index_or_staged_paths(touched)
     unstaged = git_unstaged_paths(touched)
-    invalid = sorted(path for path in touched if path not in in_git or path in unstaged)
+    committed_deletions = git_committed_deletion_paths(touched)
+    invalid: list[str] = []
+    for path in touched:
+        if path in unstaged:
+            invalid.append(path)
+            continue
+        if path in in_git:
+            continue
+        if path in committed_deletions and not working_tree_path_exists(path):
+            continue
+        invalid.append(path)
+    invalid = sorted(invalid)
     if invalid:
         die(
             'SEAL-GIT-STATE: implementation not in git; '
@@ -4685,6 +4735,7 @@ def seal_state(path: Path, target: str, role: str | None = None, resume: bool = 
             role == reviewer_role(entry)
             and result['verificationSubState'] == 'verification'
             and result['verificationReviewSubState'] == 'seal'
+            and result['verificationRounds'] > 0
         )
         result['readyToAssess'] = (
             role == reviewer_role(entry)
@@ -5332,6 +5383,44 @@ def reopen_collab(
         commit_registry_and_transcript(path, data, transcript_path, rendered)
     print_post_action_advisories(entry, None, None, None, next_line_for_state(entry))
     print(entry['id'])
+    return 0
+
+
+def restart_verification(
+    path: Path,
+    target: str,
+    caller_role: str | None = None,
+) -> int:
+    """Reviewer recovery primitive: restart Completion.verification after the
+    execution record was corrected (e.g. via /collab rewrite execution). Resets
+    rounds to 0, clears participant-verification stages, and returns the cycle to
+    the 'participant' sub-state WITHOUT re-recording execution, so the corrected
+    commit reference is preserved. Participants then re-run /collab participant
+    verify to record a fresh paired round before the reviewer seals."""
+    with registry_lock(path):
+        data = load_registry(path)
+        entry = resolve_collab(data, target)
+        assert_caller_role(entry, caller_role, 'restart-verification', reviewer_role(entry))
+        if entry['status'] in {'closed', 'archived'}:
+            die('record is closed')
+        if not reviewer_backed(entry):
+            die('restart-verification requires a reviewer-backed collab')
+        if entry['activePhase'] != 'Completion':
+            die('restart-verification requires activePhase = Completion')
+        if not all_execution_completed(entry):
+            die('restart-verification requires all execution entries completed')
+        initialize_completion_state(entry, 'verification', reset_rounds=True)
+        save_registry(path, data)
+    verification = verification_state(entry)
+    print(
+        'verification cycle restarted: rounds=0, participant stages cleared, '
+        f'subState={verification.get("subState")}'
+    )
+    next_role = first_pending_participant_verification_role(entry)
+    if next_role:
+        print(f'NEXT: Run /collab participant verify for role {next_role}.')
+    else:
+        print(f'NEXT: Run /collab seal verification for role {reviewer_role(entry)}.')
     return 0
 
 
@@ -6196,6 +6285,10 @@ def build_parser() -> argparse.ArgumentParser:
     seal_render_parser.add_argument('--json', action='store_true')
     seal_render_parser.add_argument('--caller-role')
 
+    restart_verification_parser = subparsers.add_parser('restart-verification')
+    restart_verification_parser.add_argument('target')
+    restart_verification_parser.add_argument('--caller-role')
+
     reopen_parser = subparsers.add_parser('reopen')
     reopen_parser.add_argument('target')
     reopen_parser.add_argument('phase', choices=['action-plan', 'handoff'])
@@ -6406,6 +6499,8 @@ def main(argv: list[str]) -> int:
             args.json,
             args.caller_role,
         )
+    if args.command == 'restart-verification':
+        return restart_verification(path, args.target, args.caller_role)
     if args.command == 'reopen':
         return reopen_collab(path, args.target, args.phase, args.caller_role)
     if args.command == 'show-verdict':

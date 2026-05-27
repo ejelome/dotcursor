@@ -10,7 +10,7 @@ time.
 `data/command-advisory-policy.json` → `requiredNamespaces` declares
 which namespaces must have a corresponding advisory file under
 `data/advisories/`. The required set is `["agent", "collab",
-"narrative", "quality"]`.
+"quality"]`.
 
 The following namespaces are explicitly exempt from advisory coverage.
 Exemption reasons are authoritative in

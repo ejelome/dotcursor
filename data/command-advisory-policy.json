@@ -2,7 +2,6 @@
   "requiredNamespaces": [
     "agent",
     "collab",
-    "narrative",
     "quality"
   ],
   "namespaceCoverageExemptions": {

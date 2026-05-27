@@ -8,8 +8,7 @@ Apply this policy only when a rubric-based quality or documentation assessment
 route has finished its primary review.
 
 Current rubric routes are `/quality tune`, `/quality assess interface`,
-`/quality assess web`, `/quality assess game`, `/quality assess operations`, and
-`/doc assess`.
+`/quality assess web`, `/quality assess game`, and `/quality assess operations`.
 
 ## Behavior
 
@@ -53,7 +52,6 @@ Require at least one concrete path or symbol from the reviewed project in each
 candidate's notes.
 Accept `cross-command` candidates only after evidence from at least two
 different projects unless the user overrides the threshold.
-Keep `/doc assess` candidates documentation-focused.
 Apply at most two accepted candidate IDs per run.
 Defer remaining accepted IDs to the next run.
 

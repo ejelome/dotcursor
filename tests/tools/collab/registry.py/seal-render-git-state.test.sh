@@ -6,6 +6,7 @@ TMPDIR="$(mktemp -d)"
 STAGED_PATH="tests/tools/collab/registry.py/staged-touch-fixture.txt"
 UNSTAGED_PATH="tests/tools/collab/registry.py/uncommitted-touch-fixture.txt"
 DIRTY_STAGED_PATH="tests/tools/collab/registry.py/dirty-staged-touch-fixture.txt"
+COMMITTED_DELETION_PATH="tools/narrative/state.py"
 trap 'rm -rf "$TMPDIR"; rm -f "$ROOT/$STAGED_PATH" "$ROOT/$UNSTAGED_PATH" "$ROOT/$DIRTY_STAGED_PATH"' EXIT
 
 cd "$TMPDIR"
@@ -45,6 +46,19 @@ init_completion_target "Seal Render Committed Git State" "seal-render-committed-
 COMMITTED_TARGET="$RUN_DATE-seal-render-committed-git-state"
 complete_execution_with_path "$COMMITTED_TARGET" "tools/command-system/audit.sh"
 seal_without_execution "$COMMITTED_TARGET" >/dev/null
+
+if [[ -e "$ROOT/$COMMITTED_DELETION_PATH" ]]; then
+  printf 'FAIL: committed deletion fixture unexpectedly exists: %s\n' "$COMMITTED_DELETION_PATH" >&2
+  exit 1
+fi
+if ! git -C "$ROOT" log --diff-filter=D --format=%H -- "$COMMITTED_DELETION_PATH" | grep -q .; then
+  printf 'FAIL: committed deletion fixture lacks a deleting commit: %s\n' "$COMMITTED_DELETION_PATH" >&2
+  exit 1
+fi
+init_completion_target "Seal Render Committed Deletion Git State" "seal-render-committed-deletion-git-state"
+COMMITTED_DELETION_TARGET="$RUN_DATE-seal-render-committed-deletion-git-state"
+complete_execution_with_path "$COMMITTED_DELETION_TARGET" "$COMMITTED_DELETION_PATH"
+seal_without_execution "$COMMITTED_DELETION_TARGET" >/dev/null
 
 init_completion_target "Seal Render Staged Git State" "seal-render-staged-git-state"
 STAGED_TARGET="$RUN_DATE-seal-render-staged-git-state"
@@ -89,4 +103,4 @@ if [[ "$status" -eq 0 || "$output" != *"SEAL-GIT-STATE: implementation not in gi
   exit 1
 fi
 
-printf 'OK: seal-render git-state gate accepts committed/staged paths and rejects unstaged or working-tree-only paths\n'
+printf 'OK: seal-render git-state gate accepts committed/staged/deleted paths and rejects unstaged or working-tree-only paths\n'
