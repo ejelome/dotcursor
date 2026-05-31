@@ -37,7 +37,7 @@ complete_execution() {
     --assigned-role pe \
     --validation-result passed \
     --validation-scope scoped \
-    --touched-path tools/collab/registry.py \
+    --touched-path tools/command-system/audit.sh \
     --caller-role pe >/dev/null
 }
 
@@ -131,7 +131,7 @@ entry = next(item for item in data['collabs'] if item['slug'] == slug)
 entry['handoff'] = {
     'roles': {
         'pe': {
-            'writeScope': ['tools/collab/registry.py'],
+            'writeScope': ['tools/command-system/audit.sh'],
             'validationCommands': [['./tools/command-system/audit.sh']],
         }
     }

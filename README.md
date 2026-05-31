@@ -19,9 +19,10 @@ Each adapter is a thin routing-only file that points to `commands/commands.md` a
 ├── AGENTS.md          — other-harness adapter (routing only)
 ├── README.md          — this file
 ├── .collab.json       — checked-in collab repo marker
-├── core/framework/             — cross-cutting invariants and contracts
-├── generated/        — framework-generated catalogs (do not edit by hand)
 ├── core/              — shared cross-cutting policy files
+│   ├── collab/        — collab protocol: roles, invariants, and helpers
+│   └── framework/     — cross-cutting invariants and contracts
+├── generated/        — framework-generated catalogs (do not edit by hand)
 ├── templates/        — scaffolding templates
 ├── tests/specs/            — agent-facing QA harnesses for `/test`
 ├── commands/          — command catalog, routers, and route playbooks

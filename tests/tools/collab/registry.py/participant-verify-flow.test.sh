@@ -29,7 +29,7 @@ entry = next(item for item in data['collabs'] if item['slug'] == 'participant-ve
 entry['handoff'] = {
     'roles': {
         'pe': {
-            'writeScope': ['tools/collab/registry.py'],
+            'writeScope': ['tools/command-system/audit.sh'],
             'validationCommands': [['./tools/command-system/audit.sh']],
         }
     },
@@ -41,7 +41,7 @@ PY
   --assigned-role pe \
   --validation-result passed \
   --validation-scope scoped \
-  --touched-path tools/collab/registry.py \
+  --touched-path tools/command-system/audit.sh \
   --caller-role pe >/dev/null
 
 state="$("$ROOT/tools/collab/registry.py" participant-verify-state "$TARGET" pe)"
@@ -93,7 +93,7 @@ printf 'final audit ok\n' > "$FINAL_AUDIT_FILE"
   --remediation-file "$REMEDIATION_FILE" \
   --final-audit-file "$FINAL_AUDIT_FILE" \
   --status completed \
-  --touched-path tools/collab/registry.py \
+  --touched-path tools/command-system/audit.sh \
   --audit-agent-id worker-a \
   --remediation-agent-id codex \
   --caller-role pe >/dev/null
@@ -133,7 +133,7 @@ assessment_revision="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["
 "$ROOT/tools/collab/registry.py" seal-render "$TARGET" pa \
   --observed-revision "$assessment_revision" \
   --outcome success \
-  --evidence '{"registryRevision":2,"committedPaths":["tools/collab/registry.py"],"executionEntryIds":["pe-2026-05-17t12-00-00-02-00"]}' \
+  --evidence '{"registryRevision":2,"committedPaths":["tools/command-system/audit.sh"],"executionEntryIds":["pe-2026-05-17t12-00-00-02-00"]}' \
   --caller-role pa >/dev/null
 
 python3 - "$REGISTRY" <<'PY'

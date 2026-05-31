@@ -36,6 +36,7 @@ from tools.collab.registry_state import (
     resolve_default_registry_path,
     sync_registry_project_metadata,
 )
+from tools.collab import transcript_readers
 
 
 PHASES = ['Audit', 'Discussion', 'Conclusion', 'Action Plan', 'Handoff', 'Completion']
@@ -48,7 +49,7 @@ ONE_SPEAK_PHASES = {'Audit', 'Conclusion', 'Action Plan', 'Handoff'}
 AUTO_ADVANCE_EXEMPT_PHASES = {'Discussion', 'Completion'}
 CONVERGENT_REVIEWER_PHASES = {'Audit', 'Conclusion'}
 MOD_EXCLUDED_PHASES = {'Conclusion', 'Action Plan', 'Handoff', 'Completion'}
-ALLOWED_SET_FIELDS = {'title', 'description', 'turn-order', 'reviewer-optional-phases'}
+ALLOWED_SET_FIELDS = {'title', 'description', 'turn-order', 'reviewer-optional-phases', 'work-repo'}
 FORCE_ONLY_FIELDS = {'active-phase'}
 ALLOWED_STATUSES = {'open', 'closed', 'archived'}
 ALLOWED_EXECUTION_STATUSES = {'in_progress', 'completed', 'failed'}
@@ -154,6 +155,8 @@ STRUCTURED_HANDOFF_HEADING_RE = re.compile(r'^\s*\*\*(?P<field>writeScope|valida
 CODE_SPAN_RE = re.compile(r'`([^`]+)`')
 SHELL_PATTERN_RE = re.compile(r'[;&|<>`$\\\r\n]')
 GLOB_PATTERN_RE = re.compile(r'[*?\[]')
+CHARTERED_DELIVERABLES_LABEL = 'charteredDeliverables:'
+CHARTERED_DELIVERABLES_LABEL_NORMALIZED = re.sub(r'\s+', '', CHARTERED_DELIVERABLES_LABEL.rstrip(':')).lower()
 MANDATORY_EFFORT_OVERRIDE_TURNS = {
     ('Audit', 'pa'),
     ('Conclusion', 'pa'),
@@ -365,29 +368,11 @@ def parse_init_tokens(tokens: list[str]) -> tuple[str, str, str | None, bool, bo
 
 
 def summary_role(line: str) -> str | None:
-    match = SUMMARY_RE.match(line.strip())
-    if not match:
-        return None
-    return match.group('role')
+    return transcript_readers.summary_role(line)
 
 
 def phase_section(text: str, phase: str) -> list[str]:
-    lines = text.splitlines()
-    heading = f'## {phase}'
-    start: int | None = None
-    for index, line in enumerate(lines):
-        if line.strip() == heading:
-            start = index + 1
-            break
-    if start is None:
-        die(f'transcript phase missing: {phase}')
-
-    end = len(lines)
-    for index in range(start, len(lines)):
-        if lines[index].startswith('## ') and lines[index].strip() in {f'## {item}' for item in PHASES}:
-            end = index
-            break
-    return lines[start:end]
+    return transcript_readers.phase_section(text, phase)
 
 
 def phase_slug(phase: str) -> str:
@@ -473,14 +458,7 @@ def append_phase_block(lines: list[str], phase: str, block: list[str]) -> list[s
 
 
 def contribution_body_lines(block: list[str]) -> list[str]:
-    marker_index: int | None = None
-    for index, line in enumerate(block):
-        if line.strip() == CONTENT_ONLY_GUARD:
-            marker_index = index
-            break
-    if marker_index is None:
-        return []
-    return block[marker_index + 1:len(block) - 1]
+    return transcript_readers.contribution_body_lines(block)
 
 
 def details_block_end(lines: list[str], start: int, context: str) -> int:
@@ -563,106 +541,23 @@ def rendered_transcript_without_full_bodies(transcript: str) -> str:
 
 
 def contribution_is_retracted(block: list[str]) -> bool:
-    for line in contribution_body_lines(block):
-        stripped = line.strip()
-        if not stripped:
-            continue
-        return stripped.startswith('RETRACTED:')
-    return False
+    return transcript_readers.contribution_is_retracted(block)
 
 
 def contribution_roles(text: str, phase: str) -> list[str]:
-    roles: list[str] = []
-    lines = phase_section(text, phase)
-    index = 0
-    while index < len(lines):
-        line = lines[index]
-        stripped = line.strip()
-        if DETAILS_OPEN_RE.match(stripped):
-            start = index
-            depth = 1
-            end: int | None = None
-            line_index = index + 1
-            while line_index < len(lines):
-                nested = lines[line_index].strip()
-                if DETAILS_OPEN_RE.match(nested):
-                    depth += 1
-                elif DETAILS_CLOSE_RE.match(nested):
-                    depth -= 1
-                    if depth == 0:
-                        end = line_index + 1
-                        break
-                line_index += 1
-            if end is None:
-                die(f'transcript details block not closed in phase: {phase}')
-            role = summary_role(lines[start + 1]) if start + 1 < end else None
-            if role is not None and not contribution_is_retracted(lines[start:end]):
-                roles.append(role)
-            index = end
-            continue
-        for pattern in (LEGACY_EXPANDED_RE, LEGACY_HEADING_RE):
-            match = pattern.match(stripped)
-            if match:
-                roles.append(match.group('role'))
-                break
-        index += 1
-    return roles
+    return transcript_readers.contribution_roles(text, phase)
 
 
 def action_plan_item_tag(text: str) -> str | None:
-    match = ACTION_PLAN_ITEM_TAG_RE.match(text)
-    if not match:
-        return None
-    tag = match.group('tag')
-    if tag not in ACTION_PLAN_ALLOWED_ITEM_TAGS:
-        return None
-    return tag
+    return transcript_readers.action_plan_item_tag(text)
 
 
 def action_plan_checklist_items(transcript: str) -> list[dict]:
-    items: list[dict] = []
-    details_depth = 0
-    item_number = 0
-    try:
-        action_plan_lines = phase_section(transcript, 'Action Plan')
-    except SystemExit as exc:
-        if str(exc) == 'transcript phase missing: Action Plan':
-            return []
-        raise
-    for line in action_plan_lines:
-        stripped = line.strip()
-        if DETAILS_OPEN_RE.match(stripped):
-            details_depth += 1
-            continue
-        if DETAILS_CLOSE_RE.match(stripped):
-            details_depth = max(0, details_depth - 1)
-            continue
-        if details_depth > 1:
-            continue
-        match = ACTION_CHECKLIST_RE.match(line)
-        if not match:
-            continue
-        item_number += 1
-        mark = match.group('mark').lower()
-        text = match.group('text').strip()
-        items.append({
-            'number': item_number,
-            'role': match.group('role'),
-            'checked': mark == 'x',
-            'tag': action_plan_item_tag(text),
-            'text': text,
-        })
-    return items
+    return transcript_readers.action_plan_checklist_items(transcript)
 
 
 def unchecked_assigned_items_by_role(transcript: str) -> dict[str, int]:
-    counts: dict[str, int] = {}
-    for item in action_plan_checklist_items(transcript):
-        role = item['role']
-        counts.setdefault(role, 0)
-        if not item['checked']:
-            counts[role] += 1
-    return counts
+    return transcript_readers.unchecked_assigned_items_by_role(transcript)
 
 
 def tombstone_count(transcript: str) -> int:
@@ -711,7 +606,7 @@ def action_plan_label_summary(transcript: str) -> str:
 
 
 def unchecked_assigned_item_count(transcript: str, role: str) -> int:
-    return unchecked_assigned_items_by_role(transcript).get(role, 0)
+    return transcript_readers.unchecked_assigned_item_count(transcript, role)
 
 
 def completed_execution_unchecked_items(entry: dict, transcript: str) -> list[dict]:
@@ -739,42 +634,11 @@ def validate_participant_role_files(role_keys: list[str], roles_dir: Path, sourc
 
 
 def chartered_deliverables(transcript: str) -> list[str]:
-    try:
-        audit_lines = phase_section(transcript, 'Audit')
-    except SystemExit:
-        return []
-    deliverables: list[str] = []
-    in_block = False
-    in_code = False
-    details_depth = 0
-    for raw_line in audit_lines:
-        line = raw_line.rstrip()
-        stripped = line.strip()
-        if stripped.startswith('```'):
-            in_code = not in_code
-            continue
-        if in_code:
-            continue
-        if DETAILS_OPEN_RE.match(stripped):
-            details_depth += 1
-            continue
-        if DETAILS_CLOSE_RE.match(stripped):
-            details_depth = max(0, details_depth - 1)
-            continue
-        if details_depth > 1:
-            continue
-        if not in_block:
-            if stripped == 'charteredDeliverables:':
-                in_block = True
-            continue
-        if not stripped:
-            break
-        if not stripped.startswith('- '):
-            break
-        deliverable = stripped[2:].strip()
-        if deliverable:
-            deliverables.append(deliverable)
-    return deliverables
+    return transcript_readers.chartered_deliverables(transcript)
+
+
+def is_chartered_deliverables_label(stripped: str) -> bool:
+    return transcript_readers.is_chartered_deliverables_label(stripped)
 
 
 def chartered_deliverable_path(deliverable: str) -> str:
@@ -785,6 +649,14 @@ def chartered_deliverable_path(deliverable: str) -> str:
 def assert_chartered_deliverables_covered(entry: dict, transcript: str) -> None:
     deliverables = chartered_deliverables(transcript)
     if not deliverables:
+        return
+    non_path = [item for item in deliverables if ' ' in chartered_deliverable_path(item)]
+    if non_path:
+        print(
+            'CHARTER-NOTICE: charteredDeliverables label(s) are not file paths; '
+            + 'coverage gate skipped per Invariant #19: '
+            + ', '.join(chartered_deliverable_path(item) for item in non_path)
+        )
         return
     touched = set(touched_paths_for_execution(entry))
     missing = [
@@ -1101,6 +973,23 @@ def sync_participant_verification_review_substate(entry: dict) -> None:
         verification_state(entry)['subState'] = 'seal'
 
 
+def reset_participant_verification_stages(entry: dict) -> None:
+    """Clear per-role participant-verification progress so a round reset can
+    restart the cycle. Without this, sync_participant_verification_review_substate
+    sees stale "completed" stages and bounces subState back to "seal", leaving a
+    record that is neither sealable (rounds 0) nor re-verifiable (stages done)."""
+    if not participant_verification_enabled(entry):
+        return
+    participants = verification_state(entry).get('participants')
+    if not isinstance(participants, dict):
+        return
+    for role in participant_verification_roles(entry):
+        state = participants.get(role)
+        if isinstance(state, dict):
+            state.pop('stage', None)
+            state['attempts'] = 0
+
+
 def initialize_completion_state(entry: dict, substate: str = 'execution', reset_rounds: bool = False) -> None:
     if not reviewer_backed(entry):
         return
@@ -1111,6 +1000,8 @@ def initialize_completion_state(entry: dict, substate: str = 'execution', reset_
     verification = verification_state(entry)
     if reset_rounds:
         verification['rounds'] = 0
+        verification.pop('pairedExecutionSignature', None)
+        reset_participant_verification_stages(entry)
         verification['subState'] = 'participant' if participant_verification_enabled(entry) else 'seal'
     elif substate == 'verification' and verification.get('subState') not in ALLOWED_VERIFICATION_SUBSTATES:
         verification['subState'] = 'seal'
@@ -1321,10 +1212,42 @@ def touched_paths_for_execution(entry: dict) -> list[str]:
     return touched
 
 
-def git_commit_paths(ref: str) -> set[str] | None:
+def resolve_git_work_tree(raw: str, label: str) -> Path:
+    path = Path(raw).expanduser()
+    if not path.is_absolute():
+        die(f'{label} must be an absolute path: {raw}')
+    probe = subprocess.run(
+        ['git', '-C', str(path), 'rev-parse', '--show-toplevel'],
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+    )
+    if probe.returncode != 0 or not probe.stdout.strip():
+        die(f'{label} must be a git work tree: {raw}')
+    return Path(probe.stdout.strip())
+
+
+def work_repo_root(entry: dict) -> Path:
+    """Resolve the git work tree that holds a collab's executed deliverables.
+
+    Collabs whose execution targets a repository other than the framework
+    checkout declare it via the registry ``workRepo`` field; the seal git-state
+    and drift gates, and execution-commit capture, then operate on that tree.
+    When the field is absent the framework checkout (``ROOT``) is used, so
+    in-repo collabs are unaffected. A declared-but-invalid ``workRepo`` is a
+    hard error rather than a silent fall back to the wrong tree.
+    """
+    raw = entry.get('workRepo')
+    if not isinstance(raw, str) or not raw.strip():
+        return ROOT
+    return resolve_git_work_tree(raw, 'workRepo')
+
+
+def git_commit_paths(ref: str, repo_root: Path = ROOT) -> set[str] | None:
     try:
         probe = subprocess.run(
-            ['git', '-C', str(ROOT), 'cat-file', '-e', f'{ref}^{{commit}}'],
+            ['git', '-C', str(repo_root), 'cat-file', '-e', f'{ref}^{{commit}}'],
             check=False,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
@@ -1334,7 +1257,7 @@ def git_commit_paths(ref: str) -> set[str] | None:
     if probe.returncode != 0:
         return None
     result = subprocess.run(
-        ['git', '-C', str(ROOT), 'show', '--name-only', '--format=', ref],
+        ['git', '-C', str(repo_root), 'show', '--name-only', '--format=', ref],
         check=False,
         text=True,
         stdout=subprocess.PIPE,
@@ -1345,12 +1268,98 @@ def git_commit_paths(ref: str) -> set[str] | None:
     return {line.strip() for line in result.stdout.splitlines() if line.strip()}
 
 
+def git_index_or_staged_paths(paths: list[str], repo_root: Path = ROOT) -> set[str]:
+    if not paths:
+        return set()
+    commands = [
+        ['git', '-C', str(repo_root), 'ls-files', '--', *paths],
+        ['git', '-C', str(repo_root), 'diff', '--cached', '--name-only', '--', *paths],
+    ]
+    found: set[str] = set()
+    for command in commands:
+        result = subprocess.run(
+            command,
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        if result.returncode != 0:
+            detail = result.stderr.strip() or result.stdout.strip() or 'unknown git error'
+            die(f'SEAL-GIT-STATE: git state check failed: {detail}')
+        found.update(line.strip() for line in result.stdout.splitlines() if line.strip())
+    return found
+
+
+def git_committed_deletion_paths(paths: list[str], repo_root: Path = ROOT) -> set[str]:
+    if not paths:
+        return set()
+    result = subprocess.run(
+        ['git', '-C', str(repo_root), 'log', '--diff-filter=D', '--name-only', '--format=', '--', *paths],
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if result.returncode != 0:
+        detail = result.stderr.strip() or result.stdout.strip() or 'unknown git error'
+        die(f'SEAL-GIT-STATE: git committed deletion check failed: {detail}')
+    return {line.strip() for line in result.stdout.splitlines() if line.strip()}
+
+
+def git_unstaged_paths(paths: list[str], repo_root: Path = ROOT) -> set[str]:
+    if not paths:
+        return set()
+    result = subprocess.run(
+        ['git', '-C', str(repo_root), 'diff', '--name-only', '--', *paths],
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if result.returncode != 0:
+        detail = result.stderr.strip() or result.stdout.strip() or 'unknown git error'
+        die(f'SEAL-GIT-STATE: git unstaged check failed: {detail}')
+    return {line.strip() for line in result.stdout.splitlines() if line.strip()}
+
+
+def working_tree_path_exists(path: str, repo_root: Path = ROOT) -> bool:
+    return os.path.lexists(repo_root / path)
+
+
+def assert_execution_touched_paths_in_git_state(entry: dict) -> None:
+    touched = touched_paths_for_execution(entry)
+    if not touched:
+        return
+    repo_root = work_repo_root(entry)
+    in_git = git_index_or_staged_paths(touched, repo_root)
+    unstaged = git_unstaged_paths(touched, repo_root)
+    committed_deletions = git_committed_deletion_paths(touched, repo_root)
+    invalid: list[str] = []
+    for path in touched:
+        if path in unstaged:
+            invalid.append(path)
+            continue
+        if path in in_git:
+            continue
+        if path in committed_deletions and not working_tree_path_exists(path, repo_root):
+            continue
+        invalid.append(path)
+    invalid = sorted(invalid)
+    if invalid:
+        die(
+            'SEAL-GIT-STATE: implementation not in git; '
+            f'unstaged and uncommitted touchedPath(s): {json.dumps(invalid, separators=(",", ":"))}'
+        )
+
+
 def assert_no_execution_touched_path_drift(entry: dict) -> None:
     # Match committed files against the UNION of every role's declared paths, not
     # each role in isolation: one commit may legitimately hold several roles'
     # scoped subsets. The safety property is "every committed file was declared by
     # some role, and every declared path appears in some commit" — per-role exact
     # matching falsely rejects a valid combined commit.
+    repo_root = work_repo_root(entry)
     declared_paths: set[str] = set()
     committed_paths: set[str] = set()
     commits_seen: list[str] = []
@@ -1368,7 +1377,7 @@ def assert_no_execution_touched_path_drift(entry: dict) -> None:
         for commit in commits:
             if commit not in commits_seen:
                 commits_seen.append(commit)
-            commit_paths = git_commit_paths(commit)
+            commit_paths = git_commit_paths(commit, repo_root)
             if commit_paths is not None:
                 committed_paths.update(commit_paths)
         declared_paths.update(
@@ -2698,6 +2707,10 @@ def set_field(
             if reviewer and reviewer in turnOrder:
                 die('turn-order must not include reviewerRole')
             entry['turnOrder'] = turnOrder
+        elif field == 'work-repo':
+            if value is None:
+                die('work-repo requires a path')
+            entry['workRepo'] = str(resolve_git_work_tree(value, 'work-repo'))
         else:
             if value is None:
                 die(f'{field} requires a value')
@@ -2890,9 +2903,9 @@ def parse_execution_datetime(raw: str) -> dt.datetime | None:
     return parsed
 
 
-def current_head_commit(date: str) -> str | None:
+def current_head_commit(date: str, repo_root: Path = ROOT) -> str | None:
     result = subprocess.run(
-        ['git', '-C', str(ROOT), 'rev-parse', 'HEAD'],
+        ['git', '-C', str(repo_root), 'rev-parse', 'HEAD'],
         check=False,
         text=True,
         stdout=subprocess.PIPE,
@@ -2905,7 +2918,7 @@ def current_head_commit(date: str) -> str | None:
     if not commit:
         die('execution commit capture failed: git rev-parse HEAD returned empty output')
     date_result = subprocess.run(
-        ['git', '-C', str(ROOT), 'show', '-s', '--format=%cI', commit],
+        ['git', '-C', str(repo_root), 'show', '-s', '--format=%cI', commit],
         check=False,
         text=True,
         stdout=subprocess.PIPE,
@@ -4077,7 +4090,7 @@ def record_execution(
 
         execution_state = {'status': status, 'date': date}
         execution_state['entryId'] = execution_identity(role, date)
-        head_commit = current_head_commit(date)
+        head_commit = current_head_commit(date, work_repo_root(entry))
         if head_commit is not None:
             execution_state['commits'] = [head_commit]
         if agent_id:
@@ -4760,6 +4773,7 @@ def seal_state(path: Path, target: str, role: str | None = None, resume: bool = 
             role == reviewer_role(entry)
             and result['verificationSubState'] == 'verification'
             and result['verificationReviewSubState'] == 'seal'
+            and result['verificationRounds'] > 0
         )
         result['readyToAssess'] = (
             role == reviewer_role(entry)
@@ -5315,6 +5329,7 @@ def render_seal(
                 die('verification assessment is active; seal block is immutable; provide --outcome to record a verdict')
             if not all_execution_completed(entry):
                 die('verification seal requires all execution entries to be completed')
+            assert_execution_touched_paths_in_git_state(entry)
             assert_no_execution_touched_path_drift(entry)
             assert_no_execution_agent_conflation(entry)
             rounds = verification.get('rounds', 0)
@@ -5406,6 +5421,44 @@ def reopen_collab(
         commit_registry_and_transcript(path, data, transcript_path, rendered)
     print_post_action_advisories(entry, None, None, None, next_line_for_state(entry))
     print(entry['id'])
+    return 0
+
+
+def restart_verification(
+    path: Path,
+    target: str,
+    caller_role: str | None = None,
+) -> int:
+    """Reviewer recovery primitive: restart Completion.verification after the
+    execution record was corrected (e.g. via /collab rewrite execution). Resets
+    rounds to 0, clears participant-verification stages, and returns the cycle to
+    the 'participant' sub-state WITHOUT re-recording execution, so the corrected
+    commit reference is preserved. Participants then re-run /collab participant
+    verify to record a fresh paired round before the reviewer seals."""
+    with registry_lock(path):
+        data = load_registry(path)
+        entry = resolve_collab(data, target)
+        assert_caller_role(entry, caller_role, 'restart-verification', reviewer_role(entry))
+        if entry['status'] in {'closed', 'archived'}:
+            die('record is closed')
+        if not reviewer_backed(entry):
+            die('restart-verification requires a reviewer-backed collab')
+        if entry['activePhase'] != 'Completion':
+            die('restart-verification requires activePhase = Completion')
+        if not all_execution_completed(entry):
+            die('restart-verification requires all execution entries completed')
+        initialize_completion_state(entry, 'verification', reset_rounds=True)
+        save_registry(path, data)
+    verification = verification_state(entry)
+    print(
+        'verification cycle restarted: rounds=0, participant stages cleared, '
+        f'subState={verification.get("subState")}'
+    )
+    next_role = first_pending_participant_verification_role(entry)
+    if next_role:
+        print(f'NEXT: Run /collab participant verify for role {next_role}.')
+    else:
+        print(f'NEXT: Run /collab seal verification for role {reviewer_role(entry)}.')
     return 0
 
 
@@ -6270,6 +6323,10 @@ def build_parser() -> argparse.ArgumentParser:
     seal_render_parser.add_argument('--json', action='store_true')
     seal_render_parser.add_argument('--caller-role')
 
+    restart_verification_parser = subparsers.add_parser('restart-verification')
+    restart_verification_parser.add_argument('target')
+    restart_verification_parser.add_argument('--caller-role')
+
     reopen_parser = subparsers.add_parser('reopen')
     reopen_parser.add_argument('target')
     reopen_parser.add_argument('phase', choices=['action-plan', 'handoff'])
@@ -6480,6 +6537,8 @@ def main(argv: list[str]) -> int:
             args.json,
             args.caller_role,
         )
+    if args.command == 'restart-verification':
+        return restart_verification(path, args.target, args.caller_role)
     if args.command == 'reopen':
         return reopen_collab(path, args.target, args.phase, args.caller_role)
     if args.command == 'show-verdict':

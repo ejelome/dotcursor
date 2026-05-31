@@ -5,8 +5,8 @@ Route documentation workflows through one singular namespace so the command pale
 ## Trigger
 
 **Slash:** `/doc`
-**Signature:** `/doc <assess | compact | compare | write changelog | write manual | write readme>`
-**Prose dispatch:** `(doc <assess | compact | compare | write changelog | write manual | write readme>)` — prose routing hint; not a terminal command.
+**Signature:** `/doc <write changelog | write manual | write readme>`
+**Prose dispatch:** `(doc <write changelog | write manual | write readme>)` — prose routing hint; not a terminal command.
 **Search phrases:** docs workflow, documentation command, markdown workflow
 
 ## Steps
@@ -17,7 +17,7 @@ Route documentation workflows through one singular namespace so the command pale
 
 ## Notes
 
-- **Route:** `assess` -> [assess](assess/index.md); `compact` -> [compact](compact/index.md); `compare` -> [compare](compare/index.md); `write changelog` -> [write-changelog](write-changelog/index.md); `write manual` -> [write-manual](write-manual/index.md); `write readme` -> [write-readme](write-readme/index.md).
+- **Route:** `write changelog` -> [write-changelog](write-changelog/index.md); `write manual` -> [write-manual](write-manual/index.md); `write readme` -> [write-readme](write-readme/index.md).
 - **Parameters:** route selector from the signature above.
 - **Bare namespace help:** A bare `/doc` invocation aborts and emits the route roster in **Route**.
-- **Examples:** `/doc write readme`, `/doc write manual`, `/doc write changelog atomic`, `/doc assess README.md`, `/doc compare old.md new.md`, `/doc compact README.md`.
+- **Examples:** `/doc write readme`, `/doc write manual`, `/doc write changelog atomic`.

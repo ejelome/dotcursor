@@ -57,9 +57,40 @@ _scaffold "$contract"
 printf '# Contract spec\n' >"$contract/tools/command-system/contract.md"
 printf '#!/usr/bin/env bash\n# Contract: tools/command-system/contract.md\n' \
   >"$contract/tools/command-system/validator.sh"
+printf '# Contract: tools/command-system/contract.md\n' \
+  >"$contract/tools/command-system/validator.py"
 
 if ! COMMAND_CONFIG_ROOT="$contract" "$GATE" >/dev/null 2>&1; then
-  printf 'FAIL: # Contract: reference should satisfy reachability\n' >&2
+  printf 'FAIL: # Contract: references should satisfy reachability\n' >&2
+  exit 1
+fi
+
+# --- Test 5: outbound root contract references must resolve ------------------
+outbound="$TMPDIR_BASE/outbound"
+_scaffold "$outbound"
+printf 'Authority references `rules/{auto,shared}.mdc`.\n' >"$outbound/REPOSITORY.md"
+
+if COMMAND_CONFIG_ROOT="$outbound" "$GATE" >/dev/null 2>&1; then
+  printf 'FAIL: missing outbound root contract reference should be rejected\n' >&2
+  exit 1
+fi
+
+out="$(COMMAND_CONFIG_ROOT="$outbound" "$GATE" 2>&1 || true)"
+if ! printf '%s\n' "$out" | grep -q 'FAIL: unresolved outbound contract reference: REPOSITORY.md:1: rules/{auto,shared}.mdc'; then
+  printf 'FAIL: outbound reference error message not stable: %s\n' "$out" >&2
+  exit 1
+fi
+
+# --- Test 6: brace-expanded outbound root references may resolve -------------
+outbound_ok="$TMPDIR_BASE/outbound-ok"
+_scaffold "$outbound_ok"
+mkdir -p "$outbound_ok/templates"
+printf '# A\n' >"$outbound_ok/templates/CLAUDE.md"
+printf '# B\n' >"$outbound_ok/templates/AGENTS.md"
+printf 'Templates: `templates/{CLAUDE,AGENTS}.md`.\n' >"$outbound_ok/REPOSITORY.md"
+
+if ! COMMAND_CONFIG_ROOT="$outbound_ok" "$GATE" >/dev/null 2>&1; then
+  printf 'FAIL: resolved brace-expanded contract references should pass\n' >&2
   exit 1
 fi
 

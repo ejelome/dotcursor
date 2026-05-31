@@ -30,7 +30,7 @@ output="$("$ROOT/tools/collab/registry.py" seal-render "$TARGET" pa \
   --restore-target "Action Plan" \
   --restore-reason "Action Plan acceptance criteria were not met." \
   --failure-category missing-acceptance \
-  --evidence '{"registryRevision":2,"transcriptIds":["action-plan-pe-1"],"committedPaths":["tools/collab/registry.py"],"executionEntryIds":["pe-2026-05-15t21-00-00-02-00"]}' \
+  --evidence '{"registryRevision":2,"transcriptIds":["action-plan-pe-1"],"committedPaths":["tools/command-system/audit.sh"],"executionEntryIds":["pe-2026-05-15t21-00-00-02-00"]}' \
   --caller-role pa)"
 
 if [[ "$output" != *"NEXT: Moderator should run /collab reopen action-plan $TARGET."* ]]; then

@@ -67,6 +67,39 @@ PY
 assert_fails_with "must differ from the route default capabilityTier or effortTier" \
   python3 tools/command-system/command-advisories.py --check --data-dir "$TMPDIR/flat-override"
 
+cp -R data "$TMPDIR/missing-coverage-decision"
+python3 - "$TMPDIR/missing-coverage-decision/command-advisory-policy.json" <<'PY'
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+data = json.loads(path.read_text())
+data["namespaceCoverageExemptions"].pop("doc")
+path.write_text(json.dumps(data, indent=2) + "\n")
+PY
+assert_fails_with "advisory coverage policy lacks namespace decision(s): doc" \
+  python3 tools/command-system/command-advisories.py --check --data-dir "$TMPDIR/missing-coverage-decision"
+
+cp -R data "$TMPDIR/required-without-file"
+python3 - "$TMPDIR/required-without-file/command-advisory-policy.json" <<'PY'
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+data = json.loads(path.read_text())
+data["namespaceCoverageExemptions"].pop("doc")
+data["requiredNamespaces"].append("doc")
+path.write_text(json.dumps(data, indent=2) + "\n")
+PY
+assert_fails_with "missing required advisory namespace file(s): doc" \
+  python3 tools/command-system/command-advisories.py --check --data-dir "$TMPDIR/required-without-file"
+
 python3 - "$ROOT/generated/command-reference.md" "$TMPDIR/leaky-command-reference.md" <<'PY'
 from __future__ import annotations
 
@@ -85,5 +118,39 @@ target.write_text(
 PY
 assert_fails_with "runtimePolicyRef" \
   python3 tools/command-system/command-advisories.py --check --artifact "$TMPDIR/leaky-command-reference.md"
+
+cp -R data "$TMPDIR/extra-model-token-data"
+python3 - "$TMPDIR/extra-model-token-data/command-advisory-policy.json" <<'PY'
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+data = json.loads(path.read_text())
+data["modelOrHarnessLeakageTerms"].append("aurora")
+path.write_text(json.dumps(data, indent=2) + "\n")
+PY
+python3 - "$ROOT/generated/command-reference.md" "$TMPDIR/aurora-command-reference.md" <<'PY'
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+source = Path(sys.argv[1])
+target = Path(sys.argv[2])
+text = source.read_text()
+target.write_text(
+    text.replace(
+        "<!-- END GENERATED:COMMAND_REFERENCE -->",
+        "> **Recommended:** execution capability; high effort - aurora family leak\n<!-- END GENERATED:COMMAND_REFERENCE -->",
+    )
+)
+PY
+assert_fails_with "model term 'aurora'" \
+  python3 tools/command-system/command-advisories.py --check \
+    --data-dir "$TMPDIR/extra-model-token-data" \
+    --artifact "$TMPDIR/aurora-command-reference.md"
 
 printf 'OK: command advisory validation enforces coverage, aliases, overrides, and render leakage\n'

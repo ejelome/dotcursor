@@ -18,7 +18,7 @@ revision="$(assessment_revision "$TARGET")"
 "$ROOT/tools/collab/registry.py" seal-render "$TARGET" pa \
   --observed-revision "$revision" \
   --outcome success \
-  --evidence '{"registryRevision":2,"committedPaths":["tools/collab/registry.py"],"executionEntryIds":["pe-2026-05-15t21-00-00-02-00"]}' \
+  --evidence '{"registryRevision":2,"committedPaths":["tools/command-system/audit.sh"],"executionEntryIds":["pe-2026-05-15t21-00-00-02-00"]}' \
   --caller-role pa >/dev/null
 
 "$ROOT/tools/collab/registry.py" show-verdict "$TARGET" >verdict.json

@@ -22,8 +22,8 @@
 !.collab.json
 !.github/
 !.github/**
-!core/framework/
-!core/framework/**
+!core/
+!core/**
 !data/
 !data/**
 !generated/

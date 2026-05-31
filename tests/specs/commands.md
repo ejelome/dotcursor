@@ -29,7 +29,6 @@ Public command files under `~/.cursor/commands/`:
 - `doc/index.md`
 - `quality/index.md`
 - `git/index.md`
-- `narrative/index.md`
 - `test/index.md`
 
 ## Output

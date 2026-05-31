@@ -45,7 +45,6 @@ ALLOWLISTED_TRACE_PATHS = {
     "data/source-ledger.md",
     "tests/tools/command-system/check-source-ledger.test.sh",
     "tests/tools/command-system/sync-context-gate.test.sh",
-    "tests/tools/narrative/state.py/gate-enforcement.test.sh",
 }
 
 

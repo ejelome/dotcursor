@@ -92,7 +92,7 @@ follow_output="$("$ROOT/tools/collab/registry.py" seal-render "$FOLLOW_TARGET" p
   --observed-revision "$follow_revision" \
   --cap-exit follow-up-collab \
   --restore-reason "open participant verification finding" \
-  --evidence '{"registryRevision":1,"executionEntryIds":["pe-2026-05-15t21-00-00-02-00"],"committedPaths":["tools/collab/registry.py"]}' \
+  --evidence '{"registryRevision":1,"executionEntryIds":["pe-2026-05-15t21-00-00-02-00"],"committedPaths":["tools/command-system/audit.sh"]}' \
   --failure-category "verification-gap" \
   --caller-role pa)"
 
@@ -113,7 +113,7 @@ assert entry['verification']['subState'] == 'assessment'
 assert entry['verificationSeal']['capExit'] == 'follow-up-collab'
 assert entry['verificationSeal']['followUp']['restoreReason'] == 'open participant verification finding'
 assert entry['verificationSeal']['followUp']['failureCategory'] == 'verification-gap'
-assert entry['verificationSeal']['followUp']['evidence']['committedPaths'] == ['tools/collab/registry.py']
+assert entry['verificationSeal']['followUp']['evidence']['committedPaths'] == ['tools/command-system/audit.sh']
 PY
 
 printf 'OK: verification cap exits enter assessment state without applying verdict work and follow-up exits carry structured guidance\n'

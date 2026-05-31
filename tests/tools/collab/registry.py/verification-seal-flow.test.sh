@@ -68,7 +68,7 @@ REGISTRY="$("$ROOT/tools/collab/registry.py" registry-path)"
   --auto-close \
   --validation-result passed \
   --validation-scope scoped \
-  --touched-path tools/collab/registry.py \
+  --touched-path tools/command-system/audit.sh \
   --caller-role pe >/dev/null
 
 python3 - "$REGISTRY" <<'PY'
@@ -180,7 +180,7 @@ assessment_revision="$(read_json_field registryRevision <<<"$assessment_state")"
 "$ROOT/tools/collab/registry.py" seal-render "$TARGET" pa \
   --observed-revision "$assessment_revision" \
   --outcome success \
-  --evidence '{"registryRevision":1,"executionEntryIds":["pe-2026-05-15t21-00-00-02-00"],"committedPaths":["tools/collab/registry.py"]}' \
+  --evidence '{"registryRevision":1,"executionEntryIds":["pe-2026-05-15t21-00-00-02-00"],"committedPaths":["tools/command-system/audit.sh"]}' \
   --caller-role pa >/dev/null
 python3 - "$REGISTRY" <<'PY'
 import json
@@ -201,7 +201,7 @@ ZERO_TARGET="$RUN_DATE-verification-zero-round"
   --auto-close \
   --validation-result passed \
   --validation-scope scoped \
-  --touched-path tools/collab/registry.py \
+  --touched-path tools/command-system/audit.sh \
   --caller-role pe >/dev/null
 python3 - "$REGISTRY" <<'PY'
 import base64
@@ -251,7 +251,7 @@ CAP_TARGET="$RUN_DATE-verification-cap-exit"
   --assigned-role pe \
   --validation-result passed \
   --validation-scope scoped \
-  --touched-path tools/collab/registry.py \
+  --touched-path tools/command-system/audit.sh \
   --caller-role pe >/dev/null
 python3 - "$REGISTRY" <<'PY'
 import json
@@ -307,7 +307,7 @@ RETRY_TARGET="$RUN_DATE-verification-render-retry"
   --assigned-role pe \
   --validation-result passed \
   --validation-scope scoped \
-  --touched-path tools/collab/registry.py \
+  --touched-path tools/command-system/audit.sh \
   --caller-role pe >/dev/null
 retry_state="$("$ROOT/tools/collab/registry.py" seal-state "$RETRY_TARGET" pa)"
 python3 - "$REGISTRY" <<'PY'

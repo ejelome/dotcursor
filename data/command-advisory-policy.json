@@ -1,0 +1,20 @@
+{
+  "requiredNamespaces": [
+    "agent",
+    "collab",
+    "quality"
+  ],
+  "namespaceCoverageExemptions": {
+    "doc": "Documentation rewrite routes are artifact-specific and intentionally exempt from caller recommendations.",
+    "git": "Git workflow routes depend on repository and issue state, so caller recommendations remain policy-exempt.",
+    "test": "Test harness dispatch is a maintainer QA surface and remains policy-exempt from caller recommendations."
+  },
+  "modelOrHarnessLeakageTerms": [
+    "claude",
+    "codex",
+    "gpt",
+    "haiku",
+    "opus",
+    "sonnet"
+  ]
+}

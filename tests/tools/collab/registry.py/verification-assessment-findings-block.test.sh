@@ -23,7 +23,7 @@ output="$("$ROOT/tools/collab/registry.py" seal-render "$TARGET" pa \
   --restore-target "Action Plan" \
   --restore-reason "Action Plan acceptance criteria were not met." \
   --failure-category missing-acceptance \
-  --evidence '{"registryRevision":2,"transcriptIds":["action-plan-pe-1"],"committedPaths":["tools/collab/registry.py"],"executionEntryIds":["pe-2026-05-15t21-00-00-02-00"]}' \
+  --evidence '{"registryRevision":2,"transcriptIds":["action-plan-pe-1"],"committedPaths":["tools/command-system/audit.sh"],"executionEntryIds":["pe-2026-05-15t21-00-00-02-00"]}' \
   --caller-role pa)"
 
 if [[ "$output" != *"NEXT: Moderator should run /collab reopen action-plan $TARGET."* ]]; then
@@ -47,12 +47,12 @@ assert 'restoreReason: Action Plan acceptance criteria were not met.' in block
 assert 'restoreTarget: Action Plan' in block
 assert 'failureCategory: missing-acceptance' in block
 assert '  registryRevision: 2' in block
-assert '  committedPaths: ["tools/collab/registry.py"]' in block
+assert '  committedPaths: ["tools/command-system/audit.sh"]' in block
 assert '  executionEntryIds: ["pe-2026-05-15t21-00-00-02-00"]' in block
 assert '  transcriptIds: ["action-plan-pe-1"]' in block
 assert f'  NEXT: /collab reopen action-plan {entry["id"]}' in block
 assert '  REASON: Action Plan acceptance criteria were not met.' in block
-assert '  AFFECTED: committedPaths=["tools/collab/registry.py"]; executionEntryIds=["pe-2026-05-15t21-00-00-02-00"]; transcriptIds=["action-plan-pe-1"]' in block
+assert '  AFFECTED: committedPaths=["tools/command-system/audit.sh"]; executionEntryIds=["pe-2026-05-15t21-00-00-02-00"]; transcriptIds=["action-plan-pe-1"]' in block
 assert '  RETURN: Action Plan' in block
 assert f'helperNext: NEXT: Moderator should run /collab reopen action-plan {entry["id"]}.' in block
 assert block.index('  RETURN: Action Plan') < block.index('helperNext:')
@@ -84,7 +84,7 @@ success_revision="$(assessment_revision "$SUCCESS_TARGET")"
 "$ROOT/tools/collab/registry.py" seal-render "$SUCCESS_TARGET" pa \
   --observed-revision "$success_revision" \
   --outcome success \
-  --evidence '{"registryRevision":2,"committedPaths":["tools/collab/registry.py"],"executionEntryIds":["pe-2026-05-15t21-00-00-02-00"]}' \
+  --evidence '{"registryRevision":2,"committedPaths":["tools/command-system/audit.sh"],"executionEntryIds":["pe-2026-05-15t21-00-00-02-00"]}' \
   --caller-role pa >/dev/null
 
 python3 - "$SUCCESS_REGISTRY" <<'PY'

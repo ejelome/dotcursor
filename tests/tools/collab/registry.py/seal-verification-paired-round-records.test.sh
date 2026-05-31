@@ -36,7 +36,7 @@ printf 'final audit clean\n' > "$FINAL_AUDIT_FILE"
   --remediation-file "$REMEDIATION_FILE" \
   --final-audit-file "$FINAL_AUDIT_FILE" \
   --status completed \
-  --touched-path tools/collab/registry.py \
+  --touched-path tools/command-system/audit.sh \
   --execution-agent-id codex \
   --audit-agent-id codex \
   --remediation-agent-id codex \

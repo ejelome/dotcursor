@@ -15,7 +15,7 @@ Reference document for the resolved collab `registry.json` schema and field owne
 
 ## Notes
 
-- **Registry contract:** The default registry is resolved from `.collab.json` to `$HOME/.collabs/<projectId>/registry.json`; `--registry` bypasses that resolver. That registry is the authoritative source of truth for all collab command state. Markdown transcripts under `records/*.md` in the same state root are append-only human context; they are never parsed for machine state. All routes resolve collab targets, phase, status, participants, and turn order from the registry only, using `tools/collab/registry.py` as the shared read/write helper.
+- **Registry contract:** The default registry is resolved from `.collab.json` to `$HOME/.collabs/<projectId>/registry.json`; `--registry` bypasses that resolver. The registry is the authoritative source for durable collab metadata: target selection, lifecycle phase, status, participants, turn order, reviewer configuration, structured Handoff state, execution metadata, verification state, seals, and verdicts. Markdown transcripts under `records/*.md` in the same user-scope collab state root are the human ledger and are parsed only by helper-owned transcript readers for transcript-authored evidence: contribution order, Action Plan checklist assignments, chartered deliverables, full-body drift signatures, and verification inputs.
 
 - **Lock lifecycle:** Registry and transcript mutations serialize through a persistent `registry.json.lock` file beside `registry.json` in the user-scope collab state root. Normal writes do not delete this file; removing an `fcntl` lock path can split waiting processes across different inodes. An idle lock file is valid state; validation refreshes an aged idle lock marker in place rather than deleting it. Validation reports an aged lock only when another process still actively holds it, with guidance to confirm whether the command is stuck before terminating it.
 
@@ -34,6 +34,7 @@ Reference document for the resolved collab `registry.json` schema and field owne
   | `slug` | string | User-facing handle. Format: lowercased, hyphen-separated words. Used in commands instead of file paths. |
   | `title` | string | Human-readable name from `init`. |
   | `description` | string | Brief description from `init`. |
+  | `workRepo` | string or absent | Optional path to the working repository when the collab record is stored outside the target repo (e.g., `~/.cursor` hosting a collab for a separate project). When set, touched-path verification and git-state checks during seal resolve against this path instead of the default. Must be a valid git work tree; an invalid path aborts. Set via `/collab set work-repo <path>`. |
   | `createdAt` | string | ISO-8601 creation timestamp set by `init` for records created after the terminal selector contract. Records without `createdAt` predate this contract and are grandfathered without rewrite. |
   | `terminal` | string | Workflow-model terminal selector: `seal|issue`. Set by `init` from `--terminal <seal|issue>` and defaulted to `seal` for new records. Records without `terminal` predate this contract and are grandfathered without rewrite. |
   | `status` | string | `open` \| `closed` \| `archived`. |
@@ -79,6 +80,7 @@ Reference document for the resolved collab `registry.json` schema and field owne
   | `createdAt` | `init` |
   | `terminal` | `init` |
   | `title`, `description` | `set` |
+  | `workRepo` | `set` |
   | `archived` | `archive` |
   | `execution.<role>` | `execute` |
   | `completion.subState` | `execute` (set to `verification` when all assigned roles complete); `seal-render` (resets on cap-exit) |
@@ -88,4 +90,6 @@ Reference document for the resolved collab `registry.json` schema and field owne
   | `verificationSeal` | `seal-render`; stale-seal trigger in `rewrite-execution`, transcript repair, scope-gate helpers |
   | `verdict` | reviewer (written during `verification.assessment`; `seal-render` validates shape) |
 
-- **Shared helper:** `tools/collab/registry.py` is the single implementation of registry read, write, and target resolution. All collab routes delegate registry access to this helper. Route specs reference it by name and do not restate the resolution algorithm.
+- **Shared helper:** `tools/collab/registry.py` is the single implementation of registry read, write, and target resolution. Helper-owned transcript reader code lives in `tools/collab/transcript_readers.py` and is limited to deriving state that is authored in transcript prose, including contributors, Action Plan assignments, chartered deliverables, and verification inputs. All collab routes delegate registry access to these helpers. Route specs reference the helpers by name and do not restate the resolution algorithm.
+
+- **Decomposition follow-up:** `tools/collab/transcript_readers.py` is the first extraction from the registry helper. Remaining registry-helper decomposition should proceed by bounded behavior slices with same-change tests, preserving `tools/collab/registry.py` as the public CLI entry point unless a route contract explicitly moves a subcommand.

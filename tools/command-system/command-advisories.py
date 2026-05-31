@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Contract: tools/command-system/advisory-coverage-policy.md
 from __future__ import annotations
 
 import argparse
@@ -18,16 +19,15 @@ COMMANDS_DIR = CONFIG_ROOT / "commands"
 ROLES_DIR = CONFIG_ROOT / "core/collab/roles"
 ARTIFACT = CONFIG_ROOT / "generated" / "command-reference.md"
 SCHEMA_PATH = DATA_DIR / "command-advisory.schema.json"
+POLICY_PATH = DATA_DIR / "command-advisory-policy.json"
 BEGIN_MARKER = "<!-- BEGIN GENERATED:COMMAND_REFERENCE -->"
 END_MARKER = "<!-- END GENERATED:COMMAND_REFERENCE -->"
 
-REQUIRED_V0_NAMESPACES = {"agent", "collab", "narrative", "quality"}
 PUBLIC_RENDER_FIELDS = {"route", "role", "capabilityTier", "effortTier", "rationale", "recommendation"}
 INTERNAL_FIELDS = {"concerns", "runtimePolicyRef"}
 INTERNAL_RENDER_TOKENS = {"runtimePolicyRef", "concerns[]", "`concerns`", "`runtimePolicyRef`"}
 ALLOWED_FIELDS = PUBLIC_RENDER_FIELDS | INTERNAL_FIELDS
 NOT_APPLICABLE = "not-applicable"
-KNOWN_MODEL_OR_HARNESS_TERMS = {"claude", "codex", "gpt", "haiku", "opus", "sonnet"}
 
 
 class AdvisoryError(Exception):
@@ -65,6 +65,13 @@ class Catalog:
     overrides: dict[tuple[str, str], list[Advisory]]
 
 
+@dataclass(frozen=True)
+class AdvisoryPolicy:
+    required_namespaces: set[str]
+    namespace_coverage_exemptions: dict[str, str]
+    model_or_harness_leakage_terms: set[str]
+
+
 def load_json(path: Path) -> Any:
     try:
         return json.loads(path.read_text(encoding="utf-8"))
@@ -72,6 +79,51 @@ def load_json(path: Path) -> Any:
         raise AdvisoryError(f"missing required file: {path}") from exc
     except json.JSONDecodeError as exc:
         raise AdvisoryError(f"invalid JSON: {path}: {exc}") from exc
+
+
+def string_list_field(data: dict[str, Any], field: str, path: Path) -> set[str]:
+    value = data.get(field)
+    if not isinstance(value, list) or not value:
+        raise AdvisoryError(f"{path}: {field} must be a non-empty array")
+    items: set[str] = set()
+    for item in value:
+        if not isinstance(item, str) or not item.strip():
+            raise AdvisoryError(f"{path}: {field} entries must be non-empty strings")
+        items.add(item.strip())
+    return items
+
+
+def string_map_field(data: dict[str, Any], field: str, path: Path) -> dict[str, str]:
+    value = data.get(field)
+    if not isinstance(value, dict):
+        raise AdvisoryError(f"{path}: {field} must be an object")
+    result: dict[str, str] = {}
+    for key, item in value.items():
+        if not isinstance(key, str) or not key.strip():
+            raise AdvisoryError(f"{path}: {field} keys must be non-empty strings")
+        if not isinstance(item, str) or not item.strip():
+            raise AdvisoryError(f"{path}: {field}.{key} must be a non-empty string")
+        result[key.strip()] = item.strip()
+    return result
+
+
+def load_advisory_policy(path: Path = POLICY_PATH) -> AdvisoryPolicy:
+    data = load_json(path)
+    if not isinstance(data, dict):
+        raise AdvisoryError(f"{path}: advisory policy must be an object")
+    allowed = {
+        "requiredNamespaces",
+        "namespaceCoverageExemptions",
+        "modelOrHarnessLeakageTerms",
+    }
+    unknown = set(data) - allowed
+    if unknown:
+        raise AdvisoryError(f"{path}: unknown field(s): {', '.join(sorted(unknown))}")
+    return AdvisoryPolicy(
+        required_namespaces=string_list_field(data, "requiredNamespaces", path),
+        namespace_coverage_exemptions=string_map_field(data, "namespaceCoverageExemptions", path),
+        model_or_harness_leakage_terms=string_list_field(data, "modelOrHarnessLeakageTerms", path),
+    )
 
 
 def first_label(text: str, label: str) -> str:
@@ -114,6 +166,16 @@ def load_routes(commands_dir: Path = COMMANDS_DIR) -> dict[str, dict[str, Route]
                 raise AdvisoryError(f"duplicate invocable route name in {namespace}: {route_name}")
             by_namespace[route_name] = Route(namespace, route_name, slash, path)
     return routes
+
+
+def load_public_namespaces(commands_dir: Path = COMMANDS_DIR) -> set[str]:
+    if not commands_dir.exists():
+        return set()
+    return {
+        path.parent.name
+        for path in sorted(commands_dir.glob("*/index.md"))
+        if path.parent.name
+    }
 
 
 def load_role_keys(roles_dir: Path = ROLES_DIR) -> set[str]:
@@ -159,8 +221,8 @@ def runtime_policy_refs(policy: Any) -> set[str]:
     return refs
 
 
-def runtime_policy_forbidden_terms(policy: Any) -> set[str]:
-    terms = set(KNOWN_MODEL_OR_HARNESS_TERMS)
+def runtime_policy_forbidden_terms(policy: Any, advisory_policy: AdvisoryPolicy) -> set[str]:
+    terms = set(advisory_policy.model_or_harness_leakage_terms)
     if isinstance(policy, dict):
         terms.update(str(key) for key in policy if isinstance(key, str))
     stack = [policy]
@@ -267,19 +329,36 @@ def load_catalog(
         raise AdvisoryError(f"missing advisory schema: {schema_path}")
 
     routes = load_routes(commands_dir)
+    public_namespaces = load_public_namespaces(commands_dir)
     role_keys = load_role_keys(roles_dir)
     capability_aliases = load_alias_keys(data_dir / "capability-aliases.json", "capability alias")
     effort_tiers = load_alias_keys(data_dir / "effort-tiers.json", "effort tier")
     runtime_policy = load_json(data_dir / "runtime-policy.json")
     runtime_refs = runtime_policy_refs(runtime_policy)
+    advisory_policy = load_advisory_policy(data_dir / "command-advisory-policy.json")
 
     advisories_dir = data_dir / "advisories"
     if not advisories_dir.exists():
         raise AdvisoryError(f"advisories directory missing: {advisories_dir}")
     namespace_files = {path.stem: path for path in sorted(advisories_dir.glob("*.json"))}
-    missing_namespaces = sorted(REQUIRED_V0_NAMESPACES - set(namespace_files))
+    required_namespaces = advisory_policy.required_namespaces
+    coverage_exemptions = advisory_policy.namespace_coverage_exemptions
+    known_namespaces = set(routes) | public_namespaces
+    unknown_required = sorted(required_namespaces - known_namespaces)
+    if unknown_required:
+        raise AdvisoryError(f"required advisory namespace has no invocable routes: {', '.join(unknown_required)}")
+    unknown_exemptions = sorted(set(coverage_exemptions) - known_namespaces)
+    if unknown_exemptions:
+        raise AdvisoryError(f"advisory coverage exemption has no invocable routes: {', '.join(unknown_exemptions)}")
+    overlapping = sorted(required_namespaces & set(coverage_exemptions))
+    if overlapping:
+        raise AdvisoryError(f"advisory namespace cannot be both required and exempt: {', '.join(overlapping)}")
+    missing_namespaces = sorted(required_namespaces - set(namespace_files))
     if missing_namespaces:
-        raise AdvisoryError(f"missing v0 advisory namespace file(s): {', '.join(missing_namespaces)}")
+        raise AdvisoryError(f"missing required advisory namespace file(s): {', '.join(missing_namespaces)}")
+    undecided_namespaces = sorted(known_namespaces - set(namespace_files) - set(coverage_exemptions))
+    if undecided_namespaces:
+        raise AdvisoryError(f"advisory coverage policy lacks namespace decision(s): {', '.join(undecided_namespaces)}")
 
     defaults: dict[tuple[str, str], Advisory] = {}
     overrides: dict[tuple[str, str], list[Advisory]] = {}
@@ -393,9 +472,11 @@ def check_generated_leakage(artifact: Path, data_dir: Path = DATA_DIR) -> None:
     if not artifact.exists():
         raise AdvisoryError(f"missing generated artifact: {artifact}")
     runtime_policy = load_json(data_dir / "runtime-policy.json")
-    forbidden_terms = runtime_policy_forbidden_terms(runtime_policy)
+    advisory_policy = load_advisory_policy(data_dir / "command-advisory-policy.json")
+    forbidden_terms = runtime_policy_forbidden_terms(runtime_policy, advisory_policy)
     text = artifact.read_text(encoding="utf-8")
-    model_version = re.compile(r"\b(?:claude|codex|gpt|haiku|opus|sonnet)-[A-Za-z0-9._-]*\d[A-Za-z0-9._-]*\b", re.IGNORECASE)
+    version_terms = "|".join(re.escape(term) for term in sorted(advisory_policy.model_or_harness_leakage_terms))
+    model_version = re.compile(rf"\b(?:{version_terms})-[A-Za-z0-9._-]*\d[A-Za-z0-9._-]*\b", re.IGNORECASE)
     for line in generated_advisory_lines(text):
         lowered = line.lower()
         for token in INTERNAL_RENDER_TOKENS:
