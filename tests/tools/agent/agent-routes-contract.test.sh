@@ -18,6 +18,12 @@ grep -Fq 'a target path of `~/.cursor` is permitted' commands/agent/install/inde
 grep -Fq 'a target path of `~/.cursor` is permitted' commands/agent/upgrade/index.md || fail "upgrade.md lacks valid ~/.cursor target policy"
 grep -Fq 'A checkout developed in place at `~/.cursor` is a valid target repository root' commands/agent/install/index.md || fail "install.md lacks valid ~/.cursor target policy"
 grep -Fq 'A checkout developed in place at `~/.cursor` is a valid target repository root' commands/agent/upgrade/index.md || fail "upgrade.md lacks valid ~/.cursor target policy"
+grep -Fq 'git rev-parse --show-toplevel' commands/agent/install/index.md || fail "install.md does not resolve target through git work tree"
+grep -Fq 'current working directory may be the repo root or any nested path inside the target git work tree' commands/agent/install/index.md || fail "install.md lacks nested CWD policy"
+grep -Fq 'current working directory is not inside a git work tree' commands/agent/install/index.md || fail "install.md lacks non-git CWD abort"
+if grep -Fq 'writable directory' commands/agent/install/index.md; then
+  fail "install.md still uses writable-directory target contract"
+fi
 
 grep -Fq 'TODO(install)' templates/AGENTS.md || fail "AGENTS template lacks TODO(install)"
 grep -Fq 'TODO(patch)' templates/REPOSITORY.md || fail "REPOSITORY template lacks TODO(patch)"

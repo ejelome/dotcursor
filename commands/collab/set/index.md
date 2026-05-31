@@ -23,6 +23,7 @@ Update collab metadata fields that do not already belong to a dedicated mutation
    - `reviewer <role>` validates that `<role>` is in registry `participants`, that `<role>` does not equal `moderatorRole`, and that `<role>` is not in registry `turnOrder`; then sets registry `reviewerRole` to `<role>` with default `reviewerMode` (`last-in-convergent-phases`) and default `reviewerOptionalPhases` (`["Discussion"]`), and mirrors the value in the Reviewer cell of the transcript status table via `tools/collab/registry.py render-status`.
    - `reviewer --clear` removes `reviewerRole`, `reviewerMode`, and `reviewerOptionalPhases` from the registry entry, then calls `tools/collab/registry.py render-status <target>` to update the transcript status table.
    - `reviewer-optional-phases <phase>...` validates every phase name against the phase sequence, rejects duplicates, persists registry `reviewerOptionalPhases`, and re-renders the managed header/status surfaces. Changing this field after a phase has advanced does not retroactively admit the reviewer into the earlier phase.
+   - `work-repo <path>` validates that `<path>` is a git work tree, then sets registry `workRepo` to the resolved canonical path. Once set, touched-path verification and git-state checks during seal resolve against this path instead of the default repository root. Must be an absolute path to an existing git work tree; an unresolvable or non-git path aborts.
    - `active-phase` is recovery-only: require `--force`, validate against the phase sequence, then update registry `activePhase` and the Active phase cell in the transcript state table.
 7. Stop after updating registry and transcript. Do not append a contribution.
 
@@ -30,14 +31,14 @@ Update collab metadata fields that do not already belong to a dedicated mutation
 
 - **Parameters:** target collab slug, id, or numeric `#N` as the first token after `set`; when absent, resolved per **Registry targeting** in **Notes**. `<field>` — required metadata field name. `<value>` — required replacement value (omit for `reviewer --clear`). `--force` — optional recovery-only override for fields that are normally owned elsewhere.
 - **Registry targeting:** Resolve the target collab from the resolved registry, using `tools/collab/registry.py` as the shared helper. When the first token after the route is present, treat it as a collab slug, id, or stable numeric position. Otherwise use `activeCollabId`. If the registry is unreadable or invalid, the token does not match any entry, or `activeCollabId` is empty, **ABORT**: registry target unavailable; name the registry field or token.
-- **Field ownership:** `title` -> `set`; `description` -> `set`; `turn-order` -> `set`; `reviewer`, `reviewerOptionalPhases` -> `set`; `status` -> `open` / `close`; `participants` -> `join` / `kick`; `active-phase` -> `next` / `prev` (or `set --force` for recovery only).
+- **Field ownership:** `title` -> `set`; `description` -> `set`; `turn-order` -> `set`; `reviewer`, `reviewerOptionalPhases` -> `set`; `work-repo` -> `set`; `status` -> `open` / `close`; `participants` -> `join` / `kick`; `active-phase` -> `next` / `prev` (or `set --force` for recovery only).
 - **Ownership boundary:** Every mutable field has exactly one normal mutation path. `/collab set` must refuse fields owned by another route unless `--force` is used for recovery-only metadata repair.
 - **Post-state resume signal:** After `/collab set` completes, re-establish collab context with `tools/collab/registry.py speak-state --resume <target> <role>` before issuing the next collab command.
 - **Sync contract compliance:** `title`, `description`, `turn-order`, and `active-phase` transcript-side updates (H1, opening text, Turn order cell, Active phase cell) are prose-rendered; `tools/collab/registry.py set` writes registry only. This is declared under the sync contract in [`core/framework/route-invariant.md`](../../../core/framework/route-invariant.md).
 
 ```route-arg
 dispatch: (collab set <field> <value>)
-param: name=<field>; required=required; placeholder=<field>; class=literal; values=title | description | turn-order | reviewer | reviewer-optional-phases | active-phase
+param: name=<field>; required=required; placeholder=<field>; class=literal; values=title | description | turn-order | reviewer | reviewer-optional-phases | active-phase | work-repo
 param: name=<value>; required=required; placeholder=<value>; class=type; rule=field-specific replacement value
 param: name=<role>; required=required; placeholder=<role>; class=dynamic; source=tools/collab/registry.py roles
 param: name=--clear; required=optional; placeholder=--clear; class=literal; values=present; default=literal:false

@@ -103,4 +103,50 @@ if [[ "$status" -eq 0 || "$output" != *"SEAL-GIT-STATE: implementation not in gi
   exit 1
 fi
 
+# Work-repo resolution: a collab that declares `workRepo` is gated against THAT
+# git tree, not the framework checkout — the cross-repo seal path.
+WORK_REPO="$TMPDIR/work-repo"
+mkdir -p "$WORK_REPO"
+git -C "$WORK_REPO" init -q
+git -C "$WORK_REPO" config user.email tester@example.com
+git -C "$WORK_REPO" config user.name tester
+printf 'projected config\n' >"$WORK_REPO/projected-file"
+git -C "$WORK_REPO" add -A
+git -C "$WORK_REPO" -c commit.gpgsign=false commit -qm 'seed work repo'
+
+init_completion_target "Seal Render Work Repo Committed" "seal-render-work-repo-committed"
+WORK_REPO_TARGET="$RUN_DATE-seal-render-work-repo-committed"
+"$ROOT/tools/collab/registry.py" set "$WORK_REPO_TARGET" work-repo "$WORK_REPO" >/dev/null
+complete_execution_with_path "$WORK_REPO_TARGET" "projected-file"
+seal_without_execution "$WORK_REPO_TARGET" >/dev/null
+
+init_completion_target "Seal Render Work Repo Uncommitted" "seal-render-work-repo-uncommitted"
+WORK_REPO_REJECT="$RUN_DATE-seal-render-work-repo-uncommitted"
+"$ROOT/tools/collab/registry.py" set "$WORK_REPO_REJECT" work-repo "$WORK_REPO" >/dev/null
+printf 'loose\n' >"$WORK_REPO/loose-file"
+complete_execution_with_path "$WORK_REPO_REJECT" "loose-file"
+set +e
+work_repo_output="$(seal_without_execution "$WORK_REPO_REJECT" 2>&1)"
+work_repo_status=$?
+set -e
+if [[ "$work_repo_status" -eq 0 || "$work_repo_output" != *"SEAL-GIT-STATE: implementation not in git; unstaged and uncommitted touchedPath(s): [\"loose-file\"]"* ]]; then
+  printf 'FAIL: seal-render did not gate against the declared workRepo\n%s\n' "$work_repo_output" >&2
+  exit 1
+fi
+
+RELATIVE_WORK_REPO="relative-work-repo"
+mkdir -p "$RELATIVE_WORK_REPO"
+git -C "$RELATIVE_WORK_REPO" init -q
+init_completion_target "Seal Render Work Repo Relative Rejected" "seal-render-work-repo-relative-rejected"
+RELATIVE_WORK_REPO_TARGET="$RUN_DATE-seal-render-work-repo-relative-rejected"
+set +e
+relative_work_repo_output="$("$ROOT/tools/collab/registry.py" set "$RELATIVE_WORK_REPO_TARGET" work-repo "$RELATIVE_WORK_REPO" 2>&1)"
+relative_work_repo_status=$?
+set -e
+if [[ "$relative_work_repo_status" -eq 0 || "$relative_work_repo_output" != *"work-repo must be an absolute path: $RELATIVE_WORK_REPO"* ]]; then
+  printf 'FAIL: work-repo accepted a relative path\n%s\n' "$relative_work_repo_output" >&2
+  exit 1
+fi
+
 printf 'OK: seal-render git-state gate accepts committed/staged/deleted paths and rejects unstaged or working-tree-only paths\n'
+printf 'OK: seal-render git-state gate resolves declared workRepo for cross-repo collabs\n'

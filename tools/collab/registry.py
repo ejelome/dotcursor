@@ -49,7 +49,7 @@ ONE_SPEAK_PHASES = {'Audit', 'Conclusion', 'Action Plan', 'Handoff'}
 AUTO_ADVANCE_EXEMPT_PHASES = {'Discussion', 'Completion'}
 CONVERGENT_REVIEWER_PHASES = {'Audit', 'Conclusion'}
 MOD_EXCLUDED_PHASES = {'Conclusion', 'Action Plan', 'Handoff', 'Completion'}
-ALLOWED_SET_FIELDS = {'title', 'description', 'turn-order', 'reviewer-optional-phases'}
+ALLOWED_SET_FIELDS = {'title', 'description', 'turn-order', 'reviewer-optional-phases', 'work-repo'}
 FORCE_ONLY_FIELDS = {'active-phase'}
 ALLOWED_STATUSES = {'open', 'closed', 'archived'}
 ALLOWED_EXECUTION_STATUSES = {'in_progress', 'completed', 'failed'}
@@ -1212,10 +1212,42 @@ def touched_paths_for_execution(entry: dict) -> list[str]:
     return touched
 
 
-def git_commit_paths(ref: str) -> set[str] | None:
+def resolve_git_work_tree(raw: str, label: str) -> Path:
+    path = Path(raw).expanduser()
+    if not path.is_absolute():
+        die(f'{label} must be an absolute path: {raw}')
+    probe = subprocess.run(
+        ['git', '-C', str(path), 'rev-parse', '--show-toplevel'],
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+    )
+    if probe.returncode != 0 or not probe.stdout.strip():
+        die(f'{label} must be a git work tree: {raw}')
+    return Path(probe.stdout.strip())
+
+
+def work_repo_root(entry: dict) -> Path:
+    """Resolve the git work tree that holds a collab's executed deliverables.
+
+    Collabs whose execution targets a repository other than the framework
+    checkout declare it via the registry ``workRepo`` field; the seal git-state
+    and drift gates, and execution-commit capture, then operate on that tree.
+    When the field is absent the framework checkout (``ROOT``) is used, so
+    in-repo collabs are unaffected. A declared-but-invalid ``workRepo`` is a
+    hard error rather than a silent fall back to the wrong tree.
+    """
+    raw = entry.get('workRepo')
+    if not isinstance(raw, str) or not raw.strip():
+        return ROOT
+    return resolve_git_work_tree(raw, 'workRepo')
+
+
+def git_commit_paths(ref: str, repo_root: Path = ROOT) -> set[str] | None:
     try:
         probe = subprocess.run(
-            ['git', '-C', str(ROOT), 'cat-file', '-e', f'{ref}^{{commit}}'],
+            ['git', '-C', str(repo_root), 'cat-file', '-e', f'{ref}^{{commit}}'],
             check=False,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
@@ -1225,7 +1257,7 @@ def git_commit_paths(ref: str) -> set[str] | None:
     if probe.returncode != 0:
         return None
     result = subprocess.run(
-        ['git', '-C', str(ROOT), 'show', '--name-only', '--format=', ref],
+        ['git', '-C', str(repo_root), 'show', '--name-only', '--format=', ref],
         check=False,
         text=True,
         stdout=subprocess.PIPE,
@@ -1236,12 +1268,12 @@ def git_commit_paths(ref: str) -> set[str] | None:
     return {line.strip() for line in result.stdout.splitlines() if line.strip()}
 
 
-def git_index_or_staged_paths(paths: list[str]) -> set[str]:
+def git_index_or_staged_paths(paths: list[str], repo_root: Path = ROOT) -> set[str]:
     if not paths:
         return set()
     commands = [
-        ['git', '-C', str(ROOT), 'ls-files', '--', *paths],
-        ['git', '-C', str(ROOT), 'diff', '--cached', '--name-only', '--', *paths],
+        ['git', '-C', str(repo_root), 'ls-files', '--', *paths],
+        ['git', '-C', str(repo_root), 'diff', '--cached', '--name-only', '--', *paths],
     ]
     found: set[str] = set()
     for command in commands:
@@ -1259,11 +1291,11 @@ def git_index_or_staged_paths(paths: list[str]) -> set[str]:
     return found
 
 
-def git_committed_deletion_paths(paths: list[str]) -> set[str]:
+def git_committed_deletion_paths(paths: list[str], repo_root: Path = ROOT) -> set[str]:
     if not paths:
         return set()
     result = subprocess.run(
-        ['git', '-C', str(ROOT), 'log', '--diff-filter=D', '--name-only', '--format=', '--', *paths],
+        ['git', '-C', str(repo_root), 'log', '--diff-filter=D', '--name-only', '--format=', '--', *paths],
         check=False,
         text=True,
         stdout=subprocess.PIPE,
@@ -1275,11 +1307,11 @@ def git_committed_deletion_paths(paths: list[str]) -> set[str]:
     return {line.strip() for line in result.stdout.splitlines() if line.strip()}
 
 
-def git_unstaged_paths(paths: list[str]) -> set[str]:
+def git_unstaged_paths(paths: list[str], repo_root: Path = ROOT) -> set[str]:
     if not paths:
         return set()
     result = subprocess.run(
-        ['git', '-C', str(ROOT), 'diff', '--name-only', '--', *paths],
+        ['git', '-C', str(repo_root), 'diff', '--name-only', '--', *paths],
         check=False,
         text=True,
         stdout=subprocess.PIPE,
@@ -1291,17 +1323,18 @@ def git_unstaged_paths(paths: list[str]) -> set[str]:
     return {line.strip() for line in result.stdout.splitlines() if line.strip()}
 
 
-def working_tree_path_exists(path: str) -> bool:
-    return os.path.lexists(ROOT / path)
+def working_tree_path_exists(path: str, repo_root: Path = ROOT) -> bool:
+    return os.path.lexists(repo_root / path)
 
 
 def assert_execution_touched_paths_in_git_state(entry: dict) -> None:
     touched = touched_paths_for_execution(entry)
     if not touched:
         return
-    in_git = git_index_or_staged_paths(touched)
-    unstaged = git_unstaged_paths(touched)
-    committed_deletions = git_committed_deletion_paths(touched)
+    repo_root = work_repo_root(entry)
+    in_git = git_index_or_staged_paths(touched, repo_root)
+    unstaged = git_unstaged_paths(touched, repo_root)
+    committed_deletions = git_committed_deletion_paths(touched, repo_root)
     invalid: list[str] = []
     for path in touched:
         if path in unstaged:
@@ -1309,7 +1342,7 @@ def assert_execution_touched_paths_in_git_state(entry: dict) -> None:
             continue
         if path in in_git:
             continue
-        if path in committed_deletions and not working_tree_path_exists(path):
+        if path in committed_deletions and not working_tree_path_exists(path, repo_root):
             continue
         invalid.append(path)
     invalid = sorted(invalid)
@@ -1326,6 +1359,7 @@ def assert_no_execution_touched_path_drift(entry: dict) -> None:
     # scoped subsets. The safety property is "every committed file was declared by
     # some role, and every declared path appears in some commit" — per-role exact
     # matching falsely rejects a valid combined commit.
+    repo_root = work_repo_root(entry)
     declared_paths: set[str] = set()
     committed_paths: set[str] = set()
     commits_seen: list[str] = []
@@ -1343,7 +1377,7 @@ def assert_no_execution_touched_path_drift(entry: dict) -> None:
         for commit in commits:
             if commit not in commits_seen:
                 commits_seen.append(commit)
-            commit_paths = git_commit_paths(commit)
+            commit_paths = git_commit_paths(commit, repo_root)
             if commit_paths is not None:
                 committed_paths.update(commit_paths)
         declared_paths.update(
@@ -2673,6 +2707,10 @@ def set_field(
             if reviewer and reviewer in turnOrder:
                 die('turn-order must not include reviewerRole')
             entry['turnOrder'] = turnOrder
+        elif field == 'work-repo':
+            if value is None:
+                die('work-repo requires a path')
+            entry['workRepo'] = str(resolve_git_work_tree(value, 'work-repo'))
         else:
             if value is None:
                 die(f'{field} requires a value')
@@ -2865,9 +2903,9 @@ def parse_execution_datetime(raw: str) -> dt.datetime | None:
     return parsed
 
 
-def current_head_commit(date: str) -> str | None:
+def current_head_commit(date: str, repo_root: Path = ROOT) -> str | None:
     result = subprocess.run(
-        ['git', '-C', str(ROOT), 'rev-parse', 'HEAD'],
+        ['git', '-C', str(repo_root), 'rev-parse', 'HEAD'],
         check=False,
         text=True,
         stdout=subprocess.PIPE,
@@ -2880,7 +2918,7 @@ def current_head_commit(date: str) -> str | None:
     if not commit:
         die('execution commit capture failed: git rev-parse HEAD returned empty output')
     date_result = subprocess.run(
-        ['git', '-C', str(ROOT), 'show', '-s', '--format=%cI', commit],
+        ['git', '-C', str(repo_root), 'show', '-s', '--format=%cI', commit],
         check=False,
         text=True,
         stdout=subprocess.PIPE,
@@ -4052,7 +4090,7 @@ def record_execution(
 
         execution_state = {'status': status, 'date': date}
         execution_state['entryId'] = execution_identity(role, date)
-        head_commit = current_head_commit(date)
+        head_commit = current_head_commit(date, work_repo_root(entry))
         if head_commit is not None:
             execution_state['commits'] = [head_commit]
         if agent_id:
