@@ -34,7 +34,7 @@ Reference document for the resolved collab `registry.json` schema and field owne
   | `slug` | string | User-facing handle. Format: lowercased, hyphen-separated words. Used in commands instead of file paths. |
   | `title` | string | Human-readable name from `init`. |
   | `description` | string | Brief description from `init`. |
-  | `workRepo` | string or absent | Optional path to the working repository when the collab record is stored outside the target repo (e.g., `~/.cursor` hosting a collab for a separate project). When set, touched-path verification and git-state checks during seal resolve against this path instead of the default. Must be a valid git work tree; an invalid path aborts. Set via `/collab set work-repo <path>`. |
+  | `workRepo` | string or absent | Resolved absolute path of the project git tree. Bound at init via `--work-repo <path>` or recovered via `/collab set work-repo <path>`; persisted as an absolute path and scoped to all git-ops (touched-path verification, git-state checks, seal). When the resolved path equals the framework ROOT (`~/.cursor`) but `projectId` does not match the dotcursor project, the helper emits a loud failure rather than silently operating on the wrong repo. When absent, resolution falls back to the framework ROOT, which is only valid when the collab is for the dotcursor project itself. See [workRepo remediation index](workRepo-remediation-index.md) for the R1–R7 remediation items that shaped this field's semantics. |
   | `createdAt` | string | ISO-8601 creation timestamp set by `init` for records created after the terminal selector contract. Records without `createdAt` predate this contract and are grandfathered without rewrite. |
   | `terminal` | string | Workflow-model terminal selector: `seal|issue`. Set by `init` from `--terminal <seal|issue>` and defaulted to `seal` for new records. Records without `terminal` predate this contract and are grandfathered without rewrite. |
   | `status` | string | `open` \| `closed` \| `archived`. |
@@ -80,7 +80,7 @@ Reference document for the resolved collab `registry.json` schema and field owne
   | `createdAt` | `init` |
   | `terminal` | `init` |
   | `title`, `description` | `set` |
-  | `workRepo` | `set` |
+  | `workRepo` | `init` (via `--work-repo`), `set` |
   | `archived` | `archive` |
   | `execution.<role>` | `execute` |
   | `completion.subState` | `execute` (set to `verification` when all assigned roles complete); `seal-render` (resets on cap-exit) |

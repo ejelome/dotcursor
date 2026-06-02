@@ -32,8 +32,8 @@ data = json.loads(path.read_text())
 entry = next(item for item in data['collabs'] if item['slug'] == slug)
 entry['handoff'] = {
     'roles': {
-        'tw': {'writeScope': ['docs/a.md'], 'validationCommands': [['./tools/command-system/audit.sh']]},
-        'pe': {'writeScope': ['src/b.py'], 'validationCommands': [['./tools/command-system/audit.sh']]},
+        'tw': {'writeScope': ['tools/command-system/audit.sh'], 'validationCommands': [['./tools/command-system/audit.sh']]},
+        'pe': {'writeScope': ['tools/command-system/audit-role-prose.sh'], 'validationCommands': [['./tools/command-system/audit.sh']]},
     }
 }
 path.write_text(json.dumps(data, indent=2) + '\n')
@@ -43,11 +43,11 @@ PY
 "$ROOT/tools/collab/registry.py" execution "$TARGET" tw completed "2026-05-17T12:00:00+02:00" \
   --assigned-role tw --assigned-role pe \
   --validation-result passed --validation-scope scoped \
-  --touched-path docs/a.md --caller-role tw >/dev/null
+  --touched-path tools/command-system/audit.sh --caller-role tw >/dev/null
 "$ROOT/tools/collab/registry.py" execution "$TARGET" pe completed "2026-05-17T12:05:00+02:00" \
   --assigned-role tw --assigned-role pe \
   --validation-result passed --validation-scope scoped \
-  --touched-path src/b.py --caller-role pe >/dev/null
+  --touched-path tools/command-system/audit-role-prose.sh --caller-role pe >/dev/null
 
 AUDIT_FILE="$TMPDIR/audit.txt"; printf 'audit clean\n' > "$AUDIT_FILE"
 REMEDIATION_FILE="$TMPDIR/remediation.txt"; printf 'no remediation\n' > "$REMEDIATION_FILE"
@@ -76,8 +76,8 @@ assert_rounds_ready() {
 }
 
 # First verification cycle: both roles complete -> one paired round, sealable.
-run_pv tw docs/a.md
-run_pv pe src/b.py
+run_pv tw tools/command-system/audit.sh
+run_pv pe tools/command-system/audit-role-prose.sh
 assert_rounds_ready 1 True
 
 # Restart the verification cycle (reviewer recovery primitive).
@@ -104,8 +104,8 @@ PY
 assert_rounds_ready 0 False
 
 # Re-verify both roles -> fresh paired round, sealable again.
-run_pv tw docs/a.md
-run_pv pe src/b.py
+run_pv tw tools/command-system/audit.sh
+run_pv pe tools/command-system/audit-role-prose.sh
 assert_rounds_ready 1 True
 
 # Reviewer-only gate: a non-reviewer caller is rejected.

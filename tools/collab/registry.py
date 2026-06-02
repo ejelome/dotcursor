@@ -32,6 +32,7 @@ from tools.collab.planned_routes import validate_issue_bridge_block, validate_pl
 from tools.collab.registry_state import (
     PROJECT_ID_RE,
     assert_registry_project_binding,
+    find_project_identity_path,
     project_metadata_from_identity,
     resolve_default_registry_path,
     sync_registry_project_metadata,
@@ -82,6 +83,8 @@ INVALID_AGENT_ID_ALTERNATIVES = {'n/a', 'unspecified'}
 CALLER_DECLINED_AGENT_ID = 'caller-declined'
 DEFAULT_OPEN_ROSTER_EFFORT = 'medium'
 STALE_LOCK_SECONDS = 24 * 60 * 60
+CURRENT_REGISTRY_PROJECT: dict | None = None
+RESOLVED_WORK_REPO_ROOT: Path | None = None
 
 
 def resolve_config_root() -> Path:
@@ -196,6 +199,7 @@ def load_registry(path: Path) -> dict:
         die(f'registry invalid JSON: {path}: {exc}')
     validate_registry(data, path)
     assert_registry_project_binding(data, path)
+    capture_registry_project(data)
     return data
 
 
@@ -247,10 +251,59 @@ def load_registry_or_bootstrap(path: Path) -> dict:
     if not path.exists():
         data = {'activeCollabId': None, 'collabs': []}
         sync_registry_project_metadata(data)
+        capture_registry_project(data)
         return data
     data = load_registry(path)
     sync_registry_project_metadata(data)
+    capture_registry_project(data)
     return data
+
+
+def capture_registry_project(data: dict) -> None:
+    global CURRENT_REGISTRY_PROJECT
+    project = data.get('project')
+    CURRENT_REGISTRY_PROJECT = project if isinstance(project, dict) else None
+
+
+def root_project_id() -> str | None:
+    identity_path = ROOT / '.collab.json'
+    if not identity_path.exists():
+        return None
+    try:
+        data = json.loads(identity_path.read_text())
+    except json.JSONDecodeError:
+        return None
+    project_id = data.get('projectId')
+    return project_id if isinstance(project_id, str) and project_id.strip() else None
+
+
+def current_registry_project_id() -> str | None:
+    if not isinstance(CURRENT_REGISTRY_PROJECT, dict):
+        return None
+    project_id = CURRENT_REGISTRY_PROJECT.get('projectId')
+    return project_id if isinstance(project_id, str) and project_id.strip() else None
+
+
+def assert_work_repo_not_framework_for_external_project(repo_root: Path, label: str) -> None:
+    # Refuse to bind the framework checkout as a collab's work tree when the
+    # collab's own project root lives inside a *different* git work tree -- that
+    # is the external-repo trap where sealing would silently certify ROOT instead
+    # of the repo the work actually landed in. The discriminator is git-tree
+    # containment, not the project marker id: a project root that is not inside
+    # any git tree (a fresh dir or the test-harness temp dir) has no other tree to
+    # seal, so ROOT is the legitimate fallback and must not abort here.
+    if repo_root.resolve() != ROOT.resolve():
+        return
+    base = RESOLVED_WORK_REPO_ROOT if RESOLVED_WORK_REPO_ROOT is not None else ROOT
+    enclosing = enclosing_git_tree(Path(base))
+    if enclosing is not None and enclosing.resolve() != ROOT.resolve():
+        die(
+            f'{label} resolves to framework checkout {ROOT}; the collab project '
+            f'root {base} is inside a different git work tree ({enclosing}); '
+            "refusing to bind the framework checkout as this collab's work tree. "
+            f'Bind the intended tree: pass --work-repo {enclosing} at init, or run '
+            f'/collab set <target> work-repo {enclosing}'
+        )
 
 
 def format_timestamp(now: dt.datetime | None = None) -> str:
@@ -309,10 +362,11 @@ def next_sequence(data: dict) -> int:
     return max(sequences, default=0) + 1
 
 
-def parse_init_tokens(tokens: list[str]) -> tuple[str, str, str | None, bool, bool, str]:
+def parse_init_tokens(tokens: list[str]) -> tuple[str, str, str | None, bool, bool, str, str | None]:
     name_tokens: list[str] = []
     agent_id: str | None = None
     reviewer: str | None = None
+    work_repo: str | None = None
     terminal = DEFAULT_TERMINAL
     terminal_seen = False
     open_requested = False
@@ -354,6 +408,13 @@ def parse_init_tokens(tokens: list[str]) -> tuple[str, str, str | None, bool, bo
             if not participant_verification:
                 die('duplicate flag: --no-participant-verification')
             participant_verification = False
+        elif token == '--work-repo':
+            if work_repo is not None:
+                die('duplicate flag: --work-repo')
+            index += 1
+            if index >= len(tokens) or tokens[index].startswith('--'):
+                die('--work-repo requires a path')
+            work_repo = tokens[index]
         elif token.startswith('--'):
             die(f'unknown flag: {token}')
         else:
@@ -364,7 +425,7 @@ def parse_init_tokens(tokens: list[str]) -> tuple[str, str, str | None, bool, bo
     if not raw_title:
         die('<name> is required')
     title = normalize_title(raw_title)
-    return title, normalize_join_agent_id(agent_id), reviewer, open_requested, participant_verification, terminal
+    return title, normalize_join_agent_id(agent_id), reviewer, open_requested, participant_verification, terminal, work_repo
 
 
 def summary_role(line: str) -> str | None:
@@ -894,6 +955,9 @@ def verification_state(entry: dict) -> dict:
             signature = participant_state.get('writeScopeSignature')
             if signature is not None and (not isinstance(signature, str) or not signature.strip()):
                 die('registry: verification.participants[role].writeScopeSignature must be a non-empty string when present')
+            execution_signature = participant_state.get('executionSignature')
+            if execution_signature is not None and (not isinstance(execution_signature, str) or not execution_signature.strip()):
+                die('registry: verification.participants[role].executionSignature must be a non-empty string when present')
     verification['rounds'] = rounds
     verification['cap'] = cap
     verification['subState'] = substate
@@ -932,6 +996,29 @@ def participant_write_scope_signature(entry: dict, role: str) -> str:
     return hashlib.sha256(payload.encode()).hexdigest()
 
 
+def participant_execution_signature(entry: dict, role: str) -> str:
+    """Signature of the executed content a participant's verification certifies:
+    the role's execution status, validation result, touched paths, and commits.
+    Used to invalidate a completed verification when that content later changes --
+    a re-execution, or a provenance repair that repointed the commit -- so a stale
+    verification cannot ride through to a success seal."""
+    state = entry.get('execution', {}).get(role, {})
+    if not isinstance(state, dict):
+        state = {}
+    payload = {
+        'status': state.get('status'),
+        'validationResult': state.get('validationResult'),
+        'touchedPaths': sorted(
+            str(item) for item in state.get('touchedPaths', []) if isinstance(item, str)
+        ),
+        'commits': sorted(
+            str(item) for item in state.get('commits', []) if isinstance(item, str)
+        ),
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(',', ':'), ensure_ascii=True)
+    return hashlib.sha256(encoded.encode()).hexdigest()
+
+
 def participant_verification_role_state(entry: dict, role: str) -> dict:
     verification = verification_state(entry)
     participants = verification.setdefault('participants', {})
@@ -941,7 +1028,18 @@ def participant_verification_role_state(entry: dict, role: str) -> dict:
     if not isinstance(state, dict):
         die('registry: verification.participants[role] must be an object')
     signature = participant_write_scope_signature(entry, role)
-    if state.get('writeScopeSignature') != signature:
+    # A completed verification certifies a specific executed deliverable. Invalidate
+    # it when the role's declared scope changes, OR -- for a completed stage that
+    # recorded its execution signature -- when the executed content it certified
+    # changes (a re-execution, or a provenance repair that repointed the commit).
+    # Every reader resolves role state through this helper, so the check closes the
+    # stale-preservation hole regardless of which entry point mutated execution.
+    execution_changed = (
+        state.get('stage') == 'completed'
+        and state.get('executionSignature') is not None
+        and state.get('executionSignature') != participant_execution_signature(entry, role)
+    )
+    if state.get('writeScopeSignature') != signature or execution_changed:
         state.clear()
         state['writeScopeSignature'] = signature
         state['attempts'] = 0
@@ -973,24 +1071,95 @@ def sync_participant_verification_review_substate(entry: dict) -> None:
         verification_state(entry)['subState'] = 'seal'
 
 
-def reset_participant_verification_stages(entry: dict) -> None:
+def participant_verification_inactive_message(entry: dict) -> str:
+    """Explain why /collab participant verify cannot run and what to do next,
+    instead of surfacing only the raw sub-state. The blocking states are:
+    participant verification disabled, the round already complete (sub-state
+    'seal'), or a seal recorded and awaiting the reviewer verdict ('assessment').
+    The bare 'current value' form gave no exit and was a recurring dead-end when
+    a contributor retried participant verify against a sealed/assessing round."""
+    target = entry.get('id', '<target>')
+    reviewer = reviewer_role(entry) or '<reviewer>'
+    if not participant_verification_enabled(entry):
+        return (
+            'participant verification is not enabled for this collab; '
+            f'the reviewer ({reviewer}) seals directly via /collab seal verification {target}'
+        )
+    substate = verification_state(entry).get('subState')
+    if substate == 'seal':
+        return (
+            'participant verification for this round is already complete; the reviewer '
+            f'({reviewer}) records the seal via /collab seal verification {target}'
+        )
+    if substate == 'assessment':
+        return (
+            'participant verification cannot run while the cycle is in assessment: a '
+            f'verification seal is recorded and awaiting the reviewer ({reviewer}) verdict. '
+            f'Reviewer: record it via /collab seal verification {target} '
+            '--outcome <success|incomplete|failed>. To redo verification after a correction, '
+            'record a non-success outcome; that routes the moderator to '
+            f'/collab reopen <action-plan|handoff> {target} to re-execute and re-verify'
+        )
+    return f'participant verification is not the active sub-state; current sub-state: {substate}'
+
+
+def reset_participant_verification_stages(entry: dict, scope_aware: bool = False) -> None:
     """Clear per-role participant-verification progress so a round reset can
     restart the cycle. Without this, sync_participant_verification_review_substate
     sees stale "completed" stages and bounces subState back to "seal", leaving a
-    record that is neither sealable (rounds 0) nor re-verifiable (stages done)."""
+    record that is neither sealable (rounds 0) nor re-verifiable (stages done).
+
+    With scope_aware=True (a reopen that may revise only some roles' scope) a role
+    whose declared write scope is unchanged keeps its completed verification, so
+    only the roles the reviewer actually re-scoped have to re-run -- a reopen no
+    longer forces every participant through a fresh audit round. A verification
+    round is earned only when a participant completes a fresh run (see
+    record_verification_round_for_execution), and rounds=0 + all-stages-completed
+    is intentionally not sealable; so if scope-aware preservation would retain
+    every completed role, no participant would re-run and the round could never be
+    re-earned. Guard that by falling back to a full reset whenever no role would
+    otherwise be cleared, guaranteeing at least one re-run earns the new round."""
     if not participant_verification_enabled(entry):
         return
     participants = verification_state(entry).get('participants')
     if not isinstance(participants, dict):
         return
-    for role in participant_verification_roles(entry):
+    roles = participant_verification_roles(entry)
+    if scope_aware:
+        to_clear = [
+            role for role in roles
+            if not (
+                isinstance(participants.get(role), dict)
+                and participants[role].get('stage') == 'completed'
+                and participants[role].get('writeScopeSignature')
+                == participant_write_scope_signature(entry, role)
+                and participants[role].get('executionSignature')
+                == participant_execution_signature(entry, role)
+            )
+        ]
+        if to_clear:
+            for role in to_clear:
+                state = participants.get(role)
+                if isinstance(state, dict):
+                    state.pop('stage', None)
+                    state['attempts'] = 0
+            return
+        # Every completed role is unchanged: fall through to a full reset so a
+        # re-run can earn the round (a preserved-only reset would deadlock).
+    for role in roles:
         state = participants.get(role)
         if isinstance(state, dict):
             state.pop('stage', None)
             state['attempts'] = 0
 
 
-def initialize_completion_state(entry: dict, substate: str = 'execution', reset_rounds: bool = False) -> None:
+def initialize_completion_state(
+    entry: dict,
+    substate: str = 'execution',
+    reset_rounds: bool = False,
+    scope_aware: bool = False,
+    reset_stages: bool = True,
+) -> None:
     if not reviewer_backed(entry):
         return
     if substate not in ALLOWED_COMPLETION_SUBSTATES:
@@ -1001,7 +1170,11 @@ def initialize_completion_state(entry: dict, substate: str = 'execution', reset_
     if reset_rounds:
         verification['rounds'] = 0
         verification.pop('pairedExecutionSignature', None)
-        reset_participant_verification_stages(entry)
+        # reset_stages=False preserves completed per-role verification across a
+        # reopen so the eventual re-entry into Completion can decide, scope-aware,
+        # which roles must re-verify. scope_aware preserves unchanged-scope roles.
+        if reset_stages:
+            reset_participant_verification_stages(entry, scope_aware=scope_aware)
         verification['subState'] = 'participant' if participant_verification_enabled(entry) else 'seal'
     elif substate == 'verification' and verification.get('subState') not in ALLOWED_VERIFICATION_SUBSTATES:
         verification['subState'] = 'seal'
@@ -1228,20 +1401,63 @@ def resolve_git_work_tree(raw: str, label: str) -> Path:
     return Path(probe.stdout.strip())
 
 
+def enclosing_git_tree(path: Path) -> Path | None:
+    """Return the git work tree toplevel containing *path*, or None when the path
+    is not inside any git work tree. Unlike resolve_git_work_tree this never
+    aborts: callers needing only a best-effort default (the init binding) can fall
+    back, while gates that genuinely require git still go through
+    resolve_git_work_tree."""
+    probe = subprocess.run(
+        ['git', '-C', str(path), 'rev-parse', '--show-toplevel'],
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+    )
+    if probe.returncode != 0 or not probe.stdout.strip():
+        return None
+    return Path(probe.stdout.strip())
+
+
+def default_init_work_repo_root() -> Path:
+    # Bind the work repo to the git work tree enclosing the invocation's project
+    # root, so a collab started inside an external repo auto-binds to that repo's
+    # toplevel (the seal then gates against it, never the framework checkout).
+    # When the project root is not inside any git work tree -- a fresh planning
+    # directory or the test-harness temp dir -- fall back to the framework
+    # checkout instead of aborting: git is still enforced later by work_repo_root
+    # at execution-commit capture and seal time, so init must not hard-fail on a
+    # not-yet-git directory (doing so makes /collab init unusable outside a repo).
+    base = RESOLVED_WORK_REPO_ROOT if RESOLVED_WORK_REPO_ROOT is not None else ROOT
+    enclosing = enclosing_git_tree(Path(base))
+    return enclosing if enclosing is not None else ROOT
+
+
 def work_repo_root(entry: dict) -> Path:
     """Resolve the git work tree that holds a collab's executed deliverables.
 
     Collabs whose execution targets a repository other than the framework
     checkout declare it via the registry ``workRepo`` field; the seal git-state
     and drift gates, and execution-commit capture, then operate on that tree.
-    When the field is absent the framework checkout (``ROOT``) is used, so
-    in-repo collabs are unaffected. A declared-but-invalid ``workRepo`` is a
-    hard error rather than a silent fall back to the wrong tree.
+    Missing bindings are allowed only for framework-project legacy records.
+    External-project records must carry an explicit binding so execution,
+    participant verification, and seal gates cannot silently certify ROOT.
+    A declared-but-invalid ``workRepo`` is a hard error rather than a silent
+    fall back to the wrong tree.
     """
     raw = entry.get('workRepo')
     if not isinstance(raw, str) or not raw.strip():
+        current_project = current_registry_project_id()
+        framework_project = root_project_id()
+        if current_project is not None and framework_project is not None and current_project != framework_project:
+            die(
+                f'workRepo missing for external project {current_project}; '
+                f'run /collab set {entry.get("id", "<target>")} work-repo <path>'
+            )
         return ROOT
-    return resolve_git_work_tree(raw, 'workRepo')
+    repo_root = resolve_git_work_tree(raw, 'workRepo')
+    assert_work_repo_not_framework_for_external_project(repo_root, 'workRepo')
+    return repo_root
 
 
 def git_commit_paths(ref: str, repo_root: Path = ROOT) -> set[str] | None:
@@ -1266,6 +1482,114 @@ def git_commit_paths(ref: str, repo_root: Path = ROOT) -> set[str] | None:
     if result.returncode != 0:
         die(f'EXECUTION-WRITESCOPE-OVERAGE: git show failed for execution commit {ref}')
     return {line.strip() for line in result.stdout.splitlines() if line.strip()}
+
+
+def git_commit_reachable_from_head(ref: str, repo_root: Path = ROOT) -> bool | None:
+    """Whether *ref* is an ancestor of HEAD in repo_root (i.e. in the current
+    history). Returns None when the commit does not exist there -- a non-existent
+    ref is left to the drift and git-state gates rather than reported as orphaned.
+    True/False distinguish reachable from existing-but-orphaned (rebased away)."""
+    try:
+        exists = subprocess.run(
+            ['git', '-C', str(repo_root), 'cat-file', '-e', f'{ref}^{{commit}}'],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except FileNotFoundError:
+        return None
+    if exists.returncode != 0:
+        return None
+    probe = subprocess.run(
+        ['git', '-C', str(repo_root), 'merge-base', '--is-ancestor', ref, 'HEAD'],
+        check=False,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    return probe.returncode == 0
+
+
+def assert_execution_commits_reachable(entry: dict) -> None:
+    """A success seal must certify deliverables that are in the current history.
+    A recorded execution commit that still exists but is no longer reachable from
+    HEAD has been orphaned by a rebase or re-commit -- the sealed work is not in
+    the branch -- so refuse the success verdict rather than certify a dangling
+    commit. verificationSeal.stale does not catch this: the commit still exists,
+    only its reachability changed, which is exactly the external-repo trap where a
+    seal certified a commit a later rebase dropped from history."""
+    repo_root = work_repo_root(entry)
+    orphaned: list[str] = []
+    seen: set[str] = set()
+    for state in entry.get('execution', {}).values():
+        if not isinstance(state, dict):
+            continue
+        for commit in state.get('commits', []):
+            if not isinstance(commit, str) or commit in seen:
+                continue
+            seen.add(commit)
+            if git_commit_reachable_from_head(commit, repo_root) is False:
+                orphaned.append(commit)
+    if orphaned:
+        die(
+            'SEAL-PROVENANCE: execution commit(s) exist but are not reachable from HEAD in '
+            f'{repo_root} (orphaned by rebase or re-commit): '
+            f'{json.dumps(sorted(orphaned), separators=(",", ":"))}; the sealed deliverable is '
+            'not in the current branch history. Record a non-success verdict to reopen, then '
+            're-execute against a committed, reachable commit before sealing'
+        )
+
+
+def git_latest_commit_for_path(path: str, repo_root: Path, execution_date: str) -> str | None:
+    result = subprocess.run(
+        ['git', '-C', str(repo_root), 'log', '-1', '--format=%H', '--', path],
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if result.returncode != 0:
+        detail = result.stderr.strip() or result.stdout.strip() or 'unknown git error'
+        die(f'execution commit capture failed for touchedPath {path}: {detail}')
+    commit = result.stdout.strip()
+    if not commit:
+        return None
+    date_result = subprocess.run(
+        ['git', '-C', str(repo_root), 'show', '-s', '--format=%cI', commit],
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if date_result.returncode != 0:
+        detail = date_result.stderr.strip() or date_result.stdout.strip() or 'unknown git error'
+        die(f'execution commit date capture failed for touchedPath {path}: {detail}')
+    execution_time = parse_execution_datetime(execution_date)
+    commit_time = parse_execution_datetime(date_result.stdout.strip())
+    if execution_time is not None and commit_time is not None and commit_time > execution_time:
+        return None
+    return commit
+
+
+def execution_commits_for_touched_paths(date: str, repo_root: Path, touched_paths: list[str]) -> list[str]:
+    if not touched_paths:
+        head_commit = current_head_commit(date, repo_root)
+        return [head_commit] if head_commit is not None else []
+    commits: list[str] = []
+    missing: list[str] = []
+    for path in touched_paths:
+        commit = git_latest_commit_for_path(path, repo_root, date)
+        if commit is None:
+            if not working_tree_path_exists(path, repo_root):
+                missing.append(path)
+            continue
+        if commit not in commits:
+            commits.append(commit)
+    if missing:
+        die(
+            'execution commit capture failed: touchedPath(s) have no committed provenance in '
+            f'{repo_root}: {json.dumps(missing, separators=(",", ":"))}'
+        )
+    return commits
 
 
 def git_index_or_staged_paths(paths: list[str], repo_root: Path = ROOT) -> set[str]:
@@ -1349,7 +1673,28 @@ def assert_execution_touched_paths_in_git_state(entry: dict) -> None:
     if invalid:
         die(
             'SEAL-GIT-STATE: implementation not in git; '
-            f'unstaged and uncommitted touchedPath(s): {json.dumps(invalid, separators=(",", ":"))}'
+            f'unstaged or uncommitted touchedPath(s) in {repo_root}: {json.dumps(invalid, separators=(",", ":"))}'
+        )
+
+
+def assert_touched_paths_recordable_in_work_repo(entry: dict, touched_paths: list[str]) -> None:
+    if not touched_paths:
+        return
+    repo_root = work_repo_root(entry)
+    in_git = git_index_or_staged_paths(touched_paths, repo_root)
+    committed_deletions = git_committed_deletion_paths(touched_paths, repo_root)
+    invalid = sorted(
+        path for path in touched_paths
+        if (
+            path not in in_git
+            and not working_tree_path_exists(path, repo_root)
+            and not (path in committed_deletions and not working_tree_path_exists(path, repo_root))
+        )
+    )
+    if invalid:
+        die(
+            'execution touchedPath(s) not found under workRepo '
+            f'{repo_root}: {json.dumps(invalid, separators=(",", ":"))}'
         )
 
 
@@ -1378,8 +1723,9 @@ def assert_no_execution_touched_path_drift(entry: dict) -> None:
             if commit not in commits_seen:
                 commits_seen.append(commit)
             commit_paths = git_commit_paths(commit, repo_root)
-            if commit_paths is not None:
-                committed_paths.update(commit_paths)
+            if commit_paths is None:
+                die(f'SEAL-GIT-DRIFT: commit {commit} not found in workRepo {repo_root}')
+            committed_paths.update(commit_paths)
         declared_paths.update(
             item
             for item in execution.get('touchedPaths', [])
@@ -1426,7 +1772,22 @@ def invalidate_verification_seal(entry: dict, reason: str) -> None:
         seal['stale'] = True
         seal['staleReason'] = reason
         if reviewer_backed(entry):
-            set_verification_review_substate(entry, 'assessment')
+            # 'assessment' presumes a completed paired round awaiting a verdict, so
+            # only retain it when that round is still intact. When the round has been
+            # reset -- e.g. a reopen clears rounds and participant stages before
+            # invalidating the seal -- forcing 'assessment' strands the cycle: the
+            # seal block is immutable in assessment, a success verdict is blocked by
+            # the stale seal, and participant verify is gated to the 'participant'
+            # sub-state, so nothing can advance. Fall back to the live participant or
+            # seal entry point so the cycle always has a forward path.
+            verification = entry.get('verification')
+            rounds = verification.get('rounds', 0) if isinstance(verification, dict) else 0
+            if rounds > 0 and not participant_verification_incomplete(entry):
+                set_verification_review_substate(entry, 'assessment')
+            else:
+                set_verification_review_substate(
+                    entry, 'participant' if participant_verification_enabled(entry) else 'seal'
+                )
         clear_verdict(entry)
 
 
@@ -2672,6 +3033,12 @@ def set_field(
                     die(f'active-phase must be one of {PHASES}')
                 entry['activePhase'] = value
                 forced_active_phase = True
+                if value == 'Completion':
+                    # Mirror advance_phase's Completion entry so a forced jump
+                    # cannot bypass the scope-aware reset and strand a reopened
+                    # cycle at rounds=0 with every stage preserved (the old
+                    # deadlock). No-op on a fresh force (no completed stages yet).
+                    initialize_completion_state(entry, 'execution', reset_rounds=True, scope_aware=True)
         elif field == 'reviewer':
             if value == '--clear':
                 clear_reviewer(entry)
@@ -4014,7 +4381,12 @@ def advance_phase(
             if entry['activePhase'] in MOD_EXCLUDED_PHASES:
                 remove_moderator_from_turn_order(entry)
             if entry['activePhase'] == 'Completion':
-                initialize_completion_state(entry, 'execution', reset_rounds=True)
+                # Scope-aware on (re)entry into Completion: a fresh round, and for
+                # a reopen that preserved prior verification, keep the completed
+                # verification of roles whose write scope is unchanged so only the
+                # re-scoped roles re-verify. The all-preserved fallback in
+                # reset_participant_verification_stages keeps a round earnable.
+                initialize_completion_state(entry, 'execution', reset_rounds=True, scope_aware=True)
         else:
             if index == 0:
                 die('no previous phase')
@@ -4087,12 +4459,13 @@ def record_execution(
                     'loop target: Handoff for missing execution evidence'
                 )
         assert_touched_paths_inside_handoff(entry, role, normalized_touched_paths)
+        assert_touched_paths_recordable_in_work_repo(entry, normalized_touched_paths)
 
         execution_state = {'status': status, 'date': date}
         execution_state['entryId'] = execution_identity(role, date)
-        head_commit = current_head_commit(date, work_repo_root(entry))
-        if head_commit is not None:
-            execution_state['commits'] = [head_commit]
+        commits = execution_commits_for_touched_paths(date, work_repo_root(entry), normalized_touched_paths)
+        if commits:
+            execution_state['commits'] = commits
         if agent_id:
             execution_state['agentId'] = agent_id
         if validation_result:
@@ -4149,6 +4522,60 @@ def record_execution(
     print_post_action_advisories(entry, role, 'Completion', notice, next_line)
     print(entry['status'])
     print_notice_diagnostic(notice, emit_json)
+    return 0
+
+
+def repair_execution_provenance(
+    path: Path,
+    target: str,
+    role: str,
+    work_repo: str | None,
+    commits: list[str],
+    caller_role: str | None = None,
+) -> int:
+    if work_repo is None and not commits:
+        die('repair-execution-provenance requires --work-repo or --commit')
+    with registry_lock(path):
+        data = load_registry(path)
+        entry = resolve_collab(data, target)
+        assert_caller_role(entry, caller_role, 'rewrite-execution', role)
+        if entry['status'] in {'closed', 'archived'}:
+            die('record is closed')
+        execution = entry.get('execution', {}).get(role)
+        if not isinstance(execution, dict):
+            die(f'no execution record for role: {role}')
+        if execution.get('status') != 'completed':
+            die(f'execution provenance repair requires completed execution for role: {role}')
+        if work_repo is not None:
+            repo_root = resolve_git_work_tree(work_repo, 'workRepo')
+            assert_work_repo_not_framework_for_external_project(repo_root, 'workRepo')
+            entry['workRepo'] = str(repo_root)
+        repo_root = work_repo_root(entry)
+        if commits:
+            normalized_commits: list[str] = []
+            for commit in commits:
+                if not isinstance(commit, str) or not commit.strip():
+                    die('repair-execution-provenance --commit requires non-empty commit ids')
+                if git_commit_paths(commit, repo_root) is None:
+                    die(f'repair-execution-provenance commit not found in workRepo {repo_root}: {commit}')
+                if commit not in normalized_commits:
+                    normalized_commits.append(commit)
+            execution['commits'] = normalized_commits
+        touched = [
+            item
+            for item in execution.get('touchedPaths', [])
+            if isinstance(item, str) and item.strip()
+        ]
+        assert_touched_paths_recordable_in_work_repo(entry, touched)
+        if commits:
+            assert_no_execution_touched_path_drift(entry)
+        verification = entry.get('verification')
+        if isinstance(verification, dict) and verification.get('pairedExecutionSignature') is not None:
+            verification['pairedExecutionSignature'] = execution_signature(entry)
+        invalidate_verification_seal(entry, f'execution provenance repaired for {role}')
+        save_registry(path, data)
+    print(next_line_after_execution(entry, effective_turn_order(entry)))
+    print(entry['status'])
     return 0
 
 
@@ -4836,7 +5263,7 @@ def participant_verify_state(path: Path, target: str, role: str, resume: bool = 
         verification = verification_state(entry)
         assigned_roles = participant_verification_roles(entry)
         if not participant_verification_enabled(entry) or verification.get('subState') != 'participant':
-            die(f'participant verification is not the active sub-state; current value: {verification.get("subState")}')
+            die(participant_verification_inactive_message(entry))
         if role not in assigned_roles:
             die(f'role is not assigned to participant verification: {role}')
         pending_role = first_pending_participant_verification_role(entry)
@@ -4931,7 +5358,7 @@ def participant_verify_render(
                 sync_participant_verification_review_substate(entry)
         verification = verification_state(entry)
         if not participant_verification_enabled(entry) or verification.get('subState') != 'participant':
-            die(f'participant verification is not the active sub-state; current value: {verification.get("subState")}')
+            die(participant_verification_inactive_message(entry))
         assigned_roles = participant_verification_roles(entry)
         if role not in assigned_roles:
             die(f'role is not assigned to participant verification: {role}')
@@ -4971,6 +5398,10 @@ def participant_verify_render(
         role_state['stage'] = 'remediation'
         role_state['stage'] = 'final-audit'
         role_state['stage'] = status
+        if status == 'completed':
+            # Pin the executed content this verification certifies so a later
+            # change (re-execution or a provenance repoint) invalidates it.
+            role_state['executionSignature'] = participant_execution_signature(entry, role)
         agent_line = None
         if remediation_id != execution_id:
             agent_line = f'AgentId: execution={execution_id}; remediation={remediation_id}'
@@ -5014,13 +5445,13 @@ def apply_cap_exit(entry: dict, data: dict, cap_exit: str | None) -> dict | None
     if cap_exit == 'reopen-action-plan':
         entry['activePhase'] = 'Action Plan'
         normalize_turn_order_for_phase(entry, 'Action Plan')
-        initialize_completion_state(entry, 'execution', reset_rounds=True)
+        initialize_completion_state(entry, 'execution', reset_rounds=True, reset_stages=False)
         set_verification_review_substate(entry, 'assessment')
         return {'notice': 'reopen', 'transition': 'Completion.verification->Action Plan', 'message': 'Verification cap exit reopened Action Plan.'}
     if cap_exit == 'reopen-handoff':
         entry['activePhase'] = 'Handoff'
         normalize_turn_order_for_phase(entry, 'Handoff')
-        initialize_completion_state(entry, 'execution', reset_rounds=True)
+        initialize_completion_state(entry, 'execution', reset_rounds=True, reset_stages=False)
         set_verification_review_substate(entry, 'assessment')
         return {'notice': 'reopen', 'transition': 'Completion.verification->Handoff', 'message': 'Verification cap exit reopened Handoff.'}
     if cap_exit == 'follow-up-collab':
@@ -5286,6 +5717,7 @@ def render_seal(
                 die(f'success verdict requires current non-stale verificationSeal; stale: {reason}')
             if outcome == 'success':
                 assert_chartered_deliverables_covered(entry, transcript)
+                assert_execution_commits_reachable(entry)
             verdict = build_verdict(
                 outcome,
                 restore_target,
@@ -5411,7 +5843,12 @@ def reopen_collab(
         entry['activePhase'] = phase
         data['activeCollabId'] = entry['id']
         entry['turnOrder'] = derived_turn_order
-        initialize_completion_state(entry, 'execution', reset_rounds=True)
+        # Preserve completed per-role verification across the reopen rather than
+        # clearing it now: at reopen time no scope has been revised yet, so the
+        # scope-aware decision is deferred to the advance back into Completion
+        # (after the reopened phase revises scope and re-executes). This lets a
+        # reopen that re-scopes only some roles re-verify just those roles.
+        initialize_completion_state(entry, 'execution', reset_rounds=True, reset_stages=False)
         invalidate_verification_seal(entry, f'reopened {phase}')
         clear_verdict(entry)
         expected_role = next((item for item in effective_turn_order(entry) if item != entry['moderatorRole']), None)
@@ -5646,7 +6083,7 @@ def init_collab(
     roles_dir: Path,
     opener: Callable[[str], bool] = webbrowser.open_new_tab,
 ) -> int:
-    title, agent_id, reviewer, open_requested, participant_verification, terminal = parse_init_tokens(tokens)
+    title, agent_id, reviewer, open_requested, participant_verification, terminal, work_repo_raw = parse_init_tokens(tokens)
     if terminal == 'issue':
         die(RESERVED_ISSUE_TERMINAL_MESSAGE)
     with registry_lock(path):
@@ -5689,6 +6126,12 @@ def init_collab(
             'archived': False,
             'execution': {},
         }
+        if work_repo_raw is not None:
+            work_repo = resolve_git_work_tree(work_repo_raw, 'workRepo')
+        else:
+            work_repo = default_init_work_repo_root()
+        assert_work_repo_not_framework_for_external_project(work_repo, 'workRepo')
+        entry['workRepo'] = str(work_repo)
         if reviewer:
             entry['reviewerRole'] = reviewer
             entry['reviewerMode'] = DEFAULT_REVIEWER_MODE
@@ -6160,13 +6603,14 @@ def build_parser() -> argparse.ArgumentParser:
         'init',
         usage=(
             '%(prog)s --agent-id <agentId> [--reviewer <role>] '
-            '[--terminal <seal|issue>] [--no-participant-verification] [--preview] <name>'
+            '[--terminal <seal|issue>] [--no-participant-verification] [--work-repo <path>] [--preview] <name>'
         ),
         description='Create a registry-backed collab record.',
     )
     init_parser.add_argument('--agent-id', action='append')
     init_parser.add_argument('--reviewer', action='append')
     init_parser.add_argument('--terminal', action='append')
+    init_parser.add_argument('--work-repo', action='append')
     init_parser.add_argument('--no-participant-verification', dest='participant_verification', action='store_false', default=True)
     init_parser.add_argument('--preview', action='store_true')
     init_parser.add_argument('name', nargs='*')
@@ -6260,6 +6704,13 @@ def build_parser() -> argparse.ArgumentParser:
     execution_parser.add_argument('--agent-id')
     execution_parser.add_argument('--json', action='store_true')
     execution_parser.add_argument('--caller-role')
+
+    repair_execution_parser = subparsers.add_parser('repair-execution-provenance')
+    repair_execution_parser.add_argument('target')
+    repair_execution_parser.add_argument('role')
+    repair_execution_parser.add_argument('--work-repo')
+    repair_execution_parser.add_argument('--commit', action='append', default=[])
+    repair_execution_parser.add_argument('--caller-role')
 
     execute_spawn_parser = subparsers.add_parser('execute-spawn')
     execute_spawn_parser.add_argument('target')
@@ -6387,6 +6838,10 @@ def main(argv: list[str]) -> int:
     if args.registry is None:
         path, use_state_root = resolve_default_registry_path(args.command)
         if use_state_root:
+            identity_path = find_project_identity_path(Path.cwd())
+            if identity_path is not None:
+                global RESOLVED_WORK_REPO_ROOT
+                RESOLVED_WORK_REPO_ROOT = identity_path.parent
             path = path.resolve()
             path.parent.mkdir(parents=True, exist_ok=True)
             os.chdir(path.parent)
@@ -6425,6 +6880,8 @@ def main(argv: list[str]) -> int:
             tokens.extend(['--reviewer', reviewer])
         for terminal in args.terminal or []:
             tokens.extend(['--terminal', terminal])
+        for work_repo in args.work_repo or []:
+            tokens.extend(['--work-repo', work_repo])
         if not args.participant_verification:
             tokens.append('--no-participant-verification')
         if args.preview:
@@ -6490,6 +6947,15 @@ def main(argv: list[str]) -> int:
             args.touched_path,
             args.agent_id,
             args.json,
+            args.caller_role,
+        )
+    if args.command == 'repair-execution-provenance':
+        return repair_execution_provenance(
+            path,
+            args.target,
+            args.role,
+            args.work_repo,
+            args.commit,
             args.caller_role,
         )
     if args.command == 'execute-spawn':

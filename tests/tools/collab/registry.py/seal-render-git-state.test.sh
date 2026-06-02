@@ -17,7 +17,12 @@ source "$ROOT/tests/tools/collab/registry.py/verification-test-lib.sh"
 complete_execution_with_path() {
   local target="$1"
   local path="$2"
-  "$ROOT/tools/collab/registry.py" execution "$target" pe completed "2026-05-15T21:00:00+02:00" \
+  # Execution provenance capture rejects a commit dated after the execution
+  # timestamp (a commit that did not exist at execution time is not provenance).
+  # Most fixtures predate this default, but a committed-deletion fixture is only
+  # provenance as of its deleting commit, so callers pass that commit's date.
+  local exec_date="${3:-2026-05-15T21:00:00+02:00}"
+  "$ROOT/tools/collab/registry.py" execution "$target" pe completed "$exec_date" \
     --assigned-role pe \
     --validation-result passed \
     --validation-scope scoped \
@@ -57,7 +62,10 @@ if ! git -C "$ROOT" log --diff-filter=D --format=%H -- "$COMMITTED_DELETION_PATH
 fi
 init_completion_target "Seal Render Committed Deletion Git State" "seal-render-committed-deletion-git-state"
 COMMITTED_DELETION_TARGET="$RUN_DATE-seal-render-committed-deletion-git-state"
-complete_execution_with_path "$COMMITTED_DELETION_TARGET" "$COMMITTED_DELETION_PATH"
+# The deletion is provenance only as of its deleting commit; derive that commit's
+# date so capture stays valid regardless of when history was last rewritten.
+COMMITTED_DELETION_DATE="$(git -C "$ROOT" log -1 --format=%cI -- "$COMMITTED_DELETION_PATH")"
+complete_execution_with_path "$COMMITTED_DELETION_TARGET" "$COMMITTED_DELETION_PATH" "$COMMITTED_DELETION_DATE"
 seal_without_execution "$COMMITTED_DELETION_TARGET" >/dev/null
 
 init_completion_target "Seal Render Staged Git State" "seal-render-staged-git-state"
@@ -84,7 +92,7 @@ set +e
 dirty_output="$(GIT_INDEX_FILE="$DIRTY_STAGED_INDEX" seal_without_execution "$DIRTY_STAGED_TARGET" 2>&1)"
 dirty_status=$?
 set -e
-if [[ "$dirty_status" -eq 0 || "$dirty_output" != *"SEAL-GIT-STATE: implementation not in git; unstaged and uncommitted touchedPath(s): [\"$DIRTY_STAGED_PATH\"]"* ]]; then
+if [[ "$dirty_status" -eq 0 || "$dirty_output" != *"SEAL-GIT-STATE: implementation not in git; unstaged or uncommitted touchedPath(s) in "*"[\"$DIRTY_STAGED_PATH\"]"* ]]; then
   printf 'FAIL: seal-render did not reject a touchedPath with unstaged changes after staging\n%s\n' "$dirty_output" >&2
   exit 1
 fi
@@ -98,7 +106,7 @@ set +e
 output="$(seal_without_execution "$UNSTAGED_TARGET" 2>&1)"
 status=$?
 set -e
-if [[ "$status" -eq 0 || "$output" != *"SEAL-GIT-STATE: implementation not in git; unstaged and uncommitted touchedPath(s): [\"$UNSTAGED_PATH\"]"* ]]; then
+if [[ "$status" -eq 0 || "$output" != *"SEAL-GIT-STATE: implementation not in git; unstaged or uncommitted touchedPath(s) in "*"[\"$UNSTAGED_PATH\"]"* ]]; then
   printf 'FAIL: seal-render did not reject a working-tree-only touchedPath\n%s\n' "$output" >&2
   exit 1
 fi
@@ -129,7 +137,7 @@ set +e
 work_repo_output="$(seal_without_execution "$WORK_REPO_REJECT" 2>&1)"
 work_repo_status=$?
 set -e
-if [[ "$work_repo_status" -eq 0 || "$work_repo_output" != *"SEAL-GIT-STATE: implementation not in git; unstaged and uncommitted touchedPath(s): [\"loose-file\"]"* ]]; then
+if [[ "$work_repo_status" -eq 0 || "$work_repo_output" != *"SEAL-GIT-STATE: implementation not in git; unstaged or uncommitted touchedPath(s) in "*"[\"loose-file\"]"* ]]; then
   printf 'FAIL: seal-render did not gate against the declared workRepo\n%s\n' "$work_repo_output" >&2
   exit 1
 fi
