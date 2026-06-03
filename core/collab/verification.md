@@ -133,6 +133,16 @@ Only the `reviewerRole` participant may author the seal. Non-reviewer roles must
 
 For reviewer-backed collabs, auto-close from `/collab run plan` alone is removed. Close fires only when all assigned `execution.<role>` entries are `completed` AND a current non-stale `verificationSeal` exists. Both conditions must hold simultaneously.
 
+## Time-of-close attestation
+
+The seal model governs two distinct time domains:
+
+**Seal time (open records):** Orphan-rejection is enforced when `seal-render` runs. Every recorded execution commit must be reachable from `HEAD` in the work repo at that moment; the exact mechanics are defined in the [Commit-reachability gate](../../commands/collab/seal-verification/index.md#commit-reachability-gate) note in `/collab seal verification`.
+
+**Post-close exemption:** `closed` and `archived` records are not re-validated after close. Commits that become orphaned after a record closes (e.g., from a later branch rebase) are expected artifacts in an immutable record — not live defects. The state at seal time is the authoritative attestation.
+
+For remediation guidance when `workRepo` binding or reachability issues surface during execution or seal, see [`workRepo-remediation-index.md`](workRepo-remediation-index.md).
+
 ## Related routes
 
 - [`participant-verify.md`](../../commands/collab/participant-verify/index.md) — invocable route spec for `/collab participant verify`
@@ -141,3 +151,4 @@ For reviewer-backed collabs, auto-close from `/collab run plan` alone is removed
 - [`show-policy.md`](../../commands/collab/show-policy/index.md) — gate policy and phase-presence overview
 - [`agent-effort.md`](../../core/collab/agent-effort.md) — effort matrix row for `Completion.verification`
 - [`show-verdict.md`](../../commands/collab/show-verdict/index.md) — forthcoming route for verdict introspection over closed-collab metadata; surfaces `outcome`, `restoreTarget`, `evidence`, `failureCategory`, and `nullResult` without requiring direct registry JSON access
+- [`workRepo-remediation-index.md`](workRepo-remediation-index.md) — durable R1–R7 remediation items for `workRepo` binding and reachability failures

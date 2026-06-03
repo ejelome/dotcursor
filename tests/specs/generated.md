@@ -17,6 +17,7 @@ Tracked generated files under `generated/`:
 - `collab-lifecycle.md`
 - `command-reference.md`
 - `content-invariants.tsv`
+- `registry-cli.md`
 
 ## Output
 

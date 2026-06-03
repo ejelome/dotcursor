@@ -283,7 +283,7 @@ check_generated_boundary() {
   while IFS= read -r path; do
     [[ -n "$path" ]] || continue
     case "$path" in
-      generated/command-reference.md|generated/collab-lifecycle.md|generated/content-invariants.tsv) ;;
+      generated/command-reference.md|generated/collab-lifecycle.md|generated/content-invariants.tsv|generated/registry-cli.md) ;;
       *)
         printf 'FAIL: unexpected generated artifact: %s\n' "$path" >&2
         bad=1

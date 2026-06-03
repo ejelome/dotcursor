@@ -163,6 +163,24 @@
       "capabilityTier": "reasoning",
       "effortTier": "xhigh",
       "rationale": "Reviewer seal pass; one bad judgment stales the seal and blocks close."
+    },
+    {
+      "route": "log",
+      "capabilityTier": "transformation",
+      "effortTier": "low",
+      "rationale": "Reads the append-only revision store and emits the registry changelog."
+    },
+    {
+      "route": "status",
+      "capabilityTier": "transformation",
+      "effortTier": "low",
+      "rationale": "Reads registry state and displays the current workflow state of the resolved collab."
+    },
+    {
+      "route": "diff",
+      "capabilityTier": "transformation",
+      "effortTier": "low",
+      "rationale": "Compares registry-derived content state against the content-only transcript sections."
     }
   ]
 }
