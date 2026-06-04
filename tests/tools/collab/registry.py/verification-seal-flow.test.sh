@@ -39,6 +39,10 @@ for role, state in sorted(entry.get('execution', {}).items()):
     }
     if state.get('agentId'):
         row['agentId'] = state.get('agentId')
+    if state.get('contentDigest'):
+        row['contentDigest'] = state.get('contentDigest')
+    if state.get('pathDigests'):
+        row['pathDigests'] = state.get('pathDigests')
     entries.append(row)
 signature = base64.urlsafe_b64encode(
     json.dumps(entries, sort_keys=True, separators=(',', ':')).encode()
@@ -224,6 +228,10 @@ for role, state in sorted(entry.get('execution', {}).items()):
     }
     if state.get('agentId'):
         row['agentId'] = state.get('agentId')
+    if state.get('contentDigest'):
+        row['contentDigest'] = state.get('contentDigest')
+    if state.get('pathDigests'):
+        row['pathDigests'] = state.get('pathDigests')
     entries.append(row)
 signature = base64.urlsafe_b64encode(
     json.dumps(entries, sort_keys=True, separators=(',', ':')).encode()
@@ -332,6 +340,10 @@ for role, state in sorted(entry.get('execution', {}).items()):
     }
     if state.get('agentId'):
         row['agentId'] = state.get('agentId')
+    if state.get('contentDigest'):
+        row['contentDigest'] = state.get('contentDigest')
+    if state.get('pathDigests'):
+        row['pathDigests'] = state.get('pathDigests')
     entries.append(row)
 signature = base64.urlsafe_b64encode(
     json.dumps(entries, sort_keys=True, separators=(',', ':')).encode()

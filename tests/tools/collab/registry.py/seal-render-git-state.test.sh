@@ -77,7 +77,14 @@ STAGED_INDEX="$TMPDIR/staged.index"
 GIT_INDEX_FILE="$STAGED_INDEX" git -C "$ROOT" read-tree HEAD
 blob="$(printf 'staged fixture\n' | git -C "$ROOT" hash-object -w --stdin)"
 GIT_INDEX_FILE="$STAGED_INDEX" git -C "$ROOT" update-index --add --cacheinfo 100644 "$blob" "$STAGED_PATH"
-GIT_INDEX_FILE="$STAGED_INDEX" seal_without_execution "$STAGED_TARGET" >/dev/null
+set +e
+staged_output="$(GIT_INDEX_FILE="$STAGED_INDEX" seal_without_execution "$STAGED_TARGET" 2>&1)"
+staged_status=$?
+set -e
+if [[ "$staged_status" -eq 0 || "$staged_output" != *"SEAL-GIT-STATE: implementation not in git; unstaged or uncommitted touchedPath(s) in "*"[\"$STAGED_PATH\"]"* ]]; then
+  printf 'FAIL: seal-render did not reject a staged touchedPath\n%s\n' "$staged_output" >&2
+  exit 1
+fi
 
 init_completion_target "Seal Render Dirty Staged Git State" "seal-render-dirty-staged-git-state"
 DIRTY_STAGED_TARGET="$RUN_DATE-seal-render-dirty-staged-git-state"
@@ -156,5 +163,5 @@ if [[ "$relative_work_repo_status" -eq 0 || "$relative_work_repo_output" != *"wo
   exit 1
 fi
 
-printf 'OK: seal-render git-state gate accepts committed/staged/deleted paths and rejects unstaged or working-tree-only paths\n'
+printf 'OK: seal-render git-state gate accepts committed/deleted paths and rejects staged, unstaged, or working-tree-only paths\n'
 printf 'OK: seal-render git-state gate resolves declared workRepo for cross-repo collabs\n'

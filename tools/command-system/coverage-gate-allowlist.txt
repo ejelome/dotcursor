@@ -77,7 +77,7 @@ commands/collab/speak/index.md:19|c190d93368e3
 commands/collab/speak/index.md:20|f821ab5ad9ce
 commands/collab/speak/index.md:21|7f5ee9e4bb8f
 commands/collab/speak/index.md:22|3d64e44cc02a
-commands/collab/speak/index.md:23|3a77a0e354c7
+commands/collab/speak/index.md:23|137327dfdb7d
 commands/collab/speak/index.md:24|76bc6e91744b
 commands/collab/speak/index.md:27|ffcaff1f899a
 commands/collab/speak/index.md:34|964e6e4396ca

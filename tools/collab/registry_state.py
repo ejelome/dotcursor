@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+"""Project-identity binding and state-root resolution; does not own transcript reading, route planning, or phase lifecycle."""
 from __future__ import annotations
 
 import json
@@ -6,6 +7,8 @@ import os
 import re
 import uuid
 from pathlib import Path
+
+from tools.collab.errors import die
 
 PROJECT_ID_FILENAME = '.collab.json'
 DISALLOWED_VERSION_FIELD = 'schema' + 'Version'
@@ -15,10 +18,6 @@ PROJECT_ID_RE = re.compile(r'^[a-z0-9][a-z0-9-]{7,127}$')
 STATE_ROOT_PROOF_COMMAND = './tests/tools/collab/registry.py/state-root-resolution.test.sh'
 
 RESOLVED_PROJECT_IDENTITY: dict | None = None
-
-
-def die(message: str) -> None:
-    raise SystemExit(message)
 
 
 def find_project_identity_path(start: Path | None = None) -> Path | None:

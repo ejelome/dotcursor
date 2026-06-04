@@ -46,7 +46,7 @@ assert '<summary>pa · reopen brief (incomplete, missing-acceptance)</summary>' 
 assert 'restoreReason: Action Plan acceptance criteria were not met.' in block
 assert 'restoreTarget: Action Plan' in block
 assert 'failureCategory: missing-acceptance' in block
-assert '  registryRevision: 2' in block
+assert '  revision: 2' in block
 assert '  committedPaths: ["tools/command-system/audit.sh"]' in block
 assert '  executionEntryIds: ["pe-2026-05-15t21-00-00-02-00"]' in block
 assert '  transcriptIds: ["action-plan-pe-1"]' in block

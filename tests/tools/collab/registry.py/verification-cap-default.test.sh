@@ -10,13 +10,14 @@ trap 'rm -rf "$TMPDIR"' EXIT
 cd "$TMPDIR"
 export COLLAB_STATE_HOME="$TMPDIR/state-home"
 
-python3 - "$ROOT/tools/collab/registry.py" "$ROOT/core/collab/verification.md" <<'PY'
+python3 - "$ROOT/tools/collab/registry.py" "$ROOT/tools/collab/registry_constants.py" "$ROOT/core/collab/verification.md" <<'PY'
 import re
 import sys
 from pathlib import Path
 
-constant_source = Path(sys.argv[1]).read_text()
-doc_source = Path(sys.argv[2]).read_text()
+facade_source = Path(sys.argv[1]).read_text()
+constant_source = Path(sys.argv[2]).read_text()
+doc_source = Path(sys.argv[3]).read_text()
 
 constant_match = re.search(r'^DEFAULT_VERIFICATION_CAP = (\d+)$', constant_source, re.MULTILINE)
 doc_match = re.search(
@@ -25,6 +26,7 @@ doc_match = re.search(
 )
 
 assert constant_match, 'DEFAULT_VERIFICATION_CAP declaration missing'
+assert 'DEFAULT_VERIFICATION_CAP,' in facade_source, 'registry.py facade import missing'
 assert doc_match, 'verification default-cap prose missing'
 assert constant_match.group(1) == '3', constant_match.group(0)
 assert doc_match.group(1) == '3', doc_match.group(0)

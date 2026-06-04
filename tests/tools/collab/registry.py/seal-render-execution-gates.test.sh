@@ -38,6 +38,10 @@ for role, state in sorted(entry.get('execution', {}).items()):
         'touchedPaths': list(state.get('touchedPaths', [])),
         'commits': list(state.get('commits', [])),
     }
+    if state.get('contentDigest'):
+        row['contentDigest'] = state.get('contentDigest')
+    if isinstance(state.get('pathDigests'), dict):
+        row['pathDigests'] = state.get('pathDigests')
     if state.get('agentId'):
         row['agentId'] = state.get('agentId')
     entries.append(row)
@@ -125,8 +129,34 @@ set +e
 drift_output="$("$ROOT/tools/collab/registry.py" seal-render "$DRIFT_TARGET" pa --observed-revision "$drift_revision" --caller-role pa 2>&1)"
 drift_status=$?
 set -e
-if [[ "$drift_status" -eq 0 || "$drift_output" != *"EXECUTION-WRITESCOPE-OVERAGE:"* ]]; then
-  printf 'FAIL: seal-render accepted execution touchedPath drift\n%s\n' "$drift_output" >&2
+if [[ "$drift_status" -ne 0 || "$drift_output" != *"ADVISORY-SCOPE: undeclared"* ]]; then
+  printf 'FAIL: seal-render did not downgrade touchedPath drift to advisory output\n%s\n' "$drift_output" >&2
+  exit 1
+fi
+
+python3 - "$REGISTRY" "$DRIFT_TARGET" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+target = sys.argv[2]
+data = json.loads(path.read_text())
+entry = next(item for item in data['collabs'] if item['id'] == target)
+entry.pop('verificationSeal', None)
+entry['execution']['pe']['commits'] = ['0' * 40]
+entry.setdefault('verification', {})['subState'] = 'seal'
+path.write_text(json.dumps(data, indent=2) + '\n')
+PY
+seed_round "$DRIFT_TARGET"
+bogus_state="$("$ROOT/tools/collab/registry.py" seal-state "$DRIFT_TARGET" pa)"
+bogus_revision="$(read_json_field registryRevision <<<"$bogus_state")"
+set +e
+bogus_output="$("$ROOT/tools/collab/registry.py" seal-render "$DRIFT_TARGET" pa --observed-revision "$bogus_revision" --caller-role pa 2>&1)"
+bogus_status=$?
+set -e
+if [[ "$bogus_status" -ne 0 ]]; then
+  printf 'FAIL: seal-render treated commits as a validation gate\n%s\n' "$bogus_output" >&2
   exit 1
 fi
 
@@ -247,9 +277,9 @@ set +e
 combined_output="$("$ROOT/tools/collab/registry.py" seal-render "$COMBINED_TARGET" pa --observed-revision "$combined_revision" --caller-role pa 2>&1)"
 combined_status=$?
 set -e
-if [[ "$combined_status" -ne 0 || "$combined_output" == *"EXECUTION-WRITESCOPE-OVERAGE:"* ]]; then
+if [[ "$combined_status" -ne 0 ]]; then
   printf 'FAIL: seal-render rejected a legitimate combined commit (union of role scopes == commit)\n%s\n' "$combined_output" >&2
   exit 1
 fi
 
-printf 'OK: seal-render rejects touched-path drift and agent conflation, accepts a combined commit\n'
+printf 'OK: seal-render ungates commits, keeps scope advisory non-blocking, rejects agent conflation\n'

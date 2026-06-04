@@ -1,6 +1,9 @@
+"""Transcript phase parsing and contribution-block extraction; does not own registry state, route planning, or any write path."""
 from __future__ import annotations
 
 import re
+
+from tools.collab.errors import die
 
 
 PHASES = ['Audit', 'Discussion', 'Conclusion', 'Action Plan', 'Handoff', 'Completion']
@@ -28,10 +31,6 @@ CHARTERED_DELIVERABLES_LABEL = 'charteredDeliverables:'
 CHARTERED_DELIVERABLES_LABEL_NORMALIZED = re.sub(
     r'\s+', '', CHARTERED_DELIVERABLES_LABEL.rstrip(':')
 ).lower()
-
-
-def die(message: str) -> None:
-    raise SystemExit(message)
 
 
 def summary_role(line: str) -> str | None:

@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
+"""Route prerequisite validation and issue-bridge detection; does not own registry state, transcript reads, or write paths."""
 from __future__ import annotations
 
 from pathlib import Path
 
-
-def die(message: str) -> None:
-    raise SystemExit(message)
+from tools.collab.errors import die
 
 
 def source_text(path: Path) -> str:

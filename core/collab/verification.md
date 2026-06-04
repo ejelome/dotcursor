@@ -85,6 +85,8 @@ verificationSeal = {
   executionEntries: object[],
   validationScopes: string[],
   touchedPaths:    string[],
+  contentDigest:   string,
+  pathDigests:     { "<path>": { mode: string, blob: string } },
   sealedAt:        ISO-8601,
   sealedBy:        string
 }
@@ -101,6 +103,7 @@ Each trigger is helper-enforced with a paired shell test asserting invalidation:
 | Execution rewrite via `/collab rewrite execution` | `rewrite-execution` helper path invalidates seal |
 | Transcript repair touching Completion execution evidence | Repair helper path invalidates seal |
 | Out-of-scope patch applied outside declared `writeScope` | `execute-spawn` rejection or explicit helper hook |
+| Content drift (recomputed scope digest ≠ `verificationSeal.contentDigest`) | `invalidate_verification_seal` content-drift path |
 
 A stale seal blocks close. The seal must be re-issued after any stale trigger fires.
 
@@ -137,9 +140,9 @@ For reviewer-backed collabs, auto-close from `/collab run plan` alone is removed
 
 The seal model governs two distinct time domains:
 
-**Seal time (open records):** Orphan-rejection is enforced when `seal-render` runs. Every recorded execution commit must be reachable from `HEAD` in the work repo at that moment; the exact mechanics are defined in the [Commit-reachability gate](../../commands/collab/seal-verification/index.md#commit-reachability-gate) note in `/collab seal verification`.
+**Seal time (open records):** Content-integrity is enforced when `seal-render` runs. The scope digest and `pathDigests` map are recomputed from `HEAD` and must equal the stored seal values; committed deletions are represented as deletion tombstones in `pathDigests`. The declared scope must also be fully committed at `HEAD`. The exact mechanics are defined in the [Content-integrity gate](../../commands/collab/seal-verification/index.md#content-integrity-gate) note in `/collab seal verification`.
 
-**Post-close exemption:** `closed` and `archived` records are not re-validated after close. Commits that become orphaned after a record closes (e.g., from a later branch rebase) are expected artifacts in an immutable record — not live defects. The state at seal time is the authoritative attestation.
+**Post-close exemption:** `closed` and `archived` records are not re-validated after close. History rewrites (amend, rebase, squash) that preserve the content of touched paths do not affect the sealed digest and are expected artifacts in immutable records — not live defects. The state at seal time is the authoritative attestation.
 
 For remediation guidance when `workRepo` binding or reachability issues surface during execution or seal, see [`workRepo-remediation-index.md`](workRepo-remediation-index.md).
 

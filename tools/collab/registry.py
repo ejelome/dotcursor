@@ -11,6 +11,7 @@ import html
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import webbrowser
@@ -28,7 +29,59 @@ if str(COMMAND_SYSTEM_DIR) not in sys.path:
     sys.path.insert(0, str(COMMAND_SYSTEM_DIR))
 
 from roles import load_role, participant_row, roles_command
+from tools.collab.errors import die, handoff_abort
 from tools.collab.planned_routes import validate_issue_bridge_block, validate_planned_route_prerequisites
+from tools.collab.registry_constants import (
+    ACTIVE_PARTICIPANT_VERIFICATION_STAGES,
+    ALLOWED_CAP_EXITS,
+    ALLOWED_COMPLETION_SUBSTATES,
+    ALLOWED_EXECUTION_STATUSES,
+    ALLOWED_PARTICIPANT_VERIFICATION_STAGES,
+    ALLOWED_REVIEWER_MODES,
+    ALLOWED_SET_FIELDS,
+    ALLOWED_STATUSES,
+    ALLOWED_TERMINALS,
+    ALLOWED_VALIDATION_SCOPES,
+    ALLOWED_VERDICT_OUTCOMES,
+    ALLOWED_VERDICT_RESTORE_TARGETS,
+    ALLOWED_VERIFICATION_SUBSTATES,
+    AUTO_ADVANCE_EXEMPT_PHASES,
+    CALLER_DECLINED_AGENT_ID,
+    CONTENT_ONLY_GUARD,
+    CONVERGENT_REVIEWER_PHASES,
+    DEFAULT_OPEN_ROSTER_EFFORT,
+    DEFAULT_REVIEWER_MODE,
+    DEFAULT_REVIEWER_OPTIONAL_PHASES,
+    DEFAULT_TERMINAL,
+    DEFAULT_VERIFICATION_CAP,
+    DELETED_PATH_BLOB,
+    DELETED_PATH_MODE,
+    DISALLOWED_VERSION_FIELD,
+    FORCE_ONLY_FIELDS,
+    FULL_BODY_SUMMARY,
+    FULL_BODY_SUMMARY_LINE,
+    GLOB_PATTERN_RE,
+    HEADER_MANAGED_BEGIN,
+    HEADER_MANAGED_END,
+    INVALID_AGENT_ID_ALTERNATIVES,
+    MAX_HANDOFF_SCOPE_COUNT,
+    MAX_HANDOFF_SCOPE_LENGTH,
+    MAX_VALIDATION_ARG_LENGTH,
+    MAX_VALIDATION_COMMAND_ARGS,
+    MAX_VALIDATION_COMMANDS,
+    MOD_EXCLUDED_PHASES,
+    MODERATOR_ONLY_ACTIONS,
+    ONE_SPEAK_PHASES,
+    PHASES,
+    RESERVED_ISSUE_TERMINAL_MESSAGE,
+    REGISTRY_EVENT_DIR,
+    REGISTRY_EVENT_IGNORED_ROOT_KEYS,
+    REGISTRY_EVENT_SCHEMA,
+    RETIRED_ROOT_KEYS,
+    SHELL_PATTERN_RE,
+    STALE_LOCK_SECONDS,
+    TERMINAL_CHOICES_MESSAGE,
+)
 from tools.collab.registry_state import (
     PROJECT_ID_RE,
     assert_registry_project_binding,
@@ -38,54 +91,197 @@ from tools.collab.registry_state import (
     sync_registry_project_metadata,
 )
 from tools.collab import transcript_readers
-
-
-PHASES = ['Audit', 'Discussion', 'Conclusion', 'Action Plan', 'Handoff', 'Completion']
-CONTENT_ONLY_GUARD = '<!-- collab:content-only; do-not-execute -->'
-HEADER_MANAGED_BEGIN = '<!-- collab:header-managed -->'
-HEADER_MANAGED_END = '<!-- collab:header-end -->'
-FULL_BODY_SUMMARY = 'Full contribution'
-FULL_BODY_SUMMARY_LINE = f'<summary>{FULL_BODY_SUMMARY}</summary>'
-ONE_SPEAK_PHASES = {'Audit', 'Conclusion', 'Action Plan', 'Handoff'}
-AUTO_ADVANCE_EXEMPT_PHASES = {'Discussion', 'Completion'}
-CONVERGENT_REVIEWER_PHASES = {'Audit', 'Conclusion'}
-MOD_EXCLUDED_PHASES = {'Conclusion', 'Action Plan', 'Handoff', 'Completion'}
-ALLOWED_SET_FIELDS = {'title', 'description', 'turn-order', 'reviewer-optional-phases', 'work-repo'}
-FORCE_ONLY_FIELDS = {'active-phase'}
-ALLOWED_STATUSES = {'open', 'closed', 'archived'}
-ALLOWED_EXECUTION_STATUSES = {'in_progress', 'completed', 'failed'}
-ALLOWED_VALIDATION_SCOPES = {'scoped', 'full', 'deferred'}
-ALLOWED_COMPLETION_SUBSTATES = {'execution', 'verification'}
-ALLOWED_VERIFICATION_SUBSTATES = {'participant', 'seal', 'assessment'}
-ALLOWED_PARTICIPANT_VERIFICATION_STAGES = {'audit', 'remediation', 'final-audit', 'completed', 'failed'}
-ACTIVE_PARTICIPANT_VERIFICATION_STAGES = {'audit', 'remediation', 'final-audit'}
-ALLOWED_VERDICT_OUTCOMES = {'success', 'incomplete', 'failed'}
-ALLOWED_VERDICT_RESTORE_TARGETS = {'Action Plan', 'Handoff'}
-ALLOWED_CAP_EXITS = {'reopen-action-plan', 'reopen-handoff', 'follow-up-collab', 'archive'}
-ALLOWED_TERMINALS = {'seal', 'issue'}
-DEFAULT_TERMINAL = 'seal'
-TERMINAL_CHOICES_MESSAGE = 'seal, issue'
-RESERVED_ISSUE_TERMINAL_MESSAGE = (
-    '--terminal issue is reserved and not yet implemented; '
-    'use --terminal seal or omit --terminal'
+from tools.collab.digests import (
+    active_execution_entries,
+    content_digest_for_touched_paths,
+    details_block_end,
+    execution_identity,
+    execution_signature,
+    full_body_signature_for_transcript,
+    is_full_body_block_start,
+    managed_full_body_blocks,
+    participant_execution_signature,
+    participant_write_scope_signature,
+    rendered_transcript_without_full_bodies,
+    strip_managed_full_body_lines,
+    touched_paths_for_execution,
+    validation_scopes_for_execution,
 )
-DEFAULT_VERIFICATION_CAP = 3
-DISALLOWED_VERSION_FIELD = 'schema' + 'Version'
-MAX_HANDOFF_SCOPE_COUNT = 32
-MAX_HANDOFF_SCOPE_LENGTH = 200
-MAX_VALIDATION_COMMANDS = 16
-MAX_VALIDATION_COMMAND_ARGS = 16
-MAX_VALIDATION_ARG_LENGTH = 200
-ALLOWED_REVIEWER_MODES = {'last-in-convergent-phases'}
-DEFAULT_REVIEWER_MODE = 'last-in-convergent-phases'
-DEFAULT_REVIEWER_OPTIONAL_PHASES = ['Discussion']
-INVALID_AGENT_ID_ALTERNATIVES = {'n/a', 'unspecified'}
-CALLER_DECLINED_AGENT_ID = 'caller-declined'
-DEFAULT_OPEN_ROSTER_EFFORT = 'medium'
-STALE_LOCK_SECONDS = 24 * 60 * 60
-CURRENT_REGISTRY_PROJECT: dict | None = None
-RESOLVED_WORK_REPO_ROOT: Path | None = None
+from tools.collab.execution import (
+    all_execution_completed,
+    assert_disjoint_scopes,
+    assert_no_execution_agent_conflation,
+    assert_touched_paths_inside_handoff,
+    execute_spawn,
+    execution_scope_advisory,
+)
+from tools.collab.git_repo import (
+    assert_execution_touched_paths_in_git_state,
+    assert_touched_paths_recordable_in_work_repo,
+    assert_work_repo_not_framework_for_external_project,
+    current_head_commit,
+    default_init_work_repo_root,
+    enclosing_git_tree,
+    execution_commits_for_touched_paths,
+    git_commit_paths,
+    git_committed_deletion_paths,
+    git_index_or_staged_paths,
+    git_latest_commit_for_path,
+    git_staged_paths,
+    git_unstaged_paths,
+    resolve_git_work_tree,
+    set_resolved_work_repo_root,
+    work_repo_root,
+    working_tree_path_exists,
+)
+from tools.collab.handoff_shape import (
+    handoff_field_sections,
+    handoff_state_for_role,
+    normalize_handoff_scope,
+    normalize_validation_arg,
+    normalize_validation_argv,
+    normalize_validation_command_entry,
+    normalize_validation_command_path,
+    parse_handoff_content,
+    parse_json_fragment,
+    parse_validation_commands_section,
+    parse_write_scope_section,
+    set_handoff_state,
+    validate_handoff_state,
+    validate_handoff_validation_commands,
+    validate_handoff_write_scope,
+    validation_command_abort,
+)
+from tools.collab.normalizers import (
+    assert_one_line_nonempty,
+    collab_date,
+    display_title,
+    format_banner_timestamp,
+    format_timestamp,
+    normalize_join_agent_id,
+    normalize_restore_target,
+    normalize_scope_path,
+    normalize_slug,
+    normalize_title,
+    normalize_touched_paths,
+    parse_execution_datetime,
+    path_is_within,
+    phase_slug,
+    scope_matches_declared,
+)
+from tools.collab.participants import (
+    active_reviewer_role,
+    add_participant_to_entry,
+    assert_caller_role,
+    count_caller_declined_agent_id_write,
+    effective_turn_order,
+    expected_speaker,
+    has_participant,
+    normalize_turn_order_for_phase,
+    optional_reviewer_allowed_at_round_boundary,
+    participant_agent_id,
+    participant_roles,
+    parse_reviewer_optional_phases,
+    pending_reviewer_role,
+    phase_turn_order,
+    remove_moderator_from_turn_order,
+    reviewer_backed,
+    reviewer_mode,
+    reviewer_optional_for_phase,
+    reviewer_optional_phases,
+    reviewer_required_for_phase,
+    reviewer_role,
+    reviewer_state,
+    validate_participant_role_files,
+)
+from tools.collab.phase_lifecycle import (
+    discussion_turn_notice,
+    next_phase_name,
+    notice_message,
+    print_lifecycle_diagnostic,
+    print_notice_diagnostic,
+    print_phase_result,
+    terminal_notice,
+    transition_notice,
+)
+from tools.collab.registry_io import (
+    bump_registry_event_index,
+    bump_registry_revision,
+    capture_registry_project,
+    collab_ids_by_id,
+    configure_registry_io,
+    current_registry_project_id,
+    ensure_legacy_revision_baselines,
+    finalize_registry_event,
+    load_registry,
+    load_registry_or_bootstrap,
+    parse_registry_before,
+    prepare_registry_event,
+    read_revision_events,
+    registry_event_collab_id,
+    registry_event_index,
+    registry_has_semantic_change,
+    registry_lock,
+    registry_revision,
+    registry_semantic_snapshot,
+    require_active_collab,
+    retire_legacy_registry_fields,
+    resolve_collab,
+    revision_event_dir,
+    revision_event_root,
+    root_project_id,
+    save_registry,
+    write_json_if_absent,
+    write_revision_event,
+)
 
+# Public import surface — frozen for the duration of the decomposition:
+#   tools.collab.errors              — shared exit helpers with no registry dependency
+#   tools.collab.registry_constants  — registry lifecycle vocabulary and policy constants
+#   tools.collab.registry_state      — project-identity binding and state-root resolution
+#   tools.collab.planned_routes      — route prerequisite validation and issue-bridge detection
+#   tools.collab.transcript_readers  — transcript phase parsing and contribution-block extraction
+#   tools.collab.normalizers         — pure slug/title/path/scope normalization (no state, no I/O)
+#   tools.collab.digests             — content/path digest computation and signatures (no git policy)
+#   tools.collab.handoff_shape       — handoff writeScope/validationCommands schema (no lifecycle)
+#   tools.collab.git_repo            — git subprocess reads: head, commits, content-at-ref (no seal policy)
+#   tools.collab.registry_io         — registry persistence, lock, validate, resolve (no phase decisions)
+#   tools.collab.participants        — collab creation + participant roster (no turn-order lifecycle)
+#   tools.collab.phase_lifecycle     — phase state machine: advance/restore/reopen/close/archive (no rendering)
+#   tools.collab.execution           — execution recording, run-plan, write-scope enforcement (no seal)
+
+# Decomposition strategy — this file remains the public CLI/helper facade throughout:
+# Extraction order (lowest to highest invariant risk):
+#   1. pure readers and parsers
+#   2. route-planning helpers
+#   3. stateful transcript/registry write paths
+#   4. seal/verification logic (last — highest integrity cost)
+# Each extraction keeps the registry.py public import or wrapper unchanged.
+# Write-path moves are never incidental; each is its own scoped item.
+
+# Forward extraction gates — every extraction item must satisfy all three before merging:
+#   [P1-render] Byte-identical render gate: any item touching managed rendering
+#               (participants table, TOC, header, <details> scaffolding) must run the
+#               rendering helper before and after against a fixed fixture transcript and
+#               assert a zero-byte diff. Prose "behavior-equivalent" review does not
+#               satisfy this. Rationale: Invariant #1 — one whitespace byte of render
+#               drift silently breaks every route asserting managed-section bytes.
+#   [P2-seal]   Paired staleness-test gate: each stale-seal trigger relocated during
+#               the seal/verification extraction must ship a shell test in the same item
+#               asserting the trigger still invalidates the seal after the move.
+#               Rationale: show-policy Drift — a seal "appearing valid but covering
+#               different evidence" is a silent failure; this gate makes it loud.
+#   [V-shape]   Per-item guardrail packet (must appear in every extraction collab's
+#               Action Plan, not just inferred): source cluster, destination module,
+#               public imports retained by registry.py, byte-identical render assertions
+#               where [P1-render] applies, and write-path freeze confirmation.
+
+# Directive-of-record (collab 2026-06-04-registry-decomposition, #discussion-tw-1):
+#   "Keep splitting the oversized registry core into focused, independently testable
+#    parts. One enormous module is hard to reason about and risky to change; cohesive
+#    units shrink the blast radius of every edit."
+#   Note: #audit-mod-1 in that collab cites /Users/ejelome/Downloads/next-collabs.md
+#   row #4 — a transient local path superseded by this Discussion transcription.
 
 def resolve_config_root() -> Path:
     configured = os.environ.get('COMMAND_CONFIG_ROOT')
@@ -104,16 +300,6 @@ DEFAULT_BUDGET_PATH = DEFAULT_CONFIG_ROOT / 'core/collab/contribution-budget.md'
 DEFAULT_MODERATOR_POLISH_PATH = DEFAULT_CONFIG_ROOT / 'core/collab/moderator-polish.md'
 DEFAULT_FLAG_TAXONOMY_PATH = DEFAULT_CONFIG_ROOT / 'core/framework/flag-taxonomy.md'
 EFFORT_MODEL_MARKER = 'generated; do not edit'
-MODERATOR_ONLY_ACTIONS = {
-    'advance',
-    'archive',
-    'close',
-    'delete',
-    'reopen',
-    'restore',
-    'set',
-    'unset',
-}
 ID_RE = re.compile(r'^\d{4}-\d{2}-\d{2}-[a-z0-9]+(?:-[a-z0-9]+)*$')
 ROLE_KEY_RE = re.compile(r'^\w+$')
 SUMMARY_RE = re.compile(r'^<summary>(?P<role>[A-Za-z0-9_-]+)(?:\s+—\s+.+)?</summary>$')
@@ -156,8 +342,6 @@ CONCLUSION_ACTION_PLAN_LINE_RE = re.compile(
 )
 STRUCTURED_HANDOFF_HEADING_RE = re.compile(r'^\s*\*\*(?P<field>writeScope|validationCommands):?\*\*:?\s*(?P<rest>.*)$')
 CODE_SPAN_RE = re.compile(r'`([^`]+)`')
-SHELL_PATTERN_RE = re.compile(r'[;&|<>`$\\\r\n]')
-GLOB_PATTERN_RE = re.compile(r'[*?\[]')
 CHARTERED_DELIVERABLES_LABEL = 'charteredDeliverables:'
 CHARTERED_DELIVERABLES_LABEL_NORMALIZED = re.sub(r'\s+', '', CHARTERED_DELIVERABLES_LABEL.rstrip(':')).lower()
 MANDATORY_EFFORT_OVERRIDE_TURNS = {
@@ -170,10 +354,6 @@ MANDATORY_EFFORT_OVERRIDE_TURNS = {
 TYPO_ROW_RE = re.compile(r'^\|\s*`(?P<typo>[^`]+)`\s*\|\s*`(?P<fix>[^`]+)`')
 FLAG_ROW_RE = re.compile(r'^\|\s*`(?P<flag>[^`]+)`\s*\|\s*`(?P<class>[^`]+)`\s*\|\s*(?P<notes>.*?)\s*\|$')
 OLD_ROOT_KEYS = {'schema_version', 'active_collab_id'}
-RETIRED_ROOT_KEYS = {'registryRevision'}
-REGISTRY_EVENT_DIR = 'revisions'
-REGISTRY_EVENT_SCHEMA = 1
-REGISTRY_EVENT_IGNORED_ROOT_KEYS = {'revision', 'eventIndex', 'registryRevision'}
 OLD_ENTRY_KEYS = {
     'active_phase',
     'created_on',
@@ -190,257 +370,6 @@ REVIEWER_DISCIPLINE_GATES = (
 )
 
 
-def die(message: str) -> None:
-    raise SystemExit(message)
-
-
-def load_registry(path: Path) -> dict:
-    if not path.exists():
-        die(f'registry missing: {path}')
-    try:
-        data = json.loads(path.read_text())
-    except json.JSONDecodeError as exc:
-        die(f'registry invalid JSON: {path}: {exc}')
-    retire_legacy_registry_fields(data)
-    validate_registry(data, path)
-    assert_registry_project_binding(data, path)
-    capture_registry_project(data)
-    return data
-
-
-def save_registry(path: Path, data: dict) -> None:
-    registry_before = path.read_text() if path.exists() else None
-    sync_registry_project_metadata(data)
-    retire_legacy_registry_fields(data)
-    registry_event = prepare_registry_event(path, registry_before, data, 'registry-write')
-    bump_registry_revision(data)
-    if registry_event is not None:
-        bump_registry_event_index(data)
-        registry_event = finalize_registry_event(data, registry_event)
-    validate_registry(data, path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = path.with_name(f'{path.name}.tmp')
-    try:
-        tmp_path.write_text(json.dumps(data, indent=2) + '\n')
-        tmp_path.replace(path)
-        if registry_event is not None:
-            write_revision_event(path, registry_event)
-    except OSError:
-        tmp_path.unlink(missing_ok=True)
-        raise
-
-
-def bump_registry_revision(data: dict) -> int:
-    revision = data.get('revision', 0)
-    if not isinstance(revision, int) or revision < 0:
-        die('registry revision must be a non-negative integer')
-    revision += 1
-    data['revision'] = revision
-    return revision
-
-
-def registry_revision(data: dict) -> int:
-    revision = data.get('revision', 0)
-    if not isinstance(revision, int) or revision < 0:
-        die('registry revision must be a non-negative integer')
-    return revision
-
-
-def retire_legacy_registry_fields(data: dict) -> None:
-    for key in RETIRED_ROOT_KEYS:
-        data.pop(key, None)
-
-
-def registry_event_index(data: dict) -> int:
-    event_index = data.get('eventIndex', 0)
-    if not isinstance(event_index, int) or event_index < 0:
-        die('registry eventIndex must be a non-negative integer')
-    return event_index
-
-
-def bump_registry_event_index(data: dict) -> int:
-    event_index = registry_event_index(data) + 1
-    data['eventIndex'] = event_index
-    return event_index
-
-
-def registry_semantic_snapshot(data: dict | None) -> object:
-    if data is None:
-        return None
-    snapshot = deepcopy(data)
-    if isinstance(snapshot, dict):
-        for key in REGISTRY_EVENT_IGNORED_ROOT_KEYS:
-            snapshot.pop(key, None)
-    return snapshot
-
-
-def parse_registry_before(text: str | None) -> dict | None:
-    if text is None:
-        return None
-    try:
-        data = json.loads(text)
-    except json.JSONDecodeError:
-        return None
-    return data if isinstance(data, dict) else None
-
-
-def registry_has_semantic_change(before: dict | None, after: dict) -> bool:
-    return registry_semantic_snapshot(before) != registry_semantic_snapshot(after)
-
-
-def collab_ids_by_id(data: dict | None) -> dict[str, dict]:
-    if not isinstance(data, dict):
-        return {}
-    collabs = data.get('collabs')
-    if not isinstance(collabs, list):
-        return {}
-    result: dict[str, dict] = {}
-    for entry in collabs:
-        if isinstance(entry, dict) and isinstance(entry.get('id'), str):
-            result[entry['id']] = entry
-    return result
-
-
-def registry_event_collab_id(before: dict | None, after: dict) -> str:
-    before_collabs = collab_ids_by_id(before)
-    after_collabs = collab_ids_by_id(after)
-    changed: list[str] = []
-    for collab_id in sorted(set(before_collabs) | set(after_collabs)):
-        if registry_semantic_snapshot(before_collabs.get(collab_id)) != registry_semantic_snapshot(after_collabs.get(collab_id)):
-            changed.append(collab_id)
-    if len(changed) == 1:
-        return changed[0]
-    active_id = after.get('activeCollabId') or (before or {}).get('activeCollabId')
-    if isinstance(active_id, str) and active_id.strip():
-        return active_id
-    return '_registry'
-
-
-def prepare_registry_event(
-    registry_path: Path,
-    registry_before: str | None,
-    data: dict,
-    event_type: str,
-) -> dict | None:
-    before = parse_registry_before(registry_before)
-    if not registry_has_semantic_change(before, data):
-        return None
-    return {
-        'schema': REGISTRY_EVENT_SCHEMA,
-        'eventType': event_type,
-        'timestamp': dt.datetime.now().astimezone().isoformat(timespec='seconds'),
-        'collabId': registry_event_collab_id(before, data),
-        'summary': f'{event_type} for {registry_event_collab_id(before, data)}',
-        '_registryPath': str(registry_path),
-        '_before': before,
-    }
-
-
-def finalize_registry_event(data: dict, event: dict) -> dict:
-    finalized = dict(event)
-    finalized['_legacyBefore'] = finalized.pop('_before', None)
-    finalized.pop('_registryPath', None)
-    finalized['revision'] = registry_revision(data)
-    finalized['eventIndex'] = registry_event_index(data)
-    return finalized
-
-
-def revision_event_root(registry_path: Path) -> Path:
-    return registry_path.parent / REGISTRY_EVENT_DIR
-
-
-def revision_event_dir(registry_path: Path, collab_id: str) -> Path:
-    safe_id = re.sub(r'[^A-Za-z0-9_.-]+', '-', collab_id).strip('-') or '_registry'
-    return revision_event_root(registry_path) / safe_id
-
-
-def write_json_if_absent(path: Path, data: dict) -> None:
-    if path.exists():
-        return
-    tmp_path = path.with_name(f'{path.name}.tmp')
-    tmp_path.write_text(json.dumps(data, indent=2, sort_keys=True) + '\n')
-    tmp_path.replace(path)
-
-
-def ensure_legacy_revision_baselines(registry_path: Path, before: dict | None) -> None:
-    if not isinstance(before, dict):
-        return
-    collabs = before.get('collabs')
-    if not isinstance(collabs, list):
-        return
-    for entry in collabs:
-        if not isinstance(entry, dict) or not isinstance(entry.get('id'), str):
-            continue
-        event_dir = revision_event_dir(registry_path, entry['id'])
-        event_dir.mkdir(parents=True, exist_ok=True)
-        write_json_if_absent(
-            event_dir / 'legacy-baseline.json',
-            {
-                'schema': REGISTRY_EVENT_SCHEMA,
-                'eventIndex': None,
-                'revision': entry.get('revision'),
-                'timestamp': None,
-                'eventType': 'legacy-baseline',
-                'collabId': entry['id'],
-                'summary': 'Legacy baseline for a pre-existing collab; no synthetic eventIndex assigned.',
-            },
-        )
-
-
-def write_revision_event(registry_path: Path, event: dict) -> None:
-    event_to_write = dict(event)
-    legacy_before = event_to_write.pop('_legacyBefore', None)
-    ensure_legacy_revision_baselines(registry_path, legacy_before)
-    event_dir = revision_event_dir(registry_path, event_to_write['collabId'])
-    event_dir.mkdir(parents=True, exist_ok=True)
-    event_path = event_dir / f'{event_to_write["eventIndex"]:012d}.json'
-    tmp_path = event_path.with_name(f'{event_path.name}.tmp')
-    tmp_path.write_text(json.dumps(event_to_write, indent=2, sort_keys=True) + '\n')
-    tmp_path.replace(event_path)
-
-
-def read_revision_events(registry_path: Path, collab_id: str) -> list[dict]:
-    event_dir = revision_event_dir(registry_path, collab_id)
-    if not event_dir.is_dir():
-        return [
-            {
-                'eventIndex': None,
-                'revision': None,
-                'timestamp': None,
-                'eventType': 'legacy-baseline',
-                'summary': 'Legacy baseline for a pre-existing collab; no revision event files found.',
-                'collabId': collab_id,
-            }
-        ]
-    events: list[dict] = []
-    for path in sorted(event_dir.glob('*.json')):
-        try:
-            event = json.loads(path.read_text())
-        except json.JSONDecodeError:
-            continue
-        if isinstance(event, dict) and event.get('collabId') == collab_id:
-            events.append(event)
-    if not events:
-        return [
-            {
-                'eventIndex': None,
-                'revision': None,
-                'timestamp': None,
-                'eventType': 'legacy-baseline',
-                'summary': 'Legacy baseline for a pre-existing collab; no readable revision events found.',
-                'collabId': collab_id,
-            }
-        ]
-    return sorted(
-        events,
-        key=lambda item: (
-            -1 if item.get('eventIndex') is None else int(item.get('eventIndex', 0)),
-            str(item.get('timestamp') or ''),
-        ),
-        reverse=True,
-    )
-
-
 def log_command(path: Path, target: str) -> int:
     data = load_registry(path)
     entry = resolve_collab(data, target)
@@ -452,126 +381,6 @@ def log_command(path: Path, target: str) -> int:
         summary = event.get('summary') or ''
         print(f'{index_label}  {timestamp}  {event_type}  {summary}')
     return 0
-
-
-@contextmanager
-def registry_lock(path: Path):
-    """Serialize registry/transcript mutations that derive state from live files."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    lock_path = path.with_name(f'{path.name}.lock')
-    with lock_path.open('a+') as lock_file:
-        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
-        os.utime(lock_path, None)
-        try:
-            yield
-        finally:
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
-
-
-def load_registry_or_bootstrap(path: Path) -> dict:
-    if not path.exists():
-        data = {'activeCollabId': None, 'collabs': []}
-        sync_registry_project_metadata(data)
-        capture_registry_project(data)
-        return data
-    data = load_registry(path)
-    sync_registry_project_metadata(data)
-    capture_registry_project(data)
-    return data
-
-
-def capture_registry_project(data: dict) -> None:
-    global CURRENT_REGISTRY_PROJECT
-    project = data.get('project')
-    CURRENT_REGISTRY_PROJECT = project if isinstance(project, dict) else None
-
-
-def root_project_id() -> str | None:
-    identity_path = ROOT / '.collab.json'
-    if not identity_path.exists():
-        return None
-    try:
-        data = json.loads(identity_path.read_text())
-    except json.JSONDecodeError:
-        return None
-    project_id = data.get('projectId')
-    return project_id if isinstance(project_id, str) and project_id.strip() else None
-
-
-def current_registry_project_id() -> str | None:
-    if not isinstance(CURRENT_REGISTRY_PROJECT, dict):
-        return None
-    project_id = CURRENT_REGISTRY_PROJECT.get('projectId')
-    return project_id if isinstance(project_id, str) and project_id.strip() else None
-
-
-def assert_work_repo_not_framework_for_external_project(repo_root: Path, label: str) -> None:
-    # Refuse to bind the framework checkout as a collab's work tree when the
-    # collab's own project root lives inside a *different* git work tree -- that
-    # is the external-repo trap where sealing would silently certify ROOT instead
-    # of the repo the work actually landed in. The discriminator is git-tree
-    # containment, not the project marker id: a project root that is not inside
-    # any git tree (a fresh dir or the test-harness temp dir) has no other tree to
-    # seal, so ROOT is the legitimate fallback and must not abort here.
-    if repo_root.resolve() != ROOT.resolve():
-        return
-    base = RESOLVED_WORK_REPO_ROOT if RESOLVED_WORK_REPO_ROOT is not None else ROOT
-    enclosing = enclosing_git_tree(Path(base))
-    if enclosing is not None and enclosing.resolve() != ROOT.resolve():
-        die(
-            f'{label} resolves to framework checkout {ROOT}; the collab project '
-            f'root {base} is inside a different git work tree ({enclosing}); '
-            "refusing to bind the framework checkout as this collab's work tree. "
-            f'Bind the intended tree: pass --work-repo {enclosing} at init, or run '
-            f'/collab set <target> work-repo {enclosing}'
-        )
-
-
-def format_timestamp(now: dt.datetime | None = None) -> str:
-    value = now or dt.datetime.now().astimezone()
-    stamp = value.strftime('%Y-%m-%d %H:%M %z')
-    return f'{stamp[:-2]}:{stamp[-2:]}'
-
-
-def format_banner_timestamp(now: dt.datetime | None = None) -> str:
-    value = now or dt.datetime.now().astimezone()
-    day = str(value.day)
-    return value.strftime(f'%b {day}, %Y @ %-I:%M %p')
-
-
-def normalize_slug(title: str) -> str:
-    slug = re.sub(r'[^a-z0-9]+', '-', title.lower()).strip('-')
-    if not slug:
-        die('slug is empty; ask the moderator for a clearer name')
-    return slug
-
-
-def normalize_title(title: str) -> str:
-    words = re.sub(r'\s+', ' ', title.strip()).split(' ')
-    if not words:
-        die('<name> is required')
-    acronyms = {'ai', 'api', 'cli', 'dx', 'qa', 'ui', 'ux'}
-    small_words = {'a', 'an', 'and', 'as', 'at', 'but', 'by', 'for', 'in', 'of', 'on', 'or', 'the', 'to', 'vs', 'with'}
-    normalized: list[str] = []
-    for index, word in enumerate(words):
-        if not word:
-            continue
-        parts = re.split(r'([/-])', word)
-        rendered_parts: list[str] = []
-        for part_index, part in enumerate(parts):
-            lower = part.lower()
-            if part in {'/', '-'}:
-                rendered_parts.append(part)
-            elif lower in acronyms:
-                rendered_parts.append(lower.upper())
-            elif index > 0 and part_index == 0 and lower in small_words:
-                rendered_parts.append(lower)
-            elif part.isupper() and len(part) > 1:
-                rendered_parts.append(part)
-            else:
-                rendered_parts.append(part[:1].upper() + part[1:].lower())
-        normalized.append(''.join(rendered_parts))
-    return ' '.join(normalized)
 
 
 def next_sequence(data: dict) -> int:
@@ -657,10 +466,6 @@ def phase_section(text: str, phase: str) -> list[str]:
     return transcript_readers.phase_section(text, phase)
 
 
-def phase_slug(phase: str) -> str:
-    return phase.lower().replace(' ', '-')
-
-
 def section_bounds(lines: list[str], heading: str) -> tuple[int, int]:
     start: int | None = None
     for index, line in enumerate(lines):
@@ -743,29 +548,6 @@ def contribution_body_lines(block: list[str]) -> list[str]:
     return transcript_readers.contribution_body_lines(block)
 
 
-def details_block_end(lines: list[str], start: int, context: str) -> int:
-    depth = 1
-    line_index = start + 1
-    while line_index < len(lines):
-        stripped = lines[line_index].strip()
-        if DETAILS_OPEN_RE.match(stripped):
-            depth += 1
-        elif DETAILS_CLOSE_RE.match(stripped):
-            depth -= 1
-            if depth == 0:
-                return line_index + 1
-        line_index += 1
-    die(f'transcript details block not closed in {context}')
-
-
-def is_full_body_block_start(lines: list[str], index: int) -> bool:
-    return (
-        DETAILS_OPEN_RE.match(lines[index].strip()) is not None
-        and index + 1 < len(lines)
-        and lines[index + 1].strip() == FULL_BODY_SUMMARY_LINE
-    )
-
-
 def reject_hand_authored_excerpt_details(content: str) -> None:
     for line_number, line in enumerate(content.splitlines(), start=1):
         if DETAILS_CONTROL_LINE_RE.match(line.strip()):
@@ -784,42 +566,6 @@ def reject_full_body_details_controls(content: str | None) -> None:
                 'full body must not contain hand-authored <details> control lines; '
                 f'the helper owns the {FULL_BODY_SUMMARY} envelope; line {line_number}'
             )
-
-
-def strip_managed_full_body_lines(lines: list[str], context: str) -> list[str]:
-    stripped_lines: list[str] = []
-    index = 0
-    while index < len(lines):
-        if is_full_body_block_start(lines, index):
-            index = details_block_end(lines, index, context)
-            continue
-        stripped_lines.append(lines[index])
-        index += 1
-    return stripped_lines
-
-
-def managed_full_body_blocks(transcript: str) -> list[str]:
-    lines = transcript.splitlines()
-    blocks: list[str] = []
-    index = 0
-    while index < len(lines):
-        if is_full_body_block_start(lines, index):
-            end = details_block_end(lines, index, 'managed full-body block')
-            blocks.append('\n'.join(lines[index:end]))
-            index = end
-            continue
-        index += 1
-    return blocks
-
-
-def full_body_signature_for_transcript(transcript: str) -> str:
-    payload = json.dumps(managed_full_body_blocks(transcript), ensure_ascii=True, separators=(',', ':'))
-    return hashlib.sha256(payload.encode()).hexdigest()
-
-
-def rendered_transcript_without_full_bodies(transcript: str) -> str:
-    lines = strip_managed_full_body_lines(transcript.splitlines(), 'rendered transcript')
-    return '\n'.join(lines) + ('\n' if transcript.endswith('\n') else '')
 
 
 def contribution_is_retracted(block: list[str]) -> bool:
@@ -907,14 +653,6 @@ def completed_execution_unchecked_items(entry: dict, transcript: str) -> list[di
     return violations
 
 
-def validate_participant_role_files(role_keys: list[str], roles_dir: Path, source: str) -> None:
-    for role in role_keys:
-        try:
-            load_role(roles_dir, role)
-        except SystemExit as exc:
-            die(f'{source}: participants role file unreadable for {role}: {roles_dir / f"{role}.json"}: {exc}')
-
-
 def chartered_deliverables(transcript: str) -> list[str]:
     return transcript_readers.chartered_deliverables(transcript)
 
@@ -952,176 +690,6 @@ def assert_chartered_deliverables_covered(entry: dict, transcript: str) -> None:
             + '; loop target: Completion/Conclusion for missing objective evidence'
         )
 
-
-
-def handoff_abort(field: str, value: object) -> None:
-    if isinstance(value, str):
-        rendered = value
-    else:
-        rendered = json.dumps(value, sort_keys=True)
-    die(f'ABORT: {field} contains disallowed pattern: {rendered}')
-
-
-def normalize_handoff_scope(raw: str) -> str:
-    if not isinstance(raw, str) or not raw.strip():
-        handoff_abort('writeScope', raw)
-    value = raw.strip().rstrip('/')
-    if not value:
-        handoff_abort('writeScope', raw)
-    if len(value) > MAX_HANDOFF_SCOPE_LENGTH:
-        handoff_abort('writeScope', value)
-    if Path(value).is_absolute():
-        handoff_abort('writeScope', raw)
-    if value in {'*', '**'} or value.startswith('../') or '/../' in value or value.endswith('/..'):
-        handoff_abort('writeScope', raw)
-    normalized = PurePosixPath(Path(value).as_posix()).as_posix()
-    if normalized in {'', '.', '..'}:
-        handoff_abort('writeScope', raw)
-    parts = PurePosixPath(normalized).parts
-    if not parts or any(part in {'', '.', '..'} for part in parts):
-        handoff_abort('writeScope', raw)
-    if parts[0] in {'*', '**'}:
-        handoff_abort('writeScope', raw)
-    return normalized
-
-
-def validate_handoff_write_scope(value: object) -> list[str]:
-    if not isinstance(value, list) or not value:
-        handoff_abort('writeScope', value)
-    if len(value) > MAX_HANDOFF_SCOPE_COUNT:
-        handoff_abort('writeScope', value)
-    scopes = [normalize_handoff_scope(item) for item in value]
-    if len(scopes) != len(set(scopes)):
-        handoff_abort('writeScope', value)
-    return scopes
-
-
-def validation_command_abort(value: object) -> None:
-    handoff_abort('validationCommands', value)
-
-
-def normalize_validation_command_path(raw: str) -> str:
-    if not isinstance(raw, str) or not raw.strip():
-        validation_command_abort(raw)
-    value = raw.strip()
-    if len(value) > MAX_VALIDATION_ARG_LENGTH:
-        validation_command_abort(value)
-    if SHELL_PATTERN_RE.search(value):
-        validation_command_abort(value)
-    if not value.startswith('./'):
-        validation_command_abort(value)
-    if Path(value).is_absolute():
-        validation_command_abort(value)
-    normalized = PurePosixPath(Path(value).as_posix()).as_posix()
-    if normalized.startswith('../') or '/../' in normalized or normalized.endswith('/..'):
-        validation_command_abort(value)
-    if normalized in {'.', './'}:
-        validation_command_abort(value)
-    command_path = PurePosixPath(value[2:]).as_posix()
-    if not command_path or command_path in {'.', '..'}:
-        validation_command_abort(value)
-    return f'./{command_path}'
-
-
-def normalize_validation_arg(raw: str) -> str:
-    if not isinstance(raw, str) or not raw.strip():
-        validation_command_abort(raw)
-    value = raw.strip()
-    if len(value) > MAX_VALIDATION_ARG_LENGTH:
-        validation_command_abort(value)
-    if SHELL_PATTERN_RE.search(value):
-        validation_command_abort(value)
-    if Path(value).is_absolute():
-        validation_command_abort(value)
-    if value.startswith('../') or '/../' in value or value.endswith('/..'):
-        validation_command_abort(value)
-    return value
-
-
-def normalize_validation_argv(value: object) -> list[str]:
-    if not isinstance(value, list) or not value:
-        validation_command_abort(value)
-    if len(value) > MAX_VALIDATION_COMMAND_ARGS:
-        validation_command_abort(value)
-    command = normalize_validation_command_path(value[0])
-    return [command, *[normalize_validation_arg(item) for item in value[1:]]]
-
-
-def normalize_validation_command_entry(value: object) -> list[str]:
-    if isinstance(value, dict):
-        extra_keys = set(value) - {'argv'}
-        if extra_keys or 'argv' not in value:
-            validation_command_abort(value)
-        return normalize_validation_argv(value['argv'])
-    return normalize_validation_argv(value)
-
-
-def validate_handoff_validation_commands(value: object) -> list[list[str]]:
-    if not isinstance(value, list) or not value:
-        validation_command_abort(value)
-    if len(value) > MAX_VALIDATION_COMMANDS:
-        validation_command_abort(value)
-    if all(isinstance(item, str) for item in value):
-        return [normalize_validation_argv(value)]
-    return [normalize_validation_command_entry(item) for item in value]
-
-
-def validate_handoff_state(value: object, source: str, reject_version_field: bool = True) -> dict:
-    if not isinstance(value, dict):
-        die(f'{source}: handoff state must be an object')
-    if reject_version_field and DISALLOWED_VERSION_FIELD in value:
-        die(f'{source}: handoff state contains disallowed version field')
-    write_scope = validate_handoff_write_scope(value.get('writeScope'))
-    validation_commands = validate_handoff_validation_commands(value.get('validationCommands'))
-    body = value.get('body')
-    if body is not None and not isinstance(body, str):
-        die(f'{source}: handoff body must be a string when present')
-    normalized = dict(value)
-    normalized['writeScope'] = write_scope
-    normalized['validationCommands'] = validation_commands
-    return normalized
-
-
-def reviewer_role(entry: dict) -> str | None:
-    value = entry.get('reviewerRole')
-    if isinstance(value, str) and value.strip():
-        return value
-    return None
-
-
-def participant_roles(entry: dict) -> list[str]:
-    return [p['role'] for p in entry.get('participants', [])]
-
-
-def participant_agent_id(entry: dict, role: str) -> str | None:
-    for participant in entry.get('participants', []):
-        if participant.get('role') == role:
-            value = participant.get('agentId')
-            return value if isinstance(value, str) else None
-    return None
-
-
-def has_participant(entry: dict, role: str) -> bool:
-    return role in participant_roles(entry)
-
-
-def reviewer_state(entry: dict) -> dict:
-    reviewer = reviewer_role(entry)
-    if reviewer is None:
-        return {'reviewerRole': None, 'state': 'absent'}
-    state = 'active' if has_participant(entry, reviewer) else 'pending'
-    return {'reviewerRole': reviewer, 'state': state}
-
-
-def active_reviewer_role(entry: dict) -> str | None:
-    reviewer = reviewer_role(entry)
-    if reviewer and has_participant(entry, reviewer):
-        return reviewer
-    return None
-
-
-def reviewer_backed(entry: dict) -> bool:
-    return reviewer_role(entry) is not None
 
 
 def completion_state(entry: dict) -> dict:
@@ -1205,39 +773,6 @@ def participant_verification_roles(entry: dict) -> list[str]:
         if execution.get(role, {}).get('status') == 'completed':
             roles.append(role)
     return roles
-
-
-def participant_write_scope_signature(entry: dict, role: str) -> str:
-    role_handoff = entry.get('handoff', {}).get('roles', {}).get(role, {})
-    scope = role_handoff.get('writeScope', [])
-    if not isinstance(scope, list):
-        scope = []
-    normalized = sorted(str(item) for item in scope if isinstance(item, str) and item.strip())
-    payload = json.dumps(normalized, separators=(',', ':'), ensure_ascii=True)
-    return hashlib.sha256(payload.encode()).hexdigest()
-
-
-def participant_execution_signature(entry: dict, role: str) -> str:
-    """Signature of the executed content a participant's verification certifies:
-    the role's execution status, validation result, touched paths, and commits.
-    Used to invalidate a completed verification when that content later changes --
-    a re-execution, or a provenance repair that repointed the commit -- so a stale
-    verification cannot ride through to a success seal."""
-    state = entry.get('execution', {}).get(role, {})
-    if not isinstance(state, dict):
-        state = {}
-    payload = {
-        'status': state.get('status'),
-        'validationResult': state.get('validationResult'),
-        'touchedPaths': sorted(
-            str(item) for item in state.get('touchedPaths', []) if isinstance(item, str)
-        ),
-        'commits': sorted(
-            str(item) for item in state.get('commits', []) if isinstance(item, str)
-        ),
-    }
-    encoded = json.dumps(payload, sort_keys=True, separators=(',', ':'), ensure_ascii=True)
-    return hashlib.sha256(encoded.encode()).hexdigest()
 
 
 def participant_verification_role_state(entry: dict, role: str) -> dict:
@@ -1416,32 +951,6 @@ def set_verification_review_substate(entry: dict, substate: str) -> None:
     verification_state(entry)['subState'] = substate
 
 
-def normalize_restore_target(value: str | None, current_phase: str) -> str | None:
-    if value is None:
-        return None
-    normalized = re.sub(r'[\s_-]+', '-', value.strip().lower()).strip('-')
-    by_token = {re.sub(r'[\s_-]+', '-', phase.lower()).strip('-'): phase for phase in PHASES}
-    target = by_token.get(normalized)
-    if target is None:
-        die(f'verdict restoreTarget must be one of {PHASES}')
-    if target not in ALLOWED_VERDICT_RESTORE_TARGETS:
-        die('verdict restoreTarget must be one of: Action Plan, Handoff')
-    if PHASES.index(target) > PHASES.index(current_phase):
-        die(f'verdict restoreTarget must not be later than current phase {current_phase}')
-    return target
-
-
-def assert_one_line_nonempty(value: str | None, field: str) -> str | None:
-    if value is None:
-        return None
-    stripped = value.strip()
-    if not stripped:
-        die(f'verdict {field} must be a non-empty string when present')
-    if '\n' in stripped or '\r' in stripped:
-        die(f'verdict {field} must be one line')
-    return stripped
-
-
 def parse_verdict_evidence(raw: str | None) -> dict | None:
     if raw is None:
         return None
@@ -1549,40 +1058,6 @@ def clear_verdict(entry: dict) -> None:
     entry.pop('verdict', None)
 
 
-def execution_identity(role: str, date: str) -> str:
-    suffix = re.sub(r'[^0-9A-Za-z]+', '-', date).strip('-').lower()
-    return f'{role}-{suffix or "execution"}'
-
-
-def active_execution_entries(entry: dict) -> list[dict]:
-    rows: list[dict] = []
-    for role, state in sorted(entry.get('execution', {}).items()):
-        if not isinstance(state, dict):
-            continue
-        row = {
-            'role': role,
-            'entryId': state.get('entryId') or execution_identity(role, state.get('date', 'execution')),
-            'status': state.get('status'),
-            'date': state.get('date'),
-            'validationResult': state.get('validationResult'),
-            'validationScope': state.get('validationScope'),
-            'touchedPaths': list(state.get('touchedPaths', [])),
-        }
-        commits = state.get('commits', [])
-        if commits:
-            row['commits'] = list(commits)
-        if state.get('agentId'):
-            row['agentId'] = state.get('agentId')
-        rows.append(row)
-    return rows
-
-
-def execution_signature(entry: dict) -> str:
-    entries = active_execution_entries(entry)
-    encoded = json.dumps(entries, sort_keys=True, separators=(',', ':'))
-    return base64.urlsafe_b64encode(encoded.encode()).decode().rstrip('=')
-
-
 def record_verification_round_for_execution(entry: dict, verification: dict) -> None:
     signature = execution_signature(entry)
     if verification.get('pairedExecutionSignature') != signature:
@@ -1590,405 +1065,38 @@ def record_verification_round_for_execution(entry: dict, verification: dict) -> 
         verification['pairedExecutionSignature'] = signature
 
 
-def validation_scopes_for_execution(entry: dict) -> list[str]:
-    scopes: list[str] = []
-    for state in entry.get('execution', {}).values():
-        scope = state.get('validationScope') if isinstance(state, dict) else None
-        if isinstance(scope, str) and scope not in scopes:
-            scopes.append(scope)
-    return scopes
+def content_digest_for_execution(entry: dict, ref: str = 'HEAD') -> dict:
+    return content_digest_for_touched_paths(work_repo_root(entry), ref, touched_paths_for_execution(entry))
 
 
-def touched_paths_for_execution(entry: dict) -> list[str]:
-    touched: list[str] = []
-    for state in entry.get('execution', {}).values():
-        if not isinstance(state, dict):
-            continue
-        for item in state.get('touchedPaths', []):
-            if isinstance(item, str) and item not in touched:
-                touched.append(item)
-    return touched
-
-
-def resolve_git_work_tree(raw: str, label: str) -> Path:
-    path = Path(raw).expanduser()
-    if not path.is_absolute():
-        die(f'{label} must be an absolute path: {raw}')
-    probe = subprocess.run(
-        ['git', '-C', str(path), 'rev-parse', '--show-toplevel'],
-        check=False,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
-    )
-    if probe.returncode != 0 or not probe.stdout.strip():
-        die(f'{label} must be a git work tree: {raw}')
-    return Path(probe.stdout.strip())
-
-
-def enclosing_git_tree(path: Path) -> Path | None:
-    """Return the git work tree toplevel containing *path*, or None when the path
-    is not inside any git work tree. Unlike resolve_git_work_tree this never
-    aborts: callers needing only a best-effort default (the init binding) can fall
-    back, while gates that genuinely require git still go through
-    resolve_git_work_tree."""
-    probe = subprocess.run(
-        ['git', '-C', str(path), 'rev-parse', '--show-toplevel'],
-        check=False,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
-    )
-    if probe.returncode != 0 or not probe.stdout.strip():
-        return None
-    return Path(probe.stdout.strip())
-
-
-def default_init_work_repo_root() -> Path:
-    # Bind the work repo to the git work tree enclosing the invocation's project
-    # root, so a collab started inside an external repo auto-binds to that repo's
-    # toplevel (the seal then gates against it, never the framework checkout).
-    # When the project root is not inside any git work tree -- a fresh planning
-    # directory or the test-harness temp dir -- fall back to the framework
-    # checkout instead of aborting: git is still enforced later by work_repo_root
-    # at execution-commit capture and seal time, so init must not hard-fail on a
-    # not-yet-git directory (doing so makes /collab init unusable outside a repo).
-    base = RESOLVED_WORK_REPO_ROOT if RESOLVED_WORK_REPO_ROOT is not None else ROOT
-    enclosing = enclosing_git_tree(Path(base))
-    return enclosing if enclosing is not None else ROOT
-
-
-def work_repo_root(entry: dict) -> Path:
-    """Resolve the git work tree that holds a collab's executed deliverables.
-
-    Collabs whose execution targets a repository other than the framework
-    checkout declare it via the registry ``workRepo`` field; the seal git-state
-    and drift gates, and execution-commit capture, then operate on that tree.
-    Missing bindings are allowed only for framework-project legacy records.
-    External-project records must carry an explicit binding so execution,
-    participant verification, and seal gates cannot silently certify ROOT.
-    A declared-but-invalid ``workRepo`` is a hard error rather than a silent
-    fall back to the wrong tree.
-    """
-    raw = entry.get('workRepo')
-    if not isinstance(raw, str) or not raw.strip():
-        current_project = current_registry_project_id()
-        framework_project = root_project_id()
-        if current_project is not None and framework_project is not None and current_project != framework_project:
-            die(
-                f'workRepo missing for external project {current_project}; '
-                f'run /collab set {entry.get("id", "<target>")} work-repo <path>'
-            )
-        return ROOT
-    repo_root = resolve_git_work_tree(raw, 'workRepo')
-    assert_work_repo_not_framework_for_external_project(repo_root, 'workRepo')
-    return repo_root
-
-
-def git_commit_paths(ref: str, repo_root: Path = ROOT) -> set[str] | None:
-    try:
-        probe = subprocess.run(
-            ['git', '-C', str(repo_root), 'cat-file', '-e', f'{ref}^{{commit}}'],
-            check=False,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-    except FileNotFoundError:
-        return None
-    if probe.returncode != 0:
-        return None
-    result = subprocess.run(
-        ['git', '-C', str(repo_root), 'show', '--name-only', '--format=', ref],
-        check=False,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
-    if result.returncode != 0:
-        die(f'EXECUTION-WRITESCOPE-OVERAGE: git show failed for execution commit {ref}')
-    return {line.strip() for line in result.stdout.splitlines() if line.strip()}
-
-
-def git_commit_reachable_from_head(ref: str, repo_root: Path = ROOT) -> bool | None:
-    """Whether *ref* is an ancestor of HEAD in repo_root (i.e. in the current
-    history). Returns None when the commit does not exist there -- a non-existent
-    ref is left to the drift and git-state gates rather than reported as orphaned.
-    True/False distinguish reachable from existing-but-orphaned (rebased away)."""
-    try:
-        exists = subprocess.run(
-            ['git', '-C', str(repo_root), 'cat-file', '-e', f'{ref}^{{commit}}'],
-            check=False,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-    except FileNotFoundError:
-        return None
-    if exists.returncode != 0:
-        return None
-    probe = subprocess.run(
-        ['git', '-C', str(repo_root), 'merge-base', '--is-ancestor', ref, 'HEAD'],
-        check=False,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    return probe.returncode == 0
-
-
-def assert_execution_commits_reachable(entry: dict) -> None:
-    """A success seal must certify deliverables that are in the current history.
-    A recorded execution commit that still exists but is no longer reachable from
-    HEAD has been orphaned by a rebase or re-commit -- the sealed work is not in
-    the branch -- so refuse the success verdict rather than certify a dangling
-    commit. verificationSeal.stale does not catch this: the commit still exists,
-    only its reachability changed, which is exactly the external-repo trap where a
-    seal certified a commit a later rebase dropped from history."""
-    repo_root = work_repo_root(entry)
-    orphaned: list[str] = []
-    seen: set[str] = set()
-    for state in entry.get('execution', {}).values():
-        if not isinstance(state, dict):
-            continue
-        for commit in state.get('commits', []):
-            if not isinstance(commit, str) or commit in seen:
-                continue
-            seen.add(commit)
-            if git_commit_reachable_from_head(commit, repo_root) is False:
-                orphaned.append(commit)
-    if orphaned:
-        die(
-            'SEAL-PROVENANCE: execution commit(s) exist but are not reachable from HEAD in '
-            f'{repo_root} (orphaned by rebase or re-commit): '
-            f'{json.dumps(sorted(orphaned), separators=(",", ":"))}; the sealed deliverable is '
-            'not in the current branch history. Record a non-success verdict to reopen, then '
-            're-execute against a committed, reachable commit before sealing'
-        )
-
-
-def git_latest_commit_for_path(path: str, repo_root: Path, execution_date: str) -> str | None:
-    result = subprocess.run(
-        ['git', '-C', str(repo_root), 'log', '-1', '--format=%H', '--', path],
-        check=False,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
-    if result.returncode != 0:
-        detail = result.stderr.strip() or result.stdout.strip() or 'unknown git error'
-        die(f'execution commit capture failed for touchedPath {path}: {detail}')
-    commit = result.stdout.strip()
-    if not commit:
-        return None
-    date_result = subprocess.run(
-        ['git', '-C', str(repo_root), 'show', '-s', '--format=%cI', commit],
-        check=False,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
-    if date_result.returncode != 0:
-        detail = date_result.stderr.strip() or date_result.stdout.strip() or 'unknown git error'
-        die(f'execution commit date capture failed for touchedPath {path}: {detail}')
-    execution_time = parse_execution_datetime(execution_date)
-    commit_time = parse_execution_datetime(date_result.stdout.strip())
-    if execution_time is not None and commit_time is not None and commit_time > execution_time:
-        return None
-    return commit
-
-
-def execution_commits_for_touched_paths(date: str, repo_root: Path, touched_paths: list[str]) -> list[str]:
-    if not touched_paths:
-        head_commit = current_head_commit(date, repo_root)
-        return [head_commit] if head_commit is not None else []
-    commits: list[str] = []
-    missing: list[str] = []
-    for path in touched_paths:
-        commit = git_latest_commit_for_path(path, repo_root, date)
-        if commit is None:
-            if not working_tree_path_exists(path, repo_root):
-                missing.append(path)
-            continue
-        if commit not in commits:
-            commits.append(commit)
-    if missing:
-        die(
-            'execution commit capture failed: touchedPath(s) have no committed provenance in '
-            f'{repo_root}: {json.dumps(missing, separators=(",", ":"))}'
-        )
-    return commits
-
-
-def git_index_or_staged_paths(paths: list[str], repo_root: Path = ROOT) -> set[str]:
-    if not paths:
-        return set()
-    commands = [
-        ['git', '-C', str(repo_root), 'ls-files', '--', *paths],
-        ['git', '-C', str(repo_root), 'diff', '--cached', '--name-only', '--', *paths],
-    ]
-    found: set[str] = set()
-    for command in commands:
-        result = subprocess.run(
-            command,
-            check=False,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-        if result.returncode != 0:
-            detail = result.stderr.strip() or result.stdout.strip() or 'unknown git error'
-            die(f'SEAL-GIT-STATE: git state check failed: {detail}')
-        found.update(line.strip() for line in result.stdout.splitlines() if line.strip())
-    return found
-
-
-def git_committed_deletion_paths(paths: list[str], repo_root: Path = ROOT) -> set[str]:
-    if not paths:
-        return set()
-    result = subprocess.run(
-        ['git', '-C', str(repo_root), 'log', '--diff-filter=D', '--name-only', '--format=', '--', *paths],
-        check=False,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
-    if result.returncode != 0:
-        detail = result.stderr.strip() or result.stdout.strip() or 'unknown git error'
-        die(f'SEAL-GIT-STATE: git committed deletion check failed: {detail}')
-    return {line.strip() for line in result.stdout.splitlines() if line.strip()}
-
-
-def git_unstaged_paths(paths: list[str], repo_root: Path = ROOT) -> set[str]:
-    if not paths:
-        return set()
-    result = subprocess.run(
-        ['git', '-C', str(repo_root), 'diff', '--name-only', '--', *paths],
-        check=False,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
-    if result.returncode != 0:
-        detail = result.stderr.strip() or result.stdout.strip() or 'unknown git error'
-        die(f'SEAL-GIT-STATE: git unstaged check failed: {detail}')
-    return {line.strip() for line in result.stdout.splitlines() if line.strip()}
-
-
-def working_tree_path_exists(path: str, repo_root: Path = ROOT) -> bool:
-    return os.path.lexists(repo_root / path)
-
-
-def assert_execution_touched_paths_in_git_state(entry: dict) -> None:
-    touched = touched_paths_for_execution(entry)
-    if not touched:
+def ensure_legacy_content_digest(entry: dict, seal: dict) -> None:
+    if isinstance(seal.get('contentDigest'), str) and isinstance(seal.get('pathDigests'), dict):
         return
-    repo_root = work_repo_root(entry)
-    in_git = git_index_or_staged_paths(touched, repo_root)
-    unstaged = git_unstaged_paths(touched, repo_root)
-    committed_deletions = git_committed_deletion_paths(touched, repo_root)
-    invalid: list[str] = []
-    for path in touched:
-        if path in unstaged:
-            invalid.append(path)
-            continue
-        if path in in_git:
-            continue
-        if path in committed_deletions and not working_tree_path_exists(path, repo_root):
-            continue
-        invalid.append(path)
-    invalid = sorted(invalid)
-    if invalid:
-        die(
-            'SEAL-GIT-STATE: implementation not in git; '
-            f'unstaged or uncommitted touchedPath(s) in {repo_root}: {json.dumps(invalid, separators=(",", ":"))}'
-        )
-
-
-def assert_touched_paths_recordable_in_work_repo(entry: dict, touched_paths: list[str]) -> None:
-    if not touched_paths:
-        return
-    repo_root = work_repo_root(entry)
-    in_git = git_index_or_staged_paths(touched_paths, repo_root)
-    committed_deletions = git_committed_deletion_paths(touched_paths, repo_root)
-    invalid = sorted(
-        path for path in touched_paths
-        if (
-            path not in in_git
-            and not working_tree_path_exists(path, repo_root)
-            and not (path in committed_deletions and not working_tree_path_exists(path, repo_root))
-        )
+    digest = content_digest_for_execution(entry)
+    seal['contentDigest'] = digest['contentDigest']
+    seal['pathDigests'] = digest['pathDigests']
+    seal['legacyContentDigestRecomputedAt'] = dt.datetime.now().astimezone().isoformat(timespec='seconds')
+    seal['legacyContentDigestNote'] = (
+        'legacy verificationSeal lacked contentDigest; recomputed on next touch '
+        f'for touchedPaths={json.dumps(touched_paths_for_execution(entry), separators=(",", ":"))} '
+        f'contentDigest={digest["contentDigest"]}'
     )
-    if invalid:
-        die(
-            'execution touchedPath(s) not found under workRepo '
-            f'{repo_root}: {json.dumps(invalid, separators=(",", ":"))}'
-        )
 
 
-def assert_no_execution_touched_path_drift(entry: dict) -> None:
-    # Match committed files against the UNION of every role's declared paths, not
-    # each role in isolation: one commit may legitimately hold several roles'
-    # scoped subsets. The safety property is "every committed file was declared by
-    # some role, and every declared path appears in some commit" — per-role exact
-    # matching falsely rejects a valid combined commit.
-    repo_root = work_repo_root(entry)
-    declared_paths: set[str] = set()
-    committed_paths: set[str] = set()
-    commits_seen: list[str] = []
-    for execution in active_execution_entries(entry):
-        role = execution.get('role')
-        if not isinstance(role, str) or handoff_state_for_role(entry, role) is None:
-            continue
-        commits = [
-            commit
-            for commit in execution.get('commits', [])
-            if isinstance(commit, str) and commit.strip()
-        ]
-        if not commits:
-            continue
-        for commit in commits:
-            if commit not in commits_seen:
-                commits_seen.append(commit)
-            commit_paths = git_commit_paths(commit, repo_root)
-            if commit_paths is None:
-                die(f'SEAL-GIT-DRIFT: commit {commit} not found in workRepo {repo_root}')
-            committed_paths.update(commit_paths)
-        declared_paths.update(
-            item
-            for item in execution.get('touchedPaths', [])
-            if isinstance(item, str) and item.strip()
-        )
-    if not commits_seen:
+def invalidate_seal_on_content_drift(entry: dict) -> None:
+    seal = entry.get('verificationSeal')
+    if not isinstance(seal, dict) or seal.get('stale'):
         return
-    undeclared = sorted(committed_paths - declared_paths)
-    overdeclared = sorted(declared_paths - committed_paths)
-    if undeclared or overdeclared:
-        details: list[str] = []
-        if undeclared:
-            details.append(f'undeclared={json.dumps(undeclared, separators=(",", ":"))}')
-        if overdeclared:
-            details.append(f'overdeclared={json.dumps(overdeclared, separators=(",", ":"))}')
-        die(
-            'EXECUTION-WRITESCOPE-OVERAGE: '
-            f'execution commits {json.dumps(commits_seen, separators=(",", ":"))} touchedPaths drift; '
-            + '; '.join(details)
-        )
+    if not isinstance(seal.get('contentDigest'), str) or not isinstance(seal.get('pathDigests'), dict):
+        ensure_legacy_content_digest(entry, seal)
+    digest = content_digest_for_execution(entry)
+    if seal.get('contentDigest') != digest['contentDigest'] or seal.get('pathDigests') != digest['pathDigests']:
+        invalidate_verification_seal(entry, 'content-drift')
 
 
-def assert_no_execution_agent_conflation(entry: dict) -> None:
-    seen: dict[str, str] = {}
-    for execution in active_execution_entries(entry):
-        agent_id = execution.get('agentId')
-        role = execution.get('role')
-        if not isinstance(agent_id, str) or not agent_id.strip():
-            continue
-        if agent_id == CALLER_DECLINED_AGENT_ID:
-            continue
-        if agent_id in seen and seen[agent_id] != role:
-            die(
-                'PARTICIPANT-VERIFY-AGENT-CONFLATION: '
-                f'roles {seen[agent_id]} and {role} share agentId {agent_id}'
-            )
-        if isinstance(role, str):
-            seen[agent_id] = role
+def die_content_drift_persisted(path: Path, data: dict) -> None:
+    save_registry(path, data)
+    die('SEAL-CONTENT-DRIFT: post-seal content change detected in a touched path; re-issue the seal with current branch content')
 
 
 def invalidate_verification_seal(entry: dict, reason: str) -> None:
@@ -2025,107 +1133,6 @@ def invalidate_seal_on_full_body_drift(entry: dict, transcript: str) -> None:
         return
     if full_body_signature_for_transcript(transcript) != sealed_signature:
         invalidate_verification_seal(entry, 'full body content changed')
-
-
-def pending_reviewer_role(entry: dict) -> str | None:
-    reviewer = reviewer_role(entry)
-    if reviewer and not has_participant(entry, reviewer):
-        return reviewer
-    return None
-
-
-def reviewer_mode(entry: dict) -> str:
-    return entry.get('reviewerMode') or DEFAULT_REVIEWER_MODE
-
-
-def reviewer_optional_phases(entry: dict) -> list[str]:
-    value = entry.get('reviewerOptionalPhases')
-    if value is None:
-        return list(DEFAULT_REVIEWER_OPTIONAL_PHASES)
-    return list(value)
-
-
-def parse_reviewer_optional_phases(value: str | None) -> list[str]:
-    if value is None or not value.strip():
-        die('reviewer-optional-phases requires at least one phase')
-    raw = value.strip()
-    if ',' in raw:
-        phases = [phase.strip() for phase in raw.split(',') if phase.strip()]
-    else:
-        tokens = raw.split()
-        phases = []
-        index = 0
-        while index < len(tokens):
-            matched = None
-            for phase in PHASES:
-                phase_tokens = phase.split()
-                if tokens[index:index + len(phase_tokens)] == phase_tokens:
-                    matched = phase
-                    break
-            if matched is None:
-                phases.append(tokens[index])
-                index += 1
-            else:
-                phases.append(matched)
-                index += len(matched.split())
-    if not phases:
-        die('reviewer-optional-phases requires at least one phase')
-    invalid = [phase for phase in phases if phase not in PHASES]
-    if invalid:
-        die(f'reviewer-optional-phases must contain valid phase names: {", ".join(invalid)}')
-    if len(set(phases)) != len(phases):
-        die('reviewer-optional-phases must not contain duplicates')
-    return phases
-
-
-def reviewer_required_for_phase(entry: dict, phase: str) -> str | None:
-    reviewer = active_reviewer_role(entry)
-    if not reviewer:
-        return None
-    if reviewer_mode(entry) == 'last-in-convergent-phases' and phase in CONVERGENT_REVIEWER_PHASES:
-        return reviewer
-    return None
-
-
-def reviewer_optional_for_phase(entry: dict, phase: str) -> str | None:
-    reviewer = active_reviewer_role(entry)
-    if reviewer and phase in reviewer_optional_phases(entry):
-        return reviewer
-    return None
-
-
-def optional_reviewer_allowed_at_round_boundary(
-    entry: dict,
-    phase: str,
-    contributors: list[str],
-    order: list[str],
-) -> str | None:
-    reviewer = reviewer_optional_for_phase(entry, phase)
-    if not reviewer or not order or not contributors:
-        return None
-    if contributors[-1] == reviewer:
-        return None
-
-    ordinary_contributors = [role for role in contributors if role in order]
-    if len(ordinary_contributors) < len(order):
-        return None
-    if ordinary_contributors[-len(order):] != order:
-        return None
-    return reviewer
-
-
-def expected_speaker(entry: dict, contributors: list[str]) -> str:
-    phase = entry['activePhase']
-    order = effective_turn_order(entry)
-    reviewer = reviewer_required_for_phase(entry, phase)
-    if reviewer and all(contributors.count(role) >= 1 for role in order):
-        if contributors.count(reviewer) < 1:
-            return reviewer
-    ordered_contributors = [role for role in contributors if role in order]
-    if not ordered_contributors:
-        return order[0]
-    last = ordered_contributors[-1]
-    return order[(order.index(last) + 1) % len(order)]
 
 
 def speak_state_for_entry(entry: dict, transcript: str) -> dict:
@@ -2538,35 +1545,7 @@ def validate_registry(data: dict, path: Path | None = None) -> None:
             die(f'{source}: activeCollabId must not point at an archived collab')
 
 
-def resolve_collab(data: dict, target: str) -> dict:
-    numeric_target = target[1:] if target.startswith('#') else target
-    if numeric_target.isdigit():
-        number = int(numeric_target)
-        for index, entry in enumerate(data['collabs'], start=1):
-            if entry.get('sequence', index) == number:
-                return entry
-        die(f'registry target not found: {target}')
-    for entry in data['collabs']:
-        if target in {entry['id'], entry['slug']}:
-            return entry
-    die(f'registry target not found: {target}')
-
-
-def require_active_collab(data: dict) -> dict:
-    active_id = data.get('activeCollabId')
-    if not active_id:
-        die('registry activeCollabId is empty')
-    return resolve_collab(data, active_id)
-
-
-def display_title(title: str, limit: int = 20) -> str:
-    if len(title) <= limit:
-        return title
-    return title[:limit] + '…'
-
-
-def collab_date(entry: dict) -> str:
-    return entry['id'][:10]
+configure_registry_io(validate_registry)
 
 
 def project_metadata_for_display(data: dict) -> dict | None:
@@ -2615,108 +1594,6 @@ def list_collabs(data: dict, status_filter: str | None = None) -> int:
     return 0
 
 
-def add_participant_to_entry(entry: dict, role: str, agent_id: str = 'unknown') -> bool:
-    if not role.strip():
-        die('participant role must be non-empty')
-    changed = False
-    is_reviewer = role == reviewer_role(entry) and reviewer_mode(entry) == 'last-in-convergent-phases'
-    if not has_participant(entry, role):
-        entry['participants'].append({'role': role, 'agentId': agent_id})
-        changed = True
-    if not entry['turnOrder']:
-        entry['turnOrder'] = [
-            p['role'] for p in entry['participants']
-            if not (
-                p['role'] == reviewer_role(entry)
-                and reviewer_mode(entry) == 'last-in-convergent-phases'
-            )
-        ]
-        changed = True
-    elif not is_reviewer and role not in entry['turnOrder']:
-        entry['turnOrder'].append(role)
-        changed = True
-    return changed
-
-
-def normalize_join_agent_id(agent_id: str | None) -> str:
-    if agent_id is None:
-        die('agent-id is required')
-    normalized = agent_id.strip()
-    if not normalized:
-        die('agent-id is required')
-    if normalized.lower() == 'unknown' and normalized != 'unknown':
-        die('agent-id unknown token must be lowercase: unknown')
-    if normalized.lower() == CALLER_DECLINED_AGENT_ID and normalized != CALLER_DECLINED_AGENT_ID:
-        die(f'agent-id caller-declined token must be lowercase: {CALLER_DECLINED_AGENT_ID}')
-    if normalized.lower() in INVALID_AGENT_ID_ALTERNATIVES:
-        die('agent-id must use the literal unknown when identity is unavailable')
-    return normalized
-
-
-def count_caller_declined_agent_id_write(data: dict, agent_id: str) -> None:
-    if agent_id != CALLER_DECLINED_AGENT_ID:
-        return
-    metrics = data.setdefault('identityMetrics', {})
-    if not isinstance(metrics, dict):
-        die('registry: identityMetrics must be an object when present')
-    count = metrics.get('callerDeclinedAgentIdWrites', 0)
-    if not isinstance(count, int) or count < 0:
-        die('registry: identityMetrics.callerDeclinedAgentIdWrites must be a non-negative integer when present')
-    metrics['callerDeclinedAgentIdWrites'] = count + 1
-
-
-def assert_caller_role(entry: dict, caller_role: str | None, action: str, subject_role: str | None = None) -> None:
-    if caller_role is None:
-        return
-    if not has_participant(entry, caller_role):
-        die(f'caller role must already be a participant: {caller_role}')
-    if action in MODERATOR_ONLY_ACTIONS and caller_role != entry['moderatorRole']:
-        die(f'{action} requires moderator role: {entry["moderatorRole"]}')
-    if subject_role is not None and caller_role != subject_role:
-        die(f'{action} caller role must match subject role: {subject_role}')
-
-
-def effective_turn_order(entry: dict) -> list[str]:
-    order = entry['turnOrder'] or participant_roles(entry)
-    reviewer = reviewer_role(entry)
-    if reviewer and reviewer_mode(entry) == 'last-in-convergent-phases':
-        return [role for role in order if role != reviewer]
-    return order
-
-
-def next_phase_name(phase: str) -> str | None:
-    index = PHASES.index(phase)
-    if index == len(PHASES) - 1:
-        return None
-    return PHASES[index + 1]
-
-
-def remove_moderator_from_turn_order(entry: dict, order: list[str] | None = None) -> None:
-    moderator = entry['moderatorRole']
-    source_order = order or effective_turn_order(entry)
-    entry['turnOrder'] = [role for role in source_order if role != moderator]
-    if not entry['turnOrder']:
-        entry['turnOrder'] = [r for r in participant_roles(entry) if r != moderator]
-    if not entry['turnOrder']:
-        die('turnOrder cannot be empty after removing moderator')
-
-
-def phase_turn_order(entry: dict, phase: str) -> list[str]:
-    reviewer = reviewer_role(entry) if reviewer_mode(entry) == 'last-in-convergent-phases' else None
-    roles = [role for role in participant_roles(entry) if role != reviewer]
-    if phase in MOD_EXCLUDED_PHASES:
-        roles = [role for role in roles if role != entry['moderatorRole']]
-    elif entry['moderatorRole'] in roles:
-        roles = [entry['moderatorRole']] + [role for role in roles if role != entry['moderatorRole']]
-    if not roles:
-        die(f'turnOrder cannot be empty for phase: {phase}')
-    return roles
-
-
-def normalize_turn_order_for_phase(entry: dict, phase: str) -> None:
-    entry['turnOrder'] = phase_turn_order(entry, phase)
-
-
 def assert_turn_order_not_drifted(entry: dict, phase: str) -> list[str]:
     expected = phase_turn_order(entry, phase)
     actual = effective_turn_order(entry)
@@ -2728,91 +1605,113 @@ def assert_turn_order_not_drifted(entry: dict, phase: str) -> list[str]:
     return expected
 
 
-def transition_notice(from_phase: str, to_phase: str) -> dict | None:
-    transition = f'{from_phase}->{to_phase}'
-    if transition == 'Discussion->Conclusion':
-        return {
-            'notice': 'compact',
-            'transition': transition,
-            'message': 'Run /compact before continuing to Conclusion.',
-        }
-    if transition == 'Conclusion->Action Plan':
-        return {
-            'notice': 'action-plan-shape',
-            'transition': transition,
-            'message': (
-                'Action Plan entries must follow invariants.md Invariant #9: '
-                r'^- \[[ x]\] \*\*[a-z]+:\*\*.'
-            ),
-        }
-    if transition == 'Handoff->Completion':
-        return {
-            'notice': 'subagent',
-            'transition': transition,
-            'message': 'Use a subagent or compacted execution context before /collab run plan.',
-        }
+def resume_command(entry: dict, role: str) -> str:
+    return f'RESUME: {resume_command_invocation(entry, role)}'
+
+
+def resume_command_invocation(entry: dict, role: str) -> str:
+    return f'tools/collab/registry.py speak-state --resume {entry["id"]} {role}'
+
+
+def transcript_view_command(entry: dict, phase: str | None = None) -> str:
+    selected_phase = phase or entry['activePhase']
+    return f'tools/collab/registry.py transcript-view {entry["id"]} {shlex.quote(selected_phase)}'
+
+
+def active_phase_anchors(transcript: str, phase: str) -> list[str]:
+    anchors: list[str] = []
+    for line in phase_section(transcript, phase):
+        match = ANCHOR_RE.match(line.strip())
+        if match:
+            anchors.append(match.group('anchor'))
+    return anchors
+
+
+def current_completion_command(entry: dict) -> str | None:
+    substate = verification_substate(entry)
+    if substate == 'verification':
+        review_substate = verification_review_substate(entry)
+        if review_substate == 'assessment':
+            return None
+        if (
+            review_substate == 'participant'
+            or (
+                review_substate != 'assessment'
+                and participant_verification_incomplete(entry)
+            )
+        ):
+            pending_role = first_pending_participant_verification_role(entry)
+            if pending_role:
+                return f'/collab participant verify {entry["id"]} {pending_role}'
+            return f'/collab participant verify {entry["id"]}'
+        return f'/collab seal verification {entry["id"]}'
+    return f'/collab run plan {entry["id"]}'
+
+
+def next_command_for_state(entry: dict, transcript: str | None = None) -> str | None:
+    if entry['status'] in {'closed', 'archived'}:
+        return '/clear'
+    phase = entry['activePhase']
+    if phase == 'Completion':
+        return current_completion_command(entry)
+    if transcript is None:
+        transcript = read_transcript_for_entry(entry)
+    state = speak_state_for_entry(entry, transcript)
+    if state.get('expectedRole') and state.get('expectedRole') != entry.get('moderatorRole'):
+        return f'/collab speak {entry["id"]}'
     return None
 
 
-def discussion_turn_notice(entry: dict, contributors: list[str]) -> dict | None:
-    if entry['activePhase'] != 'Discussion' or not contributors:
-        return None
-    if contributors[-1] == entry['moderatorRole']:
-        return None
-    # This is advisory visibility only. The helper cannot observe or orchestrate /compact.
-    return {
-        'compactBeforeNextCommand': True,
-        'notice': 'compact',
-        'transition': 'Discussion-turn',
-        'message': 'Run /compact before issuing your next collab command.',
+def phase_summary_for_state(entry: dict, state: dict) -> dict:
+    summary = {
+        'activePhase': entry['activePhase'],
+        'status': entry['status'],
     }
+    if state.get('completionSubState'):
+        summary['completionSubState'] = state['completionSubState']
+    if state.get('verificationReviewSubState'):
+        summary['verificationReviewSubState'] = state['verificationReviewSubState']
+    expected = state.get('expectedRole')
+    if expected:
+        summary['expectedRole'] = expected
+    if state.get('lastContributor'):
+        summary['lastContributor'] = state['lastContributor']
+    unchecked = state.get('uncheckedAssignedItemsByRole')
+    if unchecked:
+        summary['uncheckedAssignedItemsByRole'] = unchecked
+    return summary
 
 
-def terminal_notice(status: str) -> dict:
-    return {
-        'notice': 'clear',
-        'status': status,
-        'message': 'Run /clear before starting another collab.',
-    }
+def policy_blockers_for_role(state: dict, role: str, pending_reviewer: str | None = None) -> list[dict]:
+    blockers: list[dict] = []
+    if pending_reviewer:
+        blockers.append({'code': 'pending-reviewer', 'reviewerRole': pending_reviewer})
+    allowed = state.get('allowedRoles', [])
+    if role not in allowed:
+        expected = state.get('expectedRole')
+        if expected:
+            blockers.append({'code': 'expected-role', 'expectedRole': expected})
+        elif not pending_reviewer:
+            blockers.append({'code': 'no-eligible-role'})
+    return blockers
 
 
-def notice_message(notice: dict) -> str:
-    message = notice.get('message')
-    if isinstance(message, str) and message.strip():
-        return message.strip()
-    notice_type = notice.get('notice')
-    if isinstance(notice_type, str) and notice_type.strip():
-        return notice_type.strip()
-    return 'Lifecycle notice emitted.'
-
-
-def print_notice_diagnostic(notice: dict | None, emit_json: bool) -> None:
-    if not notice:
-        return
-    if not emit_json:
-        print(f'NOTICE: {notice_message(notice)}')
-    if emit_json:
-        print(json.dumps(notice, sort_keys=True))
-
-
-def print_lifecycle_diagnostic(lifecycle: dict, emit_json: bool) -> None:
-    phase_state = lifecycle.get('phaseState')
-    if phase_state:
-        print(f'PHASE: {phase_state}')
-    notice = lifecycle.get('notice')
-    if isinstance(notice, dict):
-        print_notice_diagnostic(notice, emit_json)
-    if emit_json:
-        print(json.dumps(lifecycle, sort_keys=True))
-
-
-def print_phase_result(phase: str, notice: dict | None = None, emit_json: bool = True) -> None:
-    print(phase)
-    print_notice_diagnostic(notice, emit_json)
-
-
-def resume_command(entry: dict, role: str) -> str:
-    return f'RESUME: tools/collab/registry.py speak-state --resume {entry["id"]} {role}'
+def add_participation_resume_fields(
+    state: dict,
+    entry: dict,
+    transcript: str,
+    role: str,
+    pending_reviewer: str | None = None,
+) -> None:
+    next_command = next_command_for_state(entry, transcript)
+    if next_command:
+        state['nextCommand'] = next_command
+    state['nextTranscriptCommand'] = transcript_view_command(entry)
+    state['policyBlockers'] = policy_blockers_for_role(state, role, pending_reviewer)
+    state['phaseSummary'] = phase_summary_for_state(entry, state)
+    anchors = active_phase_anchors(transcript, entry['activePhase'])
+    if anchors:
+        state['excerptAnchors'] = anchors
 
 
 def die_with_resume(message: str, entry: dict, role: str) -> None:
@@ -3415,6 +2314,7 @@ def speak_state(path: Path, target: str, role: str, resume: bool = False) -> int
             state['roleAgentId'] = participant_agent_id(entry, role)
             state['readyToWrite'] = False
             state['registryRevision'] = registry_revision(data)
+            add_participation_resume_fields(state, entry, transcript, role, pending_reviewer)
             print(json.dumps(state, sort_keys=True))
             return 0
         die_with_resume(f'pending reviewerRole: {pending_reviewer}', entry, role)
@@ -3423,6 +2323,7 @@ def speak_state(path: Path, target: str, role: str, resume: bool = False) -> int
     state['readyToWrite'] = role in state['allowedRoles']
     state['registryRevision'] = registry_revision(data)
     if resume:
+        add_participation_resume_fields(state, entry, transcript, role)
         print(json.dumps(state, sort_keys=True))
         return 0
     if role not in state['allowedRoles']:
@@ -3430,138 +2331,6 @@ def speak_state(path: Path, target: str, role: str, resume: bool = False) -> int
             die_with_resume('reviewer may speak after all turn-order participants have contributed in this round', entry, role)
         die_with_resume(f"expected role: {state['expectedRole']}", entry, role)
     print(json.dumps(state, sort_keys=True))
-    return 0
-
-
-def normalize_scope_path(raw: str, label: str) -> str:
-    if not raw or not raw.strip():
-        die(f'{label} must be non-empty')
-    value = raw.strip()
-    if Path(value).is_absolute():
-        die(f'{label} must be repository-relative: {raw}')
-    normalized = PurePosixPath(Path(value).as_posix())
-    parts = normalized.parts
-    if not parts or any(part in {'', '.', '..'} for part in parts):
-        die(f'{label} must be a normalized repository-relative path: {raw}')
-    return normalized.as_posix()
-
-
-def path_is_within(path: str, scope: str) -> bool:
-    return path == scope or path.startswith(f'{scope}/')
-
-
-def scope_matches_declared(scope: str, declared: str) -> bool:
-    if GLOB_PATTERN_RE.search(declared):
-        return fnmatch.fnmatchcase(scope, declared)
-    return path_is_within(scope, declared)
-
-
-def assert_disjoint_scopes(scopes: list[str]) -> None:
-    if not scopes:
-        die('execute-spawn requires at least one --scope')
-    if len(scopes) != len(set(scopes)):
-        die('execute-spawn scopes must be unique')
-    for index, left in enumerate(scopes):
-        for right in scopes[index + 1:]:
-            if path_is_within(left, right) or path_is_within(right, left):
-                die(f'execute-spawn scopes must be disjoint: {left} {right}')
-
-
-def normalize_touched_paths(touched_paths: list[str]) -> list[str]:
-    normalized: list[str] = []
-    for item in touched_paths:
-        path = normalize_scope_path(item, 'touched-path')
-        if path not in normalized:
-            normalized.append(path)
-    return normalized
-
-
-def assert_touched_paths_inside_handoff(entry: dict, role: str, touched_paths: list[str]) -> None:
-    if not touched_paths:
-        return
-    handoff_state = handoff_state_for_role(entry, role)
-    if handoff_state is None:
-        return
-    declared_scopes = handoff_state['writeScope']
-    for touched_path in touched_paths:
-        if not any(scope_matches_declared(touched_path, declared) for declared in declared_scopes):
-            die(f'execution touched path outside declared writeScope: {touched_path}')
-
-
-def parse_execution_datetime(raw: str) -> dt.datetime | None:
-    try:
-        parsed = dt.datetime.fromisoformat(raw)
-    except ValueError:
-        return None
-    if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=dt.datetime.now().astimezone().tzinfo)
-    return parsed
-
-
-def current_head_commit(date: str, repo_root: Path = ROOT) -> str | None:
-    result = subprocess.run(
-        ['git', '-C', str(repo_root), 'rev-parse', 'HEAD'],
-        check=False,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
-    if result.returncode != 0:
-        detail = result.stderr.strip() or result.stdout.strip() or 'unknown git error'
-        die(f'execution commit capture failed: {detail}')
-    commit = result.stdout.strip()
-    if not commit:
-        die('execution commit capture failed: git rev-parse HEAD returned empty output')
-    date_result = subprocess.run(
-        ['git', '-C', str(repo_root), 'show', '-s', '--format=%cI', commit],
-        check=False,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
-    if date_result.returncode != 0:
-        detail = date_result.stderr.strip() or date_result.stdout.strip() or 'unknown git error'
-        die(f'execution commit date capture failed: {detail}')
-    execution_time = parse_execution_datetime(date)
-    commit_time = parse_execution_datetime(date_result.stdout.strip())
-    if execution_time is not None and commit_time is not None and commit_time > execution_time:
-        return None
-    return commit
-
-
-def execute_spawn(
-    path: Path,
-    target: str,
-    role: str,
-    scope: str | None,
-    sibling_scopes: list[str],
-    returned_paths: list[str],
-) -> int:
-    data = load_registry(path)
-    entry = resolve_collab(data, target)
-    if entry['status'] in {'closed', 'archived'}:
-        die('record is closed')
-    if entry['activePhase'] != 'Completion':
-        die('execute-spawn is valid only in Completion')
-    if not has_participant(entry, role):
-        die(f'execution role must already be a participant: {role}')
-    if scope is None:
-        die('execute-spawn requires --scope')
-    normalized_scope = normalize_scope_path(scope, 'scope')
-    normalized_siblings = [normalize_scope_path(item, 'sibling-scope') for item in sibling_scopes]
-    normalized_scopes = [normalized_scope, *normalized_siblings]
-    handoff_state = handoff_state_for_role(entry, role)
-    if handoff_state is not None:
-        declared_scopes = handoff_state['writeScope']
-        for declared_scope in normalized_scopes:
-            if not any(scope_matches_declared(declared_scope, declared) for declared in declared_scopes):
-                die(f'execute-spawn scope outside declared writeScope: {declared_scope}')
-    assert_disjoint_scopes(normalized_scopes)
-    normalized_returned = [normalize_scope_path(item, 'returned-path') for item in returned_paths]
-    for returned_path in normalized_returned:
-        if not path_is_within(returned_path, normalized_scope):
-            die(f'returned path outside assigned scope: {returned_path}')
-    print('ok')
     return 0
 
 
@@ -3978,125 +2747,6 @@ def render_contribution_body(content: str, full_body: str | None = None) -> list
     if full_body is not None:
         rendered.extend(['', *render_full_body_block(full_body)])
     return rendered
-
-
-def handoff_field_sections(content: str) -> dict[str, list[str]]:
-    sections: dict[str, list[str]] = {}
-    current: str | None = None
-    for line in content.splitlines():
-        stripped = line.strip()
-        if EFFORT_OVERRIDE_RE.match(stripped) or EFFORT_OVERRIDE_COMMENT_RE.match(stripped):
-            continue
-        match = STRUCTURED_HANDOFF_HEADING_RE.match(line)
-        if match:
-            current = match.group('field')
-            sections.setdefault(current, [])
-            rest = match.group('rest').strip()
-            if rest:
-                sections[current].append(rest)
-            continue
-        if current is not None:
-            if stripped.startswith('**') and stripped.endswith('**') and len(stripped) > 4:
-                current = None
-                continue
-            sections[current].append(line)
-    return sections
-
-
-def parse_json_fragment(raw: str, field: str) -> object:
-    value = raw.strip()
-    if value.startswith('`') and value.endswith('`') and len(value) >= 2:
-        value = value[1:-1].strip()
-    try:
-        return json.loads(value)
-    except json.JSONDecodeError:
-        handoff_abort(field, value)
-
-
-def parse_write_scope_section(lines: list[str]) -> list[str]:
-    if not lines:
-        handoff_abort('writeScope', [])
-    joined = '\n'.join(line.strip() for line in lines if line.strip()).strip()
-    if joined.startswith('`[') or joined.startswith('['):
-        parsed = parse_json_fragment(joined, 'writeScope')
-        return validate_handoff_write_scope(parsed)
-    scopes: list[str] = []
-    for line in lines:
-        stripped = line.strip()
-        if not stripped:
-            continue
-        spans = CODE_SPAN_RE.findall(line)
-        if spans:
-            scopes.append(spans[0])
-            continue
-        bullet = re.match(r'^[-*]\s+(\S+)', stripped)
-        if bullet:
-            scopes.append(bullet.group(1))
-    return validate_handoff_write_scope(scopes)
-
-
-def parse_validation_commands_section(lines: list[str]) -> list[list[str]]:
-    if not lines:
-        validation_command_abort([])
-    fragments: list[object] = []
-    inline = ' '.join(line.strip() for line in lines if line.strip()).strip()
-    if inline.startswith('`') or inline.startswith('[') or inline.startswith('{') or (
-        inline.startswith('"') and inline.endswith('"')
-    ):
-        parsed = parse_json_fragment(inline, 'validationCommands')
-        return validate_handoff_validation_commands(parsed)
-    for line in lines:
-        stripped = line.strip()
-        if not stripped:
-            continue
-        spans = CODE_SPAN_RE.findall(line)
-        if spans:
-            for span in spans:
-                fragments.append(parse_json_fragment(span, 'validationCommands'))
-            continue
-        bullet = re.match(r'^[-*]\s+(.+)$', stripped)
-        if bullet:
-            fragments.append(parse_json_fragment(bullet.group(1), 'validationCommands'))
-    if not fragments:
-        validation_command_abort(inline)
-    if len(fragments) == 1:
-        return validate_handoff_validation_commands(fragments[0])
-    return validate_handoff_validation_commands(fragments)
-
-
-def parse_handoff_content(content: str) -> dict:
-    sections = handoff_field_sections(content)
-    if 'writeScope' not in sections:
-        handoff_abort('writeScope', 'missing')
-    if 'validationCommands' not in sections:
-        handoff_abort('validationCommands', 'missing')
-    state = {
-        'writeScope': parse_write_scope_section(sections['writeScope']),
-        'validationCommands': parse_validation_commands_section(sections['validationCommands']),
-        'body': '\n'.join(render_content_for_transcript(content)).rstrip('\n'),
-    }
-    return validate_handoff_state(state, 'handoff')
-
-
-def set_handoff_state(entry: dict, role: str, state: dict) -> None:
-    handoff = entry.setdefault('handoff', {'roles': {}})
-    roles = handoff.setdefault('roles', {})
-    if not isinstance(roles, dict):
-        die('handoff roles must be an object')
-    roles[role] = validate_handoff_state(state, f'handoff.{role}')
-
-
-def handoff_state_for_role(entry: dict, role: str) -> dict | None:
-    handoff = entry.get('handoff')
-    if not isinstance(handoff, dict):
-        return None
-    roles = handoff.get('roles')
-    if not isinstance(roles, dict):
-        return None
-    state = roles.get(role)
-    if not isinstance(state, dict):
-        return None
-    return validate_handoff_state(state, f'handoff.{role}')
 
 
 def render_handoff_mirror_lines(body_lines: list[str], entry: dict) -> list[str]:
@@ -4694,6 +3344,9 @@ def record_execution(
         commits = execution_commits_for_touched_paths(date, work_repo_root(entry), normalized_touched_paths)
         if commits:
             execution_state['commits'] = commits
+        digest = content_digest_for_touched_paths(work_repo_root(entry), 'WORKTREE', normalized_touched_paths)
+        execution_state['contentDigest'] = digest['contentDigest']
+        execution_state['pathDigests'] = digest['pathDigests']
         if agent_id:
             execution_state['agentId'] = agent_id
         if validation_result:
@@ -4779,6 +3432,7 @@ def repair_execution_provenance(
             assert_work_repo_not_framework_for_external_project(repo_root, 'workRepo')
             entry['workRepo'] = str(repo_root)
         repo_root = work_repo_root(entry)
+        provenance_changed = work_repo is not None or bool(commits)
         if commits:
             normalized_commits: list[str] = []
             for commit in commits:
@@ -4795,8 +3449,10 @@ def repair_execution_provenance(
             if isinstance(item, str) and item.strip()
         ]
         assert_touched_paths_recordable_in_work_repo(entry, touched)
-        if commits:
-            assert_no_execution_touched_path_drift(entry)
+        if provenance_changed:
+            digest = content_digest_for_execution(entry)
+            execution['contentDigest'] = digest['contentDigest']
+            execution['pathDigests'] = digest['pathDigests']
         verification = entry.get('verification')
         if isinstance(verification, dict) and verification.get('pairedExecutionSignature') is not None:
             verification['pairedExecutionSignature'] = execution_signature(entry)
@@ -5328,11 +3984,14 @@ def seal_snapshot(
     cap_exit: str | None = None,
     follow_up: dict | None = None,
 ) -> dict:
+    digest = content_digest_for_execution(entry)
     seal = {
         'observedRevision': observed_revision,
         'executionEntries': active_execution_entries(entry),
         'validationScopes': validation_scopes_for_execution(entry),
         'touchedPaths': touched_paths_for_execution(entry),
+        'contentDigest': digest['contentDigest'],
+        'pathDigests': digest['pathDigests'],
         'sealedAt': dt.datetime.now().astimezone().isoformat(timespec='seconds'),
         'sealedBy': role,
         'executionSignature': execution_signature(entry),
@@ -5353,14 +4012,6 @@ def verification_substate(entry: dict) -> str:
     if isinstance(completion, dict) and completion.get('subState') in ALLOWED_COMPLETION_SUBSTATES:
         return completion['subState']
     return 'execution'
-
-
-def all_execution_completed(entry: dict) -> bool:
-    execution = entry.get('execution', {})
-    roles = [role for role in effective_turn_order(entry) if role != entry['moderatorRole']]
-    if not roles:
-        return False
-    return all(execution.get(role, {}).get('status') == 'completed' for role in roles)
 
 
 def first_pending_participant_verification_role(entry: dict) -> str | None:
@@ -5929,6 +4580,7 @@ def render_seal(
             die(f'transcript missing: {transcript_path}')
         transcript = transcript_path.read_text()
         invalidate_seal_on_full_body_drift(entry, transcript)
+        invalidate_seal_on_content_drift(entry)
         review_substate = verification_review_substate(entry)
 
         if has_verdict_args:
@@ -5943,10 +4595,18 @@ def render_seal(
                 die('assessment verdict requires verificationSeal')
             if outcome == 'success' and seal.get('stale'):
                 reason = seal.get('staleReason') or 'unknown'
+                if reason == 'content-drift':
+                    die_content_drift_persisted(path, data)
                 die(f'success verdict requires current non-stale verificationSeal; stale: {reason}')
             if outcome == 'success':
+                ensure_legacy_content_digest(entry, seal)
+                invalidate_seal_on_content_drift(entry)
+                if seal.get('stale'):
+                    reason = seal.get('staleReason') or 'unknown'
+                    if reason == 'content-drift':
+                        die_content_drift_persisted(path, data)
+                    die(f'success verdict requires current non-stale verificationSeal; stale: {reason}')
                 assert_chartered_deliverables_covered(entry, transcript)
-                assert_execution_commits_reachable(entry)
             verdict = build_verdict(
                 outcome,
                 restore_target,
@@ -5991,8 +4651,8 @@ def render_seal(
             if not all_execution_completed(entry):
                 die('verification seal requires all execution entries to be completed')
             assert_execution_touched_paths_in_git_state(entry)
-            assert_no_execution_touched_path_drift(entry)
             assert_no_execution_agent_conflation(entry)
+            advisory = execution_scope_advisory(entry)
             rounds = verification.get('rounds', 0)
             cap = verification.get('cap', DEFAULT_VERIFICATION_CAP)
             if rounds == 0:
@@ -6015,6 +4675,8 @@ def render_seal(
             )
             rendered = append_completion_history_line(transcript, seal_line)
             rendered, header_changed = render_managed_header_text(rendered, entry, DEFAULT_ROLES_DIR)
+            if advisory:
+                print(advisory)
             next_line = (
                 f'NEXT: Run /collab seal verification for role {role} with --outcome <success|incomplete|failed>.'
                 if cap_exit is None
@@ -6512,6 +5174,7 @@ def join_participants(
         None,
         'NEXT: Run /collab show policy before first speak.',
     )
+    print(f'TRANSCRIPT: {transcript_view_command(next_entry)}')
     print(f'IDENTITY: {role} {recorded_agent_id}')
     if identity_warning:
         print(identity_warning)
@@ -6521,7 +5184,9 @@ def join_participants(
             'agentId': recorded_agent_id,
             'freshRegistryRead': True,
             'identityWarning': identity_warning,
+            'nextTranscriptCommand': transcript_view_command(next_entry),
             'participants': participant_roles(next_entry),
+            'resumeCommand': resume_command_invocation(next_entry, role),
             'target': next_entry['id'],
         }, sort_keys=True))
     return 0
@@ -6603,6 +5268,7 @@ def close_collab(
             seal = entry.get('verificationSeal')
             if not isinstance(seal, dict):
                 die('close blocked: reviewer-backed Completion requires verificationSeal')
+            invalidate_seal_on_content_drift(entry)
             if seal.get('stale'):
                 reason = seal.get('staleReason') or 'unknown'
                 die(f'close blocked: verificationSeal is stale: {reason}')
@@ -7148,8 +5814,7 @@ def main(argv: list[str]) -> int:
         if use_state_root:
             identity_path = find_project_identity_path(Path.cwd())
             if identity_path is not None:
-                global RESOLVED_WORK_REPO_ROOT
-                RESOLVED_WORK_REPO_ROOT = identity_path.parent
+                set_resolved_work_repo_root(identity_path.parent)
             path = path.resolve()
             path.parent.mkdir(parents=True, exist_ok=True)
             os.chdir(path.parent)

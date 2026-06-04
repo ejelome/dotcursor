@@ -247,14 +247,22 @@ Exit-1 messages (exact):
 
 Exit-1 message (exact): `verification seal requires all execution entries to be completed`
 
-**Execution touched-path drift guard**
+**Execution content-completeness guard**
 
-When a structured Handoff state exists for the execution role and the entry
-carries `commits`, `seal-render` compares those commits' combined
-`git show --name-only` path set with the execution entry's declared
-`touchedPaths` before sealing.
+Before sealing, `seal-render` verifies that every declared `touchedPath` in
+each execution entry resolves to committed content at `HEAD` — either a
+committed blob or a committed-deletion tombstone. Staged and unstaged changes
+are rejected because they are not part of `HEAD`.
 
-Exit-1 message prefix (exact): `EXECUTION-WRITESCOPE-OVERAGE:`
+Exit-1 message prefix (exact): `SEAL-CONTENT-INCOMPLETE:`
+
+**Content-drift guard**
+
+On the `success` verdict path, `seal-render` recomputes the scope digest from
+`HEAD` and compares it against `verificationSeal.contentDigest`. A mismatch
+means the sealed content is no longer what is in the branch.
+
+Exit-1 message prefix (exact): `SEAL-CONTENT-DRIFT:`
 
 **Execution agent-conflation guard**
 

@@ -27,7 +27,7 @@ require_dir() {
 
 is_source_path() {
   case "$1" in
-    .gitignore|.collab.json|CLAUDE.md|AGENTS.md|README.md|REPOSITORY.md) return 0 ;;
+    .gitignore|.collab.json|CLAUDE.md|AGENTS.md|README.md|REPOSITORY.md|registry.schema.json) return 0 ;;
     .github/*) return 0 ;;
     core/framework/*|data/*|generated/*|templates/*|tests/specs/*|commands/*|core/*|tests/*|tools/*) return 0 ;;
     *) return 1 ;;
