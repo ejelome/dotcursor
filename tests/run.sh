@@ -4,8 +4,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-./tools/command-system/audit.sh
-./tools/command-system/audit-role-prose.sh
+./platform/tooling/audit.sh
+./platform/tooling/audit-role-prose.sh
 
 while IFS= read -r test_script; do
   [[ -n "$test_script" ]] || continue

@@ -20,7 +20,7 @@ Run QA harnesses by target so maintainers can execute canonical test checklists 
    - `repo` → load `REPOSITORY.md` at repository root. If missing, **ABORT** naming the expected path.
    - `all` → run `commands`, then `core`, then `roles`, then `settings`, then `repo` in that order.
 3. If any target fails, patch the governed files and rerun that target’s full harness procedure until pass or documented blockers.
-4. For target `repo` or `all`, run `./tools/command-system/audit.sh` and `./tests/run.sh`.
+4. For target `repo` or `all`, run `./platform/tooling/audit.sh` and `./tests/run.sh`.
 5. Return harness-required output blocks per executed targets plus a concise consolidated status.
 
 ## Notes
