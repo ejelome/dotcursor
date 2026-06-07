@@ -15,13 +15,14 @@ Deterministic QA for harness docs in `~/.cursor/tests/specs/*.md`.
 Harness files under `~/.cursor/tests/specs/`:
 
 - `commands.md`
-- `rules.md`
 - `core.md`
 - `roles.md`
 - `generated.md`
 - `settings.md`
 - `templates.md`
 - `tests.md`
+
+**Note — intentionally internal harness specs:** `generated.md`, `templates.md`, and `tests.md` are not exposed as `/test <target>` routing targets. They are internal harness specifications swept by `./tests/run.sh`'s Markdown harness sweep, not dispatched through the `/test` command.
 
 ## Principle
 
