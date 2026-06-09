@@ -24,7 +24,14 @@ data = json.loads(path.read_text())
 entry = next(item for item in data['collabs'] if item['slug'] == 'registry-schema-roundtrip')
 data['unknownTopLevel'] = {'preserve': True}
 entry['unknownCollabField'] = ['preserve']
-entry['verification'] = {'rounds': 0, 'unknownNestedLifecycle': {'preserve': True}}
+entry['verification'] = {
+    'rounds': 0,
+    'cap': 3,
+    'subState': 'seal',
+    'participantVerification': False,
+    'participants': {},
+    'unknownNestedLifecycle': {'preserve': True},
+}
 path.write_text(json.dumps(data, indent=2) + '\n')
 PY
 
@@ -82,5 +89,23 @@ if [[ "$status" -eq 0 || "$output" != *"eventIndex must be a non-negative intege
   printf 'FAIL: malformed eventIndex was not rejected\n%s\n' "$output" >&2
   exit 1
 fi
+
+python3 - "$ROOT" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+sys.path.insert(0, str(root))
+
+from commands.collab.engine import registry as r
+
+schema = json.loads((root / 'registry.schema.json').read_text())
+parity = schema['x-dc-validatorParity']
+assert parity['schemaRole'].startswith('reference/projection only'), parity
+assert parity['createdAtRequiredCollabFields'] == r.CREATED_AT_REQUIRED_COLLAB_FIELDS, parity
+assert parity['createdAtRequiredReviewerFields'] == r.CREATED_AT_REQUIRED_REVIEWER_FIELDS, parity
+assert parity['createdAtRequiredVerificationFields'] == r.CREATED_AT_REQUIRED_VERIFICATION_FIELDS, parity
+PY
 
 printf 'OK: registry schema contract rejects known malformed fields and preserves unknown fields\n'

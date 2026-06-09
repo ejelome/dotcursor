@@ -51,7 +51,7 @@ When `execute-spawn` rejects a returned Completion patch or the execution record
 
 **Reopen and narrowed scope**
 
-When a collab is reopened after a non-success verdict and the coverage carry-forward fix is in place, the coverage system preserves prior broad coverage at reopen time. A contributor whose scope narrows on the reopen round does not need to re-declare prior broader chartered paths through the `writeScope` fence; those paths are carried forward by the reopen snapshot, not by re-submission. `writeScope` fences the Completion execution write — it does not determine what paths count as covered at seal; carry-forward coverage is contributed by the reopen snapshot, which is separate from the per-round execution record. If carry-forward behavior is absent (registries predating 2026-06-08), the contributor must re-declare all required paths to avoid a CHARTERED-DELIVERABLE-MISSING failure at seal.
+Reopen saves current coverage before clearing execution state. If your scope narrows on a reopen, you don't need to re-add prior paths to `writeScope`; the saved snapshot already covers them. `writeScope` is about write permissions, not what counts as covered at seal — seal coverage comes from the snapshot. On registries that predate this feature, re-declare all paths or the seal will fail with CHARTERED-DELIVERABLE-MISSING.
 
 **Grandfather policy**
 

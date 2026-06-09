@@ -1,6 +1,6 @@
 # Workflow models
 
-Committed doctrine for the two supported collab workflow models. This document is the authoritative reference for how a collab record closes and what `--terminal` means at init time. All close-path logic in `commands/collab/engine/registry.py` and related helpers is downstream of this specification.
+How collab records close, and what `--terminal` means at init time. Close behavior in `registry.py` and related helpers follows this spec.
 
 ## Trigger
 
@@ -10,54 +10,41 @@ Committed doctrine for the two supported collab workflow models. This document i
 
 ## Committed workflow model
 
-**Default terminal:** `seal`. All collabs initialized without `--terminal` use the seal workflow model. Defined in `registry_constants.py` as `DEFAULT_TERMINAL = 'seal'`. Valid terminals: `ALLOWED_TERMINALS = {'seal', 'issue'}`.
+`seal` is the default. Any collab initialized without `--terminal` uses the seal model (`DEFAULT_TERMINAL = 'seal'` in `registry_constants.py`).
 
-The seal workflow model is the invariant baseline. New terminal values are additions alongside it, not replacements. The `planned-routes.md` prerequisite gate guards against activating the issue bridge before the required contract surface is present, because bridging before prerequisites are satisfied bricks the collab tooling for the entire working tree.
+New terminal values are additions, not replacements. The `planned-routes.md` gate blocks `--terminal issue` until its prerequisites are in place — using it too early breaks the collab tooling for the whole working tree.
 
-## Seal workflow model (`--terminal seal`)
+## Seal model (`--terminal seal`)
 
-Governs collabs initialized with `--terminal seal` or with no `--terminal` flag (the default).
-
-**Close-gate.** A seal-terminal collab may auto-close only when all three conditions hold:
+The default. Closes when all three hold:
 
 1. Every non-moderator assigned role has a completed `execution` entry.
 2. A current, non-stale `verificationSeal` exists (written by `/collab seal verification`).
 3. The reviewer has emitted a `verdict` with `outcome == success`.
 
-The full sub-state lifecycle (`Completion.verification`, `verification.participant`, `verification.seal`, `verification.assessment`) is defined in `verification.md`.
+The sub-state lifecycle (`Completion.verification`, `verification.participant`, `verification.seal`, `verification.assessment`) is defined in `verification.md`.
 
 ## Issue workflow model (`--terminal issue`)
 
-Governs collabs initialized with `--terminal issue`. The collab closes via exported issue handoff evidence — no reviewer seal is required.
+Closes when the platform engineer exports issue evidence — no reviewer seal needed.
 
 ### Issue lifecycle
 
-1. The collab proceeds through all phases (Audit → Discussion → Conclusion → Action Plan → Handoff → Completion) without deviation.
-2. In `Completion.execution`, all assigned roles implement their Action Plan items and record `execution` entries in the normal way.
-3. The platform engineer role runs `/collab export-issues` to record durable exported-issue handoff evidence. This evidence record is the terminal artifact.
-4. When exported issue handoff evidence is present and all non-moderator assigned execution roles are complete, the collab auto-closes. It does not enter `Completion.verification`.
+1. All phases run normally (Audit → Discussion → Conclusion → Action Plan → Handoff → Completion).
+2. In `Completion.execution`, roles implement their Action Plan items and record `execution` entries as usual.
+3. The platform engineer runs `/collab export-issues` to write the issue evidence. This record closes the collab.
+4. When evidence is written and all assigned execution is done, the collab closes — no `Completion.verification`.
 
 ### Seal-free close
 
-Issue terminal collabs do not require a `verificationSeal`. The `verificationSeal` field is absent from the registry entry at close time; its absence is not a validation error for `terminal == 'issue'` collabs. There is no reviewer seal turn and no reviewer assessment turn.
+Issue-terminal collabs close without a `verificationSeal`; its absence is not an error. There is no reviewer seal or assessment turn. A `verificationSeal` present on an issue-terminal collab is ignored.
 
 ### Replacement close-gate
 
-The seal verification sequence (`Completion.verification` → `verification.participant` → `verification.seal` → `verification.assessment`) is replaced by the exported issue evidence check. An issue-terminal collab auto-closes when:
+`/collab export-issues` writes evidence from a file you supply. It does not create issues from Action Plan items. Automatic issue creation is not supported; open a new collab to charter that work.
 
-1. Every non-moderator assigned role has a completed `execution` entry.
-2. Exported issue handoff evidence exists and is recorded in the registry (written by `/collab export-issues`).
+## `--terminal` flag
 
-The close must not wait on a `verificationSeal`. A `verificationSeal` present on an issue-terminal collab is inert and is not consulted at close time.
+Pass `--terminal <seal|issue>` to `/collab init`. Stored in the `terminal` field; cannot be changed after init. Valid values in `registry_constants.py:ALLOWED_TERMINALS`. See `glossary.md` for definitions.
 
-### Export evidence boundary
-
-`/collab export-issues` records externally supplied issue handoff evidence from a caller-provided evidence file. It does not derive `/git issue create` handoffs from Action Plan items. Automatic issue generation is outside the current workflow-model scope and belongs in a separately chartered collab if needed.
-
-## Terminal selector
-
-The `--terminal <seal|issue>` flag to `/collab init` selects the workflow model at creation time. The value is stored in the registry `terminal` field and governs close behavior for the record's lifetime. The terminal is immutable after init.
-
-**Valid values:** `seal` (default), `issue`. Defined in `registry_constants.py:ALLOWED_TERMINALS`. See `glossary.md` for canonical term definitions.
-
-**See also:** [`REPOSITORY.md` § Collab Workflow Models](../../../REPOSITORY.md#6-collab-workflow-models) for the repository-level summary; [`planned-routes.md`](planned-routes.md) for the prerequisite gate that guards issue bridge activation.
+**See also:** [`REPOSITORY.md` §6](../../../REPOSITORY.md#6-collab-workflow-models); [`planned-routes.md`](planned-routes.md) for the gate that blocks early activation.

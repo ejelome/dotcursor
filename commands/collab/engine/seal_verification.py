@@ -249,13 +249,34 @@ def completion_state(entry: dict) -> dict:
     return completion
 
 
+def set_missing_legacy_verification_field(entry: dict, verification: dict, field: str) -> None:
+    if field in verification:
+        return
+    if entry.get('createdAt') is not None:
+        die(f'registry: verification.{field} is required when createdAt is present')
+    if field == 'rounds':
+        verification[field] = 0
+    elif field == 'cap':
+        verification[field] = DEFAULT_VERIFICATION_CAP
+    elif field == 'subState':
+        verification[field] = 'seal'
+    elif field == 'participantVerification':
+        verification[field] = False
+    elif field == 'participants':
+        verification[field] = {}
+    else:
+        die(f'registry: unknown legacy verification field: {field}')
+
+
 def verification_state(entry: dict) -> dict:
     verification = entry.setdefault('verification', {})
     if not isinstance(verification, dict):
         die('registry: verification must be an object when present')
-    rounds = verification.get('rounds', 0)
-    cap = verification.get('cap', DEFAULT_VERIFICATION_CAP)
-    substate = verification.get('subState')
+    for field in ('rounds', 'cap', 'subState', 'participantVerification', 'participants'):
+        set_missing_legacy_verification_field(entry, verification, field)
+    rounds = verification['rounds']
+    cap = verification['cap']
+    substate = verification['subState']
     if not isinstance(rounds, int) or rounds < 0:
         die('registry: verification.rounds must be a non-negative integer when present')
     if not isinstance(cap, int) or cap < 1:
@@ -264,36 +285,35 @@ def verification_state(entry: dict) -> dict:
         substate = 'seal'
     if substate not in ALLOWED_VERIFICATION_SUBSTATES:
         die(f'registry: verification.subState must be one of {sorted(ALLOWED_VERIFICATION_SUBSTATES)}')
-    participants = verification.get('participants')
-    if participants is not None:
-        if not isinstance(participants, dict):
-            die('registry: verification.participants must be an object when present')
-        for role, participant_state in participants.items():
-            if not isinstance(role, str) or not role.strip():
-                die('registry: verification.participants keys must be non-empty role strings')
-            if not isinstance(participant_state, dict):
-                die('registry: verification.participants[role] must be an object')
-            stage = participant_state.get('stage')
-            if stage is not None and stage not in ALLOWED_PARTICIPANT_VERIFICATION_STAGES:
-                die(
-                    'registry: verification.participants[role].stage must be one of '
-                    f'{sorted(ALLOWED_PARTICIPANT_VERIFICATION_STAGES)}'
-                )
-            attempts = participant_state.get('attempts')
-            if attempts is not None and (not isinstance(attempts, int) or attempts < 0):
-                die('registry: verification.participants[role].attempts must be a non-negative integer when present')
-            started_at = participant_state.get('startedAt')
-            if started_at is not None and (not isinstance(started_at, str) or not started_at.strip()):
-                die('registry: verification.participants[role].startedAt must be a non-empty string when present')
-            signature = participant_state.get('writeScopeSignature')
-            if signature is not None and (not isinstance(signature, str) or not signature.strip()):
-                die('registry: verification.participants[role].writeScopeSignature must be a non-empty string when present')
-            execution_signature = participant_state.get('executionSignature')
-            if execution_signature is not None and (not isinstance(execution_signature, str) or not execution_signature.strip()):
-                die('registry: verification.participants[role].executionSignature must be a non-empty string when present')
-    verification['rounds'] = rounds
-    verification['cap'] = cap
-    verification['subState'] = substate
+    participant_enabled = verification['participantVerification']
+    if not isinstance(participant_enabled, bool):
+        die('registry: verification.participantVerification must be a boolean when present')
+    participants = verification['participants']
+    if not isinstance(participants, dict):
+        die('registry: verification.participants must be an object when present')
+    for role, participant_state in participants.items():
+        if not isinstance(role, str) or not role.strip():
+            die('registry: verification.participants keys must be non-empty role strings')
+        if not isinstance(participant_state, dict):
+            die('registry: verification.participants[role] must be an object')
+        stage = participant_state.get('stage')
+        if stage is not None and stage not in ALLOWED_PARTICIPANT_VERIFICATION_STAGES:
+            die(
+                'registry: verification.participants[role].stage must be one of '
+                f'{sorted(ALLOWED_PARTICIPANT_VERIFICATION_STAGES)}'
+            )
+        attempts = participant_state.get('attempts')
+        if attempts is not None and (not isinstance(attempts, int) or attempts < 0):
+            die('registry: verification.participants[role].attempts must be a non-negative integer when present')
+        started_at = participant_state.get('startedAt')
+        if started_at is not None and (not isinstance(started_at, str) or not started_at.strip()):
+            die('registry: verification.participants[role].startedAt must be a non-empty string when present')
+        signature = participant_state.get('writeScopeSignature')
+        if signature is not None and (not isinstance(signature, str) or not signature.strip()):
+            die('registry: verification.participants[role].writeScopeSignature must be a non-empty string when present')
+        execution_signature = participant_state.get('executionSignature')
+        if execution_signature is not None and (not isinstance(execution_signature, str) or not execution_signature.strip()):
+            die('registry: verification.participants[role].executionSignature must be a non-empty string when present')
     return verification
 
 
@@ -301,11 +321,9 @@ def participant_verification_enabled(entry: dict) -> bool:
     verification = entry.get('verification')
     if not isinstance(verification, dict):
         return False
-    return bool(
-        verification.get('participantVerification')
-        or verification.get('subState') == 'participant'
-        or isinstance(verification.get('participants'), dict)
-    )
+    if 'participantVerification' not in verification:
+        return False
+    return verification['participantVerification'] is True
 
 
 def participant_verification_roles(entry: dict) -> list[str]:
@@ -408,7 +426,7 @@ def participant_verification_incomplete(entry: dict) -> bool:
 def sync_participant_verification_review_substate(entry: dict) -> None:
     if not reviewer_backed(entry):
         return
-    if verification_state(entry).get('subState') == 'assessment':
+    if verification_state(entry)['subState'] == 'assessment':
         return
     if participant_verification_incomplete(entry):
         verification_state(entry)['subState'] = 'participant'
@@ -430,7 +448,7 @@ def participant_verification_inactive_message(entry: dict) -> str:
             'participant verification is not enabled for this collab; '
             f'the reviewer ({reviewer}) seals directly via /collab seal verification {target}'
         )
-    substate = verification_state(entry).get('subState')
+    substate = verification_state(entry)['subState']
     if substate == 'seal':
         return (
             'participant verification for this round is already complete; the reviewer '
@@ -521,11 +539,10 @@ def initialize_completion_state(
         if reset_stages:
             reset_participant_verification_stages(entry, scope_aware=scope_aware)
         verification['subState'] = 'participant' if participant_verification_enabled(entry) else 'seal'
-    elif substate == 'verification' and verification.get('subState') not in ALLOWED_VERIFICATION_SUBSTATES:
+    elif substate == 'verification' and verification['subState'] not in ALLOWED_VERIFICATION_SUBSTATES:
         verification['subState'] = 'seal'
     if substate == 'verification':
         sync_participant_verification_review_substate(entry)
-    verification.setdefault('cap', DEFAULT_VERIFICATION_CAP)
 
 
 def verification_review_substate(entry: dict) -> str:
@@ -650,7 +667,7 @@ def clear_verdict(entry: dict) -> None:
 def record_verification_round_for_execution(entry: dict, verification: dict) -> None:
     signature = execution_signature(entry)
     if verification.get('pairedExecutionSignature') != signature:
-        verification['rounds'] = verification.get('rounds', 0) + 1
+        verification['rounds'] += 1
         verification['pairedExecutionSignature'] = signature
 
 
@@ -702,8 +719,8 @@ def invalidate_verification_seal(entry: dict, reason: str) -> None:
             # the stale seal, and participant verify is gated to the 'participant'
             # sub-state, so nothing can advance. Fall back to the live participant or
             # seal entry point so the cycle always has a forward path.
-            verification = entry.get('verification')
-            rounds = verification.get('rounds', 0) if isinstance(verification, dict) else 0
+            verification = verification_state(entry)
+            rounds = verification['rounds']
             if rounds > 0 and not participant_verification_incomplete(entry):
                 set_verification_review_substate(entry, 'assessment')
             else:
@@ -929,14 +946,14 @@ def seal_state(path: Path, target: str, role: str | None = None, resume: bool = 
         'verificationSubState': verification_substate(entry),
         'completionSubState': verification_substate(entry),
         'verificationReviewSubState': verification_review_substate(entry),
-        'verificationRounds': verification_state(entry).get('rounds', 0) if reviewer_backed(entry) else 0,
-        'verificationCap': verification_state(entry).get('cap', DEFAULT_VERIFICATION_CAP) if reviewer_backed(entry) else DEFAULT_VERIFICATION_CAP,
+        'verificationRounds': verification_state(entry)['rounds'] if reviewer_backed(entry) else 0,
+        'verificationCap': verification_state(entry)['cap'] if reviewer_backed(entry) else DEFAULT_VERIFICATION_CAP,
         'executionEntries': active_execution_entries(entry),
         'validationScopes': validation_scopes_for_execution(entry),
         'touchedPaths': touched_paths_for_execution(entry),
         'participantVerification': participant_verification_enabled(entry),
         'participantVerificationRoles': participant_verification_roles(entry),
-        'participantVerificationParticipants': verification_state(entry).get('participants', {}) if reviewer_backed(entry) else {},
+        'participantVerificationParticipants': verification_state(entry)['participants'] if reviewer_backed(entry) else {},
         'nextParticipantVerificationRole': first_pending_participant_verification_role(entry),
         'sealStale': bool(isinstance(seal, dict) and seal.get('stale')),
         'verdict': entry.get('verdict') if isinstance(entry.get('verdict'), dict) else None,
@@ -1016,7 +1033,7 @@ def participant_verify_state(path: Path, target: str, role: str, resume: bool = 
         assert_verification_execution_ready(entry, transcript, 'participant verification')
         verification = verification_state(entry)
         assigned_roles = participant_verification_roles(entry)
-        if not participant_verification_enabled(entry) or verification.get('subState') != 'participant':
+        if not participant_verification_enabled(entry) or verification['subState'] != 'participant':
             die(participant_verification_inactive_message(entry))
         if role not in assigned_roles:
             die(f'role is not assigned to participant verification: {role}')
@@ -1031,7 +1048,7 @@ def participant_verify_state(path: Path, target: str, role: str, resume: bool = 
             verification = verification_state(entry)
             role_state = participant_verification_role_state(entry, role)
         else:
-            cap = verification.get('cap', DEFAULT_VERIFICATION_CAP)
+            cap = verification['cap']
             attempts = role_state.get('attempts', 0)
             if attempts >= cap:
                 die(f'participant verification attempt cap reached for {role}: {attempts}/{cap}')
@@ -1048,7 +1065,7 @@ def participant_verify_state(path: Path, target: str, role: str, resume: bool = 
         'activePhase': entry['activePhase'],
         'registryRevision': registry_revision(data),
         'completionSubState': verification_substate(entry),
-        'verificationReviewSubState': verification.get('subState'),
+        'verificationReviewSubState': verification['subState'],
         'assignedRoles': assigned_roles,
         'nextRole': first_pending_participant_verification_role(entry),
         'role': role,
@@ -1116,7 +1133,7 @@ def participant_verify_render(
             if completion['subState'] == 'verification':
                 sync_participant_verification_review_substate(entry)
         verification = verification_state(entry)
-        if not participant_verification_enabled(entry) or verification.get('subState') != 'participant':
+        if not participant_verification_enabled(entry) or verification['subState'] != 'participant':
             die(participant_verification_inactive_message(entry))
         assigned_roles = participant_verification_roles(entry)
         if role not in assigned_roles:
@@ -1133,7 +1150,7 @@ def participant_verify_render(
                 'participant verification turn lock is not active; '
                 f'run participant-verify-state first for role {role}'
             )
-        cap = verification.get('cap', DEFAULT_VERIFICATION_CAP)
+        cap = verification['cap']
         attempts = role_state.get('attempts', 0)
         if attempts >= cap:
             die(f'participant verification attempt cap reached for {role}: {attempts}/{cap}')
@@ -1537,11 +1554,10 @@ def render_seal(
             assert_execution_touched_paths_in_git_state(entry)
             assert_no_execution_agent_conflation(entry)
             advisory = execution_scope_advisory(entry)
-            rounds = verification.get('rounds', 0)
-            cap = verification.get('cap', DEFAULT_VERIFICATION_CAP)
+            rounds = verification['rounds']
+            cap = verification['cap']
             if rounds == 0:
                 die('zero verification rounds; at least one reviewer-executor paired event is required before sealing')
-            rounds = verification.get('rounds', 0)
             if cap_exit is None and rounds >= cap:
                 die(
                     'round cap reached; reissue with --cap-exit reopen-action-plan, '

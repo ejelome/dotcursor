@@ -13,7 +13,7 @@ Record exported issue handoff evidence for an issue-terminal collaboration recor
 
 1. Read [invariants.md](../../../commands/collab/reference/invariants.md) before executing; call the relevant helper fresh and do not trust prior reads from conversation context (Invariant #4). Resolve the target collab with **Registry targeting** in **Notes**.
 2. Read the resolved registry and transcript. If either is unreadable, **ABORT**: record unreadable; name the path.
-3. If the registry status is `closed` or `archived`, **ABORT**: closed collaboration records cannot export issues.
+3. If the registry status is `closed` or `archived`, **ABORT**: collab is closed or archived; cannot export issues.
 4. Resolve the executing role from the registry participants list. The exporting role must be `pe`; otherwise **ABORT**: issue export must be authored by platform engineer role pe.
 5. If the active phase is not `Completion`, **ABORT**: `/collab export-issues` is valid only in `Completion`.
 6. If the stored `terminal` is not `issue`, **ABORT**: `/collab export-issues` requires terminal issue.

@@ -27,11 +27,7 @@ Authority is strict and ordered:
    - `./platform/tooling/sync-roles-roster.sh` (roles roster projection)
 **Execution prerequisites** for the checks listed above are specified in [`platform/standards/runtime-contract.md`](platform/standards/runtime-contract.md): Python ≥ 3.9, bash ≥ 3.2, `git` and `python3` on `$PATH`, and stdlib-only Python tooling.
 
-`./platform/tooling/coverage-gate.sh` discovers public collab routes from
-`commands/collab/` and rejects missing P9-required abort tests for new route
-coverage. The only accepted discovery debt is the fixed pre-existing route set
-declared in that script; new scaffolded collab routes are not eligible for that
-debt bucket and must ship with an anchored abort fixture.
+`./platform/tooling/coverage-gate.sh` checks that every public collab route in `commands/collab/` has a P9-required abort test. A fixed set of pre-existing routes is exempted in that script; new routes are not eligible for that exemption and must ship with an abort test.
 
 2. Repo-owned source files and policy documents:
    - Root adapters: `CLAUDE.md`, `AGENTS.md`, `REPOSITORY.md`, `README.md`, `.gitignore`, `.collab.json`

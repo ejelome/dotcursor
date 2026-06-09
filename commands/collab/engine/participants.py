@@ -73,13 +73,23 @@ def pending_reviewer_role(entry: dict) -> str | None:
     return None
 
 def reviewer_mode(entry: dict) -> str:
-    return entry.get('reviewerMode') or DEFAULT_REVIEWER_MODE
+    if 'reviewerMode' in entry:
+        value = entry['reviewerMode']
+        if isinstance(value, str) and value.strip():
+            return value
+    if entry.get('createdAt') is None:
+        return DEFAULT_REVIEWER_MODE
+    die('registry: collab.reviewerMode is required when createdAt is present')
 
 def reviewer_optional_phases(entry: dict) -> list[str]:
-    value = entry.get('reviewerOptionalPhases')
-    if value is None:
+    if 'reviewerOptionalPhases' in entry:
+        value = entry['reviewerOptionalPhases']
+        if isinstance(value, list):
+            return list(value)
+        die('registry: collab.reviewerOptionalPhases must be a list when present')
+    if entry.get('createdAt') is None:
         return list(DEFAULT_REVIEWER_OPTIONAL_PHASES)
-    return list(value)
+    die('registry: collab.reviewerOptionalPhases is required when createdAt is present')
 
 def parse_reviewer_optional_phases(value: str | None) -> list[str]:
     if value is None or not value.strip():

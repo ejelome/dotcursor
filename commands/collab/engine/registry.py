@@ -54,6 +54,9 @@ from commands.collab.engine.registry_constants import (
     CALLER_DECLINED_AGENT_ID,
     CONTENT_ONLY_GUARD,
     CONVERGENT_REVIEWER_PHASES,
+    CREATED_AT_REQUIRED_COLLAB_FIELDS,
+    CREATED_AT_REQUIRED_REVIEWER_FIELDS,
+    CREATED_AT_REQUIRED_VERIFICATION_FIELDS,
     DEFAULT_OPEN_ROSTER_EFFORT,
     DEFAULT_REVIEWER_MODE,
     DEFAULT_REVIEWER_OPTIONAL_PHASES,
@@ -678,11 +681,28 @@ def completed_execution_unchecked_items(entry: dict, transcript: str) -> list[di
     return violations
 
 
+def require_created_at_fields(
+    container: dict,
+    fields: list[str],
+    source: str,
+    prefix: str,
+    created_at: str | None,
+) -> None:
+    if created_at is None:
+        return
+    for field in fields:
+        if field not in container:
+            die(f'{source}: {prefix}.{field} is required when createdAt is present')
+
+
 def terminal_value(entry: dict) -> str:
-    terminal = entry.get('terminal')
-    if isinstance(terminal, str) and terminal in ALLOWED_TERMINALS:
-        return terminal
-    return DEFAULT_TERMINAL
+    if 'terminal' in entry:
+        terminal = entry['terminal']
+        if isinstance(terminal, str) and terminal in ALLOWED_TERMINALS:
+            return terminal
+    if entry.get('createdAt') is None:
+        return DEFAULT_TERMINAL
+    die(f'registry: collab terminal must be one of {sorted(ALLOWED_TERMINALS)}')
 
 
 def seal_terminal(entry: dict) -> bool:
@@ -933,6 +953,13 @@ def validate_registry(data: dict, path: Path | None = None) -> None:
         transcriptPath = entry.get('transcriptPath')
         reviewerRole = entry.get('reviewerRole')
         sequence = entry.get('sequence')
+        require_created_at_fields(
+            entry,
+            CREATED_AT_REQUIRED_COLLAB_FIELDS,
+            source,
+            'collab',
+            created_at,
+        )
 
         for field, value in (
             ('id', collab_id),
@@ -1007,7 +1034,19 @@ def validate_registry(data: dict, path: Path | None = None) -> None:
             if mode == 'last-in-convergent-phases' and reviewerRole in turnOrder:
                 die(f'{source}: reviewerRole must not appear in turnOrder')
 
-            optional_phases = entry.get('reviewerOptionalPhases', DEFAULT_REVIEWER_OPTIONAL_PHASES)
+            require_created_at_fields(
+                entry,
+                CREATED_AT_REQUIRED_REVIEWER_FIELDS,
+                source,
+                'collab',
+                created_at,
+            )
+            if 'reviewerOptionalPhases' in entry:
+                optional_phases = entry['reviewerOptionalPhases']
+            elif created_at is None:
+                optional_phases = list(DEFAULT_REVIEWER_OPTIONAL_PHASES)
+            else:
+                die(f'{source}: collab.reviewerOptionalPhases is required when createdAt is present')
             if not isinstance(optional_phases, list):
                 die(f'{source}: reviewerOptionalPhases must be a list when present')
             if not all(isinstance(phase, str) and phase in PHASES for phase in optional_phases):
@@ -1066,8 +1105,25 @@ def validate_registry(data: dict, path: Path | None = None) -> None:
         if verification is not None:
             if not isinstance(verification, dict):
                 die(f'{source}: verification must be an object when present')
-            rounds = verification.get('rounds', 0)
-            cap = verification.get('cap', DEFAULT_VERIFICATION_CAP)
+            require_created_at_fields(
+                verification,
+                CREATED_AT_REQUIRED_VERIFICATION_FIELDS,
+                source,
+                'verification',
+                created_at,
+            )
+            if 'rounds' in verification:
+                rounds = verification['rounds']
+            elif created_at is None:
+                rounds = 0
+            else:
+                die(f'{source}: verification.rounds is required when createdAt is present')
+            if 'cap' in verification:
+                cap = verification['cap']
+            elif created_at is None:
+                cap = DEFAULT_VERIFICATION_CAP
+            else:
+                die(f'{source}: verification.cap is required when createdAt is present')
             verification_substate = verification.get('subState')
             if not isinstance(rounds, int) or rounds < 0:
                 die(f'{source}: verification.rounds must be a non-negative integer when present')
@@ -1492,6 +1548,7 @@ def effort_value(defaults: dict, phase: str, role: str) -> str | None:
         die(f'effort source missing phase: {phase}')
     phase_defaults = matrix[phase]
     if role not in phase_defaults:
+        # Explicit-values exemption: open-roster effort is matrix-resolved advisory state, not registry record state.
         return DEFAULT_OPEN_ROSTER_EFFORT
     effort = phase_defaults[role]
     if effort is not None and not isinstance(effort, str):
@@ -1857,7 +1914,7 @@ def set_field(
                     die(f'active-phase must be one of {PHASES}')
                 entry['activePhase'] = value
                 forced_active_phase = True
-                if value == 'Completion':
+                if value == 'Completion' and seal_terminal(entry):
                     # Mirror advance_phase's Completion entry so a forced jump
                     # cannot bypass the scope-aware reset and strand a reopened
                     # cycle at rounds=0 with every stage preserved (the old
@@ -1877,7 +1934,7 @@ def set_field(
                     die('reviewer must not appear in turnOrder')
                 entry['reviewerRole'] = value
                 entry['reviewerMode'] = DEFAULT_REVIEWER_MODE
-                entry.setdefault('reviewerOptionalPhases', list(DEFAULT_REVIEWER_OPTIONAL_PHASES))
+                entry['reviewerOptionalPhases'] = list(DEFAULT_REVIEWER_OPTIONAL_PHASES)
         elif field == 'reviewer-optional-phases':
             if not reviewer_role(entry):
                 die('reviewer-optional-phases requires reviewerRole')
@@ -2789,7 +2846,7 @@ def advance_phase(
             entry['activePhase'] = PHASES[index + 1]
             if entry['activePhase'] in MOD_EXCLUDED_PHASES:
                 remove_moderator_from_turn_order(entry)
-            if entry['activePhase'] == 'Completion':
+            if entry['activePhase'] == 'Completion' and seal_terminal(entry):
                 # Scope-aware on (re)entry into Completion: a fresh round, and for
                 # a reopen that preserved prior verification, keep the completed
                 # verification of roles whose write scope is unchanged so only the
@@ -3531,12 +3588,12 @@ def init_collab(
             entry['reviewerRole'] = reviewer
             entry['reviewerMode'] = DEFAULT_REVIEWER_MODE
             entry['reviewerOptionalPhases'] = list(DEFAULT_REVIEWER_OPTIONAL_PHASES)
-        if participant_verification and terminal == 'seal':
+        if terminal == 'seal':
             entry['verification'] = {
                 'rounds': 0,
                 'cap': DEFAULT_VERIFICATION_CAP,
-                'subState': 'participant',
-                'participantVerification': True,
+                'subState': 'participant' if participant_verification else 'seal',
+                'participantVerification': participant_verification,
                 'participants': {},
             }
 
