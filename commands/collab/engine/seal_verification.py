@@ -32,6 +32,7 @@ Naming convention
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
 import html
 import json
 import os
@@ -55,6 +56,7 @@ DEFAULT_CONFIG_ROOT = resolve_config_root()
 DEFAULT_ROLES_DIR = DEFAULT_CONFIG_ROOT / 'commands/collab/reference/roles'
 SUMMARY_HEADING_RE = re.compile(r'^### Summary \u2014 \d{4}-\d{2}-\d{2}$')
 ANCHOR_RE = re.compile(r'^<a name="(?P<anchor>[A-Za-z0-9_-]+)"></a>$')
+SEAL_VERDICT_KIND = 'collab.seal-verdict'
 
 from commands.collab.engine import transcript_readers
 from commands.collab.engine.errors import die
@@ -887,6 +889,80 @@ def seal_snapshot(
     return seal
 
 
+def _digest_json(value: object) -> str:
+    encoded = json.dumps(value, sort_keys=True, separators=(',', ':'), ensure_ascii=True)
+    return hashlib.sha256(encoded.encode()).hexdigest()
+
+
+def seal_verdict_inputs(entry: dict) -> dict:
+    seal = entry.get('verificationSeal')
+    if not isinstance(seal, dict):
+        die('seal-verdict companion requires verificationSeal')
+    return {
+        'observedRevision': seal.get('observedRevision'),
+        'executionDigest': seal.get('executionSignature'),
+        'contentDigest': seal.get('contentDigest'),
+        'pathDigests': seal.get('pathDigests'),
+    }
+
+
+def seal_verdict_input_digest(entry: dict) -> str:
+    return _digest_json(seal_verdict_inputs(entry))
+
+
+def build_seal_verdict_companion(entry: dict) -> dict:
+    seal = entry.get('verificationSeal')
+    if not isinstance(seal, dict):
+        die('seal-verdict companion requires verificationSeal')
+    verdict = entry.get('verdict') if isinstance(entry.get('verdict'), dict) else None
+    inputs = seal_verdict_inputs(entry)
+    return {
+        'kind': SEAL_VERDICT_KIND,
+        'target': entry.get('id'),
+        'authoritative': False,
+        'authority': 'verificationSeal',
+        'closeGate': 'verificationSeal',
+        'observedRevision': inputs['observedRevision'],
+        'executionDigest': inputs['executionDigest'],
+        'contentDigest': inputs['contentDigest'],
+        'pathDigests': inputs['pathDigests'],
+        'inputDigest': seal_verdict_input_digest(entry),
+        'verificationSealDigest': _digest_json(seal),
+        'verdict': verdict,
+        'stale': bool(seal.get('stale')),
+        'staleReason': seal.get('staleReason'),
+    }
+
+
+def seal_verdict_companion_status(entry: dict, companion: object | None) -> dict:
+    if companion is None:
+        return {'current': False, 'reason': 'missing seal-verdict companion'}
+    if not isinstance(companion, dict):
+        return {'current': False, 'reason': 'invalid seal-verdict companion'}
+    if companion.get('authoritative') is not False or companion.get('closeGate') != 'verificationSeal':
+        return {'current': False, 'reason': 'seal-verdict companion authority drift'}
+    expected = build_seal_verdict_companion(entry)
+    for key in ('observedRevision', 'executionDigest', 'contentDigest', 'pathDigests', 'inputDigest', 'verdict'):
+        if companion.get(key) != expected.get(key):
+            return {'current': False, 'reason': f'seal-verdict companion {key} mismatch'}
+    return {'current': True, 'reason': None}
+
+
+def seal_verdict_companion_path(registry_path: Path, entry: dict) -> Path:
+    transcript_path = Path(entry['transcriptPath'])
+    companion_name = f'{transcript_path.stem}-seal-verdict.json'
+    return registry_path.parent / transcript_path.with_name(companion_name)
+
+
+def write_seal_verdict_companion(registry_path: Path, entry: dict) -> Path | None:
+    if not isinstance(entry.get('verificationSeal'), dict):
+        return None
+    path = seal_verdict_companion_path(registry_path, entry)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(build_seal_verdict_companion(entry), indent=2, sort_keys=True) + '\n')
+    return path
+
+
 def verification_substate(entry: dict) -> str:
     if not reviewer_backed(entry):
         return 'none'
@@ -1538,6 +1614,7 @@ def render_seal(
             rendered, header_changed = render_managed_header_text(rendered, entry, DEFAULT_ROLES_DIR)
             if entry['status'] == 'closed' and completion_summary_empty(rendered):
                 rendered = append_completion_summary(rendered, default_close_summary(entry), summary_date_from_timestamp(rendered_timestamp))
+            write_seal_verdict_companion(path, entry)
         else:
             assert_verification_execution_ready(entry, transcript, 'verification seal')
             if participant_verification_incomplete(entry):
@@ -1587,6 +1664,7 @@ def render_seal(
                     else next_line_for_state(entry)
                 )
             )
+            write_seal_verdict_companion(path, entry)
 
         print_header_overwrite(header_changed)
         commit_registry_and_transcript(path, data, transcript_path, rendered)
@@ -1660,5 +1738,6 @@ def show_verdict(path: Path, target: str) -> int:
             'staleReason': seal.get('staleReason'),
             'capExit': seal.get('capExit'),
         }
+        output['sealVerdict'] = build_seal_verdict_companion(entry)
     print(json.dumps(output, sort_keys=True))
     return 0

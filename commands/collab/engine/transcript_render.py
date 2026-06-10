@@ -32,6 +32,9 @@ from __future__ import annotations
 
 import re
 import sys
+import hashlib
+import html
+import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -70,6 +73,8 @@ from commands.collab.engine.transcript_readers import (  # noqa: E402
 ANCHOR_RE = re.compile(r'^<a name="(?P<anchor>[A-Za-z0-9_-]+)"></a>$')
 DETAILS_CONTROL_LINE_RE = re.compile(r'^</?details(?:\s+[^>]*)?\s*>$')
 PROHIBITION_SEPARATOR = ' \u00b7 '
+PROJECTION_STANCES = {'converges', 'dissents', 'qualifies'}
+PROJECTION_FOOTER_PREFIX = '<!-- collab:projection-source '
 
 
 def section_bounds(lines: list[str], heading: str) -> tuple[int, int]:
@@ -136,6 +141,176 @@ def append_phase_block(lines: list[str], phase: str, block: list[str]) -> list[s
     if after and insert and insert[-1] != '':
         insert.append('')
     return before + insert + after
+
+
+def raw_transcript_path_for_entry(entry: dict) -> str:
+    transcript_path = Path(entry['transcriptPath'])
+    return str(transcript_path.with_name(f'{transcript_path.stem}-raw.md'))
+
+
+def _projection_store_records(contribution_store: object) -> list[dict]:
+    if isinstance(contribution_store, dict):
+        records = contribution_store.get('contributions')
+    else:
+        records = contribution_store
+    if not isinstance(records, list):
+        die('contribution store must be a list or an object with contributions')
+    normalized: list[dict] = []
+    for index, record in enumerate(records, start=1):
+        if not isinstance(record, dict):
+            die(f'contribution store record {index} must be an object')
+        normalized.append(_projection_store_record(record, index))
+    return normalized
+
+
+def _required_projection_field(record: dict, field: str, index: int) -> str:
+    value = record.get(field)
+    if not isinstance(value, str) or not value.strip():
+        die(f'contribution store record {index} missing {field}')
+    return value.strip()
+
+
+def _projection_store_record(record: dict, index: int) -> dict:
+    phase = _required_projection_field(record, 'phase', index)
+    if phase not in PHASES:
+        die(f'contribution store record {index} has invalid phase: {phase}')
+    role = _required_projection_field(record, 'role', index)
+    anchor = _required_projection_field(record, 'anchor', index)
+    if not re.match(r'^[A-Za-z0-9_-]+$', anchor):
+        die(f'contribution store record {index} has invalid anchor: {anchor}')
+    stance = _required_projection_field(record, 'stance', index)
+    if stance not in PROJECTION_STANCES:
+        die(
+            f'ABORT: stance token missing or invalid for {anchor}. '
+            'Add a valid stance declaration to the source contribution before aggregating.'
+        )
+    excerpt = _required_projection_field(record, 'excerpt', index)
+    timestamp = record.get('timestamp')
+    if timestamp is not None and (not isinstance(timestamp, str) or not timestamp.strip()):
+        die(f'contribution store record {index} has invalid timestamp')
+    full_body = record.get('fullBody')
+    if full_body is not None and not isinstance(full_body, str):
+        die(f'contribution store record {index} has invalid fullBody')
+    content = record.get('content')
+    if content is not None and not isinstance(content, str):
+        die(f'contribution store record {index} has invalid content')
+    return {
+        'phase': phase,
+        'role': role,
+        'anchor': anchor,
+        'stance': stance,
+        'excerpt': excerpt,
+        'timestamp': timestamp.strip() if isinstance(timestamp, str) else None,
+        'content': content if isinstance(content, str) else excerpt,
+        'fullBody': full_body,
+    }
+
+
+def contribution_store_digest(contribution_store: object) -> str:
+    records = _projection_store_records(contribution_store)
+    payload = json.dumps(records, sort_keys=True, separators=(',', ':'), ensure_ascii=True)
+    return hashlib.sha256(payload.encode()).hexdigest()
+
+
+def projection_source_digest(registry_state: dict, entry: dict, contribution_store: object, observed_revision: int) -> str:
+    project = registry_state.get('project')
+    label = project.get('label') if isinstance(project, dict) else None
+    if not isinstance(label, str) or not label.strip():
+        die('ABORT: project label missing. Add project.label to the registry before aggregating.')
+    payload = {
+        'projectLabel': label,
+        'target': entry.get('id'),
+        'status': entry.get('status'),
+        'activePhase': entry.get('activePhase'),
+        'observedRevision': observed_revision,
+        'contributionStoreDigest': contribution_store_digest(contribution_store),
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(',', ':'), ensure_ascii=True)
+    return hashlib.sha256(encoded.encode()).hexdigest()
+
+
+def _projection_table_cell(value: str) -> str:
+    return html.escape(value.replace('\n', ' ').replace('|', '\\|'))
+
+
+def _projection_excerpt(value: str, limit: int = 220) -> str:
+    compact = re.sub(r'\s+', ' ', value).strip()
+    if len(compact) <= limit:
+        return compact
+    return compact[:limit - 1].rstrip() + '\u2026'
+
+
+def render_moderator_project_transcript(
+    registry_state: dict,
+    entry: dict,
+    contribution_store: object,
+    observed_revision: int,
+) -> str:
+    project = registry_state.get('project')
+    label = project.get('label') if isinstance(project, dict) else None
+    if not isinstance(label, str) or not label.strip():
+        die('ABORT: project label missing. Add project.label to the registry before aggregating.')
+    records = _projection_store_records(contribution_store)
+    store_digest = contribution_store_digest(records)
+    source_digest = projection_source_digest(registry_state, entry, records, observed_revision)
+    raw_path = raw_transcript_path_for_entry(entry)
+    lines = [
+        f'# {entry["title"]}',
+        '> Moderator project transcript; raw transcript remains canonical sibling output.',
+        '',
+        f'project: **{label.strip()}**',
+        f'sourceRevision: `{observed_revision}`',
+        f'sourceDigest: `{source_digest}`',
+        f'contributionStoreDigest: `{store_digest}`',
+        '',
+    ]
+    for phase in PHASES:
+        phase_records = [record for record in records if record['phase'] == phase]
+        if not phase_records:
+            continue
+        lines.extend([
+            f'## {phase}',
+            '',
+            '| Source | Role | Stance | Excerpt |',
+            '|--------|------|--------|---------|',
+        ])
+        for record in phase_records:
+            anchor = record['anchor']
+            source = f'[{anchor}]({raw_path}#{anchor})'
+            role = _projection_table_cell(record['role'])
+            stance = _projection_table_cell(record['stance'])
+            excerpt = _projection_table_cell(_projection_excerpt(record['excerpt']))
+            lines.append(f'| {source} | {role} | {stance} | {excerpt} |')
+        lines.append('')
+    lines.append(
+        f'{PROJECTION_FOOTER_PREFIX}observedRevision={observed_revision} '
+        f'sourceDigest={source_digest} contributionStoreDigest={store_digest} -->'
+    )
+    return '\n'.join(lines) + '\n'
+
+
+def render_raw_transcript_from_contribution_store(
+    registry_state: dict,
+    entry: dict,
+    contribution_store: object,
+    roles_dir: Path,
+    timestamp: str,
+) -> str:
+    records = _projection_store_records(contribution_store)
+    rendered = render_initial_transcript(entry['title'], entry, roles_dir, timestamp)
+    lines = rendered.splitlines()
+    for record in records:
+        body = render_contribution_body(record['content'], record['fullBody'])
+        block = rendered_collapsible_block(
+            record['anchor'],
+            record['role'],
+            body,
+            timestamp=record['timestamp'] or timestamp,
+            content_guard=True,
+        )
+        lines = append_phase_block(lines, record['phase'], block)
+    rendered, _changed = render_managed_header_text('\n'.join(lines) + '\n', entry, roles_dir)
+    return rendered
 
 
 def reject_hand_authored_excerpt_details(content: str) -> None:
