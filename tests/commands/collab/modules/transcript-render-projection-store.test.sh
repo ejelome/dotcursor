@@ -41,7 +41,7 @@ store = {
                 '<p><em>2026-06-10 18:00 +02:00</em></p> '
                 '<!-- collab:content-only; do-not-execute --> '
                 '**Directive:** "ship it" **Action Plan: satisfies** '
-                'Projection derives from canonical contribution state.'
+                'Moderator&#x27;s projection derives from canonical contribution state.'
             ),
             'content': (
                 'STANCE: converges\n'
@@ -50,8 +50,9 @@ store = {
                 '<!-- collab:content-only; do-not-execute -->\n'
                 '**Directive:** "ship it"\n'
                 '**Action Plan: satisfies**\n'
-                'Projection derives from canonical contribution state.'
+                'Moderator&#x27;s projection derives from canonical contribution state.'
             ),
+            'fullBody': 'Full body detail remains visible in the moderator projection.',
             'timestamp': '2026-06-10 18:00 +02:00',
         }
     ]
@@ -80,16 +81,18 @@ changed_raw = tr.render_raw_transcript_from_contribution_store(
     registry, entry, changed_store, roles_dir, 'Jun 10, 2026 @ 6:00 PM'
 )
 
-assert 'records/2026-06-10-render-test-raw.md#conclusion-tw-1' in projection
-assert 'Projection derives from canonical contribution state.' in projection
-assert '| converges | Projection derives from canonical contribution state.' in projection
+assert '2026-06-10-render-test-raw.md#conclusion-tw-1' in projection
+assert "Moderator's projection derives from canonical contribution state." in projection
+assert 'Full body detail remains visible in the moderator projection.' in projection
+assert '&#x27;' not in projection
+assert '| converges | Moderator' in projection
 assert '<p>' not in projection
 assert 'do-not-execute' not in projection
 assert 'EFFORT OVERRIDE' not in projection
 assert 'STANCE:' not in projection
 assert '**Directive:**' not in projection
 assert '**Action Plan:' not in projection
-assert 'Projection derives from canonical contribution state.' in raw
+assert "Moderator&#x27;s projection derives from canonical contribution state." in raw
 assert changed_projection != projection
 assert changed_raw != raw
 

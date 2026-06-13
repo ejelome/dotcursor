@@ -12,7 +12,6 @@ import datetime as dt
 import fcntl
 import fnmatch
 import hashlib
-import html
 import json
 import os
 import re
@@ -246,6 +245,7 @@ from commands.collab.engine.registry_io import (
 from commands.collab.engine.transcript_render import (
     append_phase_block,
     contribution_store_digest,
+    RAW_PROVENANCE_BANNER,
     is_projection_hidden_metadata_line,
     insert_toc_entry,
     print_header_overwrite,
@@ -2126,17 +2126,44 @@ def legacy_projection_transcript_path_for_entry(entry: dict) -> Path:
 def migrate_raw_transcript_for_entry(entry: dict) -> bool:
     raw_path = lifecycle_transcript_path_for_entry(entry)
     if raw_path.exists():
+        inject_raw_provenance_banner_for_entry(entry)
         return False
     projection_path = legacy_projection_transcript_path_for_entry(entry)
     if not projection_path.exists():
         return False
     raw_path.parent.mkdir(parents=True, exist_ok=True)
     raw_path.write_text(projection_path.read_text())
+    inject_raw_provenance_banner_for_entry(entry)
+    return True
+
+
+def inject_raw_provenance_banner_for_entry(entry: dict) -> bool:
+    raw_path = lifecycle_transcript_path_for_entry(entry)
+    if not raw_path.exists():
+        return False
+    text = raw_path.read_text()
+    if RAW_PROVENANCE_BANNER in text:
+        return False
+    lines = text.splitlines()
+    header_index = next(
+        (index for index, line in enumerate(lines) if line.strip() == HEADER_MANAGED_BEGIN),
+        None,
+    )
+    if header_index is None:
+        return False
+    insert_at = header_index
+    if insert_at > 0 and lines[insert_at - 1].strip() == '':
+        insert_at -= 1
+    lines.insert(insert_at, RAW_PROVENANCE_BANNER)
+    tmp = raw_path.with_suffix('.tmp')
+    tmp.write_text('\n'.join(lines) + '\n')
+    tmp.replace(raw_path)
     return True
 
 
 def read_transcript_for_entry(entry: dict) -> str:
     migrate_raw_transcript_for_entry(entry)
+    inject_raw_provenance_banner_for_entry(entry)
     transcript_path = lifecycle_transcript_path_for_entry(entry)
     if not transcript_path.exists():
         die(f'transcript missing: {transcript_path}')
@@ -2300,6 +2327,31 @@ def render_raw_transcript(path: Path, target: str | None = None) -> int:
     return 0
 
 
+def write_text_atomic(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = path.with_name(f'.{path.name}.{os.getpid()}.tmp')
+    try:
+        with temp_path.open('w') as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp_path, path)
+        try:
+            directory_fd = os.open(path.parent, os.O_RDONLY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
+        except OSError:
+            pass
+    except BaseException:
+        try:
+            temp_path.unlink()
+        except FileNotFoundError:
+            pass
+        raise
+
+
 def aggregate_transcript(path: Path, target: str | None = None, emit_json: bool = False) -> int:
     data = load_registry(path)
     entry = resolve_collab(data, target) if target else require_active_collab(data)
@@ -2307,8 +2359,7 @@ def aggregate_transcript(path: Path, target: str | None = None, emit_json: bool 
     observed_revision = registry_revision(data)
     rendered = render_moderator_project_transcript(data, entry, store, observed_revision)
     transcript_path = path_for_entry_target(path, entry, projection_transcript_path_for_entry(entry))
-    transcript_path.parent.mkdir(parents=True, exist_ok=True)
-    transcript_path.write_text(rendered)
+    write_text_atomic(transcript_path, rendered)
     result = {
         'path': str(transcript_path),
         'registryRevision': observed_revision,
@@ -2409,7 +2460,11 @@ def transcript_view(path: Path, target: str, phase: str, raw: bool = False) -> i
     entry = resolve_collab(data, target)
     if raw:
         raw_path = path_for_entry_target(path, entry, raw_transcript_path_for_entry(entry))
-        transcript = raw_path.read_text() if raw_path.exists() else read_transcript_for_entry(entry)
+        if raw_path.exists():
+            inject_raw_provenance_banner_for_entry(entry)
+            transcript = raw_path.read_text()
+        else:
+            transcript = read_transcript_for_entry(entry)
     else:
         projection_path = path_for_entry_target(path, entry, projection_transcript_path_for_entry(entry))
         if not projection_path.exists():

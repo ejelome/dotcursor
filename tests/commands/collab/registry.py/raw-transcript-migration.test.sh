@@ -32,6 +32,46 @@ PY
 
 PROJECTION="$(paths_json | python3 -c 'import json,sys; print(json.load(sys.stdin)["projection"])')"
 RAW="$(paths_json | python3 -c 'import json,sys; print(json.load(sys.stdin)["raw"])')"
+BANNER='> Raw transcript is lifecycle provenance, not unprocessed markdown; it may contain managed HTML scaffolding and execution-boundary guards.'
+
+banner_count() {
+  python3 - "$RAW" "$BANNER" <<'PY'
+import sys
+from pathlib import Path
+print(Path(sys.argv[1]).read_text().count(sys.argv[2]))
+PY
+}
+
+if [[ "$(banner_count)" != "1" ]]; then
+  printf 'FAIL: fresh init raw transcript did not contain exactly one provenance banner\n' >&2
+  exit 1
+fi
+
+python3 - "$RAW" "$BANNER" <<'PY'
+import sys
+from pathlib import Path
+path = Path(sys.argv[1])
+banner = sys.argv[2]
+path.write_text(path.read_text().replace(banner + '\n', '', 1))
+PY
+
+if [[ "$(banner_count)" != "0" ]]; then
+  printf 'FAIL: fixture did not remove provenance banner\n' >&2
+  exit 1
+fi
+
+"$ROOT/commands/collab/engine/registry.py" transcript-view "$TARGET" Audit --raw >/dev/null
+if [[ "$(banner_count)" != "1" ]]; then
+  printf 'FAIL: raw transcript read did not lazily inject one provenance banner\n' >&2
+  exit 1
+fi
+
+"$ROOT/commands/collab/engine/registry.py" transcript-view "$TARGET" Audit --raw >/dev/null
+"$ROOT/commands/collab/engine/registry.py" aggregate "$TARGET" >/dev/null
+if [[ "$(banner_count)" != "1" ]]; then
+  printf 'FAIL: repeated read or aggregate changed provenance banner count\n' >&2
+  exit 1
+fi
 
 legacy_payload='# Legacy Raw
 
@@ -95,4 +135,4 @@ if [[ "$(shasum -a 256 "$PROJECTION" | awk '{print $1}')" != "$projection_hash" 
   exit 1
 fi
 
-printf 'OK: raw transcript migration preserves legacy projection bytes before lifecycle writes\n'
+printf 'OK: raw transcript migration and lazy provenance-banner backfill are idempotent\n'

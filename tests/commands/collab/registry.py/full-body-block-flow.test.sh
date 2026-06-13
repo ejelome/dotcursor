@@ -61,8 +61,8 @@ if grep -Fq 'Visible excerpt with the standalone finding.' audit-view.md; then
   printf 'FAIL: Audit phase view exposed Discussion contribution\n' >&2
   exit 1
 fi
-if grep -Fq 'fullbodyword279' discussion-view.md; then
-  printf 'FAIL: rendered Discussion view exposed full-body content\n' >&2
+if ! grep -Fq 'fullbodyword279' discussion-view.md; then
+  printf 'FAIL: rendered Discussion view omitted full-body content from moderator projection\n' >&2
   exit 1
 fi
 grep -Fq 'Visible excerpt with the standalone finding.' discussion-view.md

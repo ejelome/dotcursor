@@ -154,7 +154,7 @@ if [[ ! -s "$PROJECTION" ]]; then
   exit 1
 fi
 grep -Fq 'project: **' "$PROJECTION"
-grep -Fq 'records/'"$(basename "${PROJECTION%.md}")"'-raw.md#audit-pe-1' "$PROJECTION"
+grep -Fq "$(basename "${PROJECTION%.md}")"'-raw.md#audit-pe-1' "$PROJECTION"
 grep -Fq 'Projection derives from canonical contribution state.' "$PROJECTION"
 grep -Fq '| qualifies | Projection derives from canonical contribution state.' "$PROJECTION"
 grep -Fq '<!-- collab:projection-source observedRevision=' "$PROJECTION"
@@ -185,7 +185,7 @@ fi
 "$ROOT/commands/collab/engine/registry.py" transcript-view "$TARGET" Audit --raw >raw-view.md
 "$ROOT/commands/collab/engine/registry.py" transcript-view "$TARGET" Audit >projection-view.md
 grep -Fq 'Projection derives from canonical contribution state.' raw-view.md
-grep -Fq '| Source | Role | Stance | Excerpt |' projection-view.md
+grep -Fq '| Source | Role | Stance | Detail |' projection-view.md
 grep -Fq '| qualifies | Projection derives from canonical contribution state.' projection-view.md
 if grep -Fq '<details id="audit-pe-1">' projection-view.md; then
   printf 'FAIL: default transcript-view returned raw lifecycle details for moderator projection\n' >&2

@@ -2,8 +2,7 @@
 
 ## Trigger
 
-**Slash:** (reference only — not an invocable route)
-**Prose dispatch:** (reference only — not an invocable route)
+**Dispatch:** (reference only — not an invocable route)
 **Search phrases:** collab agent model, collab harness model, role model matrix
 
 ## Steps
