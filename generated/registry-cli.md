@@ -26,6 +26,14 @@ Arguments and flags:
 - `--json` optional; flag
 - `--caller-role` optional; value
 
+### `aggregate`
+
+Usage: `registry.py aggregate [-h] [--json] [target]`
+
+Arguments and flags:
+- `target` required; nargs=?
+- `--json` optional; flag
+
 ### `archive`
 
 Usage: `registry.py archive [-h] [--json] [--caller-role CALLER_ROLE] target`
@@ -124,6 +132,21 @@ Arguments and flags:
 - `--json` optional; flag
 - `--caller-role` optional; value
 
+### `export-issues`
+
+Usage: `registry.py export-issues [-h] --evidence-file EVIDENCE_FILE
+                                 [--timestamp TIMESTAMP] [--json]
+                                 [--caller-role CALLER_ROLE]
+                                 target role`
+
+Arguments and flags:
+- `target` required; required
+- `role` required; required
+- `--evidence-file` required; value
+- `--timestamp` optional; value
+- `--json` optional; flag
+- `--caller-role` optional; value
+
 ### `flag-inventory`
 
 Usage: `registry.py flag-inventory [-h] [--spec SPEC]`
@@ -178,6 +201,13 @@ Usage: `registry.py log [-h] target`
 
 Arguments and flags:
 - `target` required; required
+
+### `migrate-raw-transcript`
+
+Usage: `registry.py migrate-raw-transcript [-h] [target]`
+
+Arguments and flags:
+- `target` required; nargs=?
 
 ### `out-of-scope-patch`
 
@@ -252,6 +282,13 @@ Usage: `registry.py render-participants [-h] [--roles-dir ROLES_DIR] target`
 Arguments and flags:
 - `target` required; required
 - `--roles-dir` optional; value
+
+### `render-raw-transcript`
+
+Usage: `registry.py render-raw-transcript [-h] [target]`
+
+Arguments and flags:
+- `target` required; nargs=?
 
 ### `render-status`
 

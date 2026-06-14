@@ -33,7 +33,7 @@ output="$("$ROOT/commands/collab/engine/registry.py" seal-render "$TARGET" pa \
   --evidence '{"registryRevision":2,"transcriptIds":["action-plan-pe-1"],"committedPaths":["platform/tooling/audit.sh"],"executionEntryIds":["pe-2026-05-15t21-00-00-02-00"]}' \
   --caller-role pa)"
 
-if [[ "$output" != *"NEXT: Moderator should run /collab reopen action-plan $TARGET."* ]]; then
+if [[ "$output" != *"NEXT: Moderator should run (collab reopen action-plan $TARGET)."* ]]; then
   printf 'FAIL: assessment did not emit restore guidance\n%s\n' "$output" >&2
   exit 1
 fi
@@ -45,7 +45,7 @@ from pathlib import Path
 
 registry = Path(sys.argv[1])
 entry = next(item for item in json.loads(registry.read_text())['collabs'] if item['slug'] == 'verification-assessment-flow')
-transcript = (registry.parent / entry['transcriptPath']).read_text()
+transcript = (registry.parent / Path(entry['transcriptPath']).with_name(f"{Path(entry['transcriptPath']).stem}-raw.md")).read_text()
 assert entry['status'] == 'open'
 assert entry['activePhase'] == 'Completion'
 assert entry['completion']['subState'] == 'verification'

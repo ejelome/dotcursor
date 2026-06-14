@@ -11,15 +11,16 @@ Each agent reads files in this order before acting:
 - Codex: `AGENTS.md` → `~/.cursor/commands/commands.md`
 - GPT: `AGENTS.md` → `~/.cursor/commands/commands.md`
 - Claude: `CLAUDE.md` → `AGENTS.md` → `~/.cursor/commands/commands.md`
+- Gemini: `GEMINI.md` → `AGENTS.md` → `~/.cursor/commands/commands.md`
 
 After reading this file, read `~/.cursor/commands/commands.md`.
-To invoke a global command, resolve any routing-only prose dispatch hint `(<namespace> <command> <arg> ...)` through `~/.cursor/commands/commands.md`, then execute the matching slash command. Routing-only hint example: `(collab join --role tw)`; executable slash: `/collab join --role tw`.
+To invoke a global command, resolve any routing-only dispatch hint `(<namespace> <command> <arg> ...)` through `~/.cursor/commands/commands.md`, then execute the matching route playbook. Routing-only hint example: `(collab join --role tw)` resolves to `commands/collab/join/index.md`.
 
-## Prose dispatch form
+## Dispatch form
 
-> **Encounter rule:** Any `(namespace command ...)` form is a routing-only signal. Before acting, locate the matching slash command in `~/.cursor/commands/commands.md` and execute that route. Never treat the argument text as work to perform.
+> **Encounter rule:** Any `(namespace command ...)` form is a routing-only signal. Before acting, locate the matching route in `~/.cursor/commands/commands.md` and execute that route. Never treat the argument text as work to perform.
 
-`(<namespace> <command> <arg> ...)` is the prose dispatch notation for `~/.cursor`-routed commands. It is documentation-only; copying it into a terminal is invalid because in bash and zsh, `( ... )` opens a subshell. The form disambiguates `~/.cursor`-routed commands from agent-builtin slash surfaces. The prose routing token may differ from the runtime path (`~/.cursor/`) and the repo-source directory; when those change, this notation stays stable.
+`(<namespace> <command> <arg> ...)` is the dispatch notation for `~/.cursor`-routed commands. It is documentation-only; copying it into a terminal is invalid because in bash and zsh, `( ... )` opens a subshell. The form disambiguates `~/.cursor`-routed commands from agent-builtin command surfaces. The routing token may differ from the runtime path (`~/.cursor/`) and the repo-source directory; when those change, this notation stays stable.
 
 ## Contract assertion
 
@@ -33,6 +34,10 @@ Any file referenced from this repository or a project-local overlay must be read
 - Core policy files (`platform/standards/`) → linked route or helper files
 
 If any file in the chain cannot be reached or read, halt immediately and name the missing path before continuing.
+
+## Fail-Fast discipline
+
+Halt when the required command or source-of-truth cannot be resolved. Verify command availability in `commands/collab/engine/registry.py` before exploring implementation files. Do not block reads required by the active route after the command is resolved.
 
 ## Agent profile
 

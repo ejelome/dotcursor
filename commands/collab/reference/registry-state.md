@@ -37,7 +37,7 @@ The state root is `$HOME/.collabs/<projectId>/` by default, or the path from the
 
 Fires when `.collab.json` is not found from `cwd` upward (except on `init`).
 
-Exit-1 message (exact): `project marker missing: .collab.json; run /collab init from the project root`
+Exit-1 message (exact): `project marker missing: .collab.json; run (collab init) from the project root`
 
 **Project identity invalid JSON**
 
@@ -63,3 +63,7 @@ Exit-1 messages (exact):
 - `project identity mismatch: registry <path> is bound to <actual>; marker .collab.json declares <expected>`
 
 **Module-to-subcommand map row:** `participant-role-files` in `commands/collab/reference/helper-output.md` covers the registry-loading commands that invoke this module's validation path.
+
+### Issue export evidence
+
+`commands/collab/engine/registry.py export-issues <target> pe --evidence-file <path>` records the issue-terminal replacement close-gate in the resolved registry entry as `exportedIssues = { exportedAt, exportedBy, issues }`. The field is durable registry evidence, not transcript prose. Validation requires `exportedBy` to name a registered participant and `issues` to be a non-empty list of objects with a non-empty `title`; optional issue fields are normalized before storage.

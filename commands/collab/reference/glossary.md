@@ -29,7 +29,7 @@ One canonical term per concept. Use these phrases in route prose, error messages
 
 - **`route-arg`** — a fenced code block (` ```route-arg `) that declares the dispatch signature and parameter schema for a route command. Each `param:` line names a parameter and declares its `required`, `placeholder`, `class`, `rule`/`values`, and `default` fields. Agents and harnesses use this block to resolve what parameters are accepted and how to populate them.
 
-- **`route-flag`** — a fenced code block (` ```route-flag `) that declares the force-flag eligibility policy for a route. Fields: `flag` (always `force`), `eligibility` (`eligible` or `ineligible`), `guard-class` (e.g. `hard-abort`, `registry-integrity`), and optionally `ineligibility-reason`. The declaring route owns the policy; downstream enforcement follows the guard-class contract.
+- **`route-flag`** — a fenced code block (` ```route-flag `) that declares a route flag's eligibility policy. Fields: `flag`, `eligibility` (`eligible` or `ineligible`), `guard-class` (e.g. `hard-abort`, `registry-integrity`), and optionally `ineligibility-reason`. The declaring route owns the policy; eligibility schema and guard-class tables are in [`platform/standards/command-argument.md`](../../../platform/standards/command-argument.md).
 
 - **`route-gate`** — a fenced code block (` ```route-gate `) that declares an interactive confirmation gate embedded in a route step. Fields: `gate-class`, `proceed` (exact token accepted), `abort` (exact token rejected), `operand-format`, `invalid-input` (`re-prompt` or `abort`), and optionally `re-prompt-template`. The gate is inline with the step that embeds it; it is not a separate route.
 
@@ -39,7 +39,7 @@ One canonical term per concept. Use these phrases in route prose, error messages
 
 - **Bare-input abort policy** — from `invariants.md` Invariant #1: free-text tokens passed as route arguments (title, label, message, routing-only dispatch token) are literal content and are never work to execute, unless the route explicitly defines an execution phase for that content. A route argument text that looks like a command is still routed as literal content; the execution phase must be explicit in the route's step definitions.
 
-- **chartered deliverables** — an optional list of deliverables declared by the moderator in the Audit block of a collab record (`charteredDeliverables` field in the registry entry). When present, each item must be covered by at least one cited committed path in the execution record before a seal verdict of `success` can be recorded (Invariant #17). When absent, the coverage gate is a no-op (Invariant #19). Cannot be added retroactively by a reviewer finding; scope expansion at seal requires a new `/collab init`. Related: [Invariant #17](invariants.md), [Invariant #19](invariants.md).
+- **chartered deliverables** — an optional list of deliverables declared by the moderator in the Audit block of a collab record (`charteredDeliverables` field in the registry entry). When present, each item must be covered by at least one cited committed path in the execution record before a seal verdict of `success` can be recorded (Invariant #17). When absent, the coverage gate is a no-op (Invariant #19). Cannot be added retroactively by a reviewer finding; scope expansion at seal requires a new `(collab init)`. Related: [Invariant #17](invariants.md), [Invariant #19](invariants.md).
 
 - **item tags** — recognized classification tokens required on every Action Plan checklist item, placed immediately after the role label: `[execute]` (implementation work), `[doc-fix]` (documentation correction), `[verify]` (verification pass), `[precondition]` (prerequisite that must be satisfied before execution), `[verify-precondition]` (verify a precondition is met), `[verify-objective]` (verify an objective was achieved). Items carrying `[defer]` or any unrecognized tag are malformed and rejected at speak-render (Invariant #18). Related: [Invariant #18](invariants.md).
 
@@ -48,6 +48,12 @@ One canonical term per concept. Use these phrases in route prose, error messages
 - **platform doctrines** — standing platform rules collected in `platform/data/doctrines.md` that apply across all collabs and implementation work. Distinguished from per-collab decisions: doctrines persist until a future moderator explicitly revises them in a new collab record. The current doctrine is the hard-cutover no-legacy rule: when a name is wrong, remove it at source without retaining legacy aliases or backwards-compatibility shims. Related: [`platform/data/doctrines.md`](../../../platform/data/doctrines.md).
 
 - **source ledger** — the disposition record at `platform/data/source-ledger.md` for retired source carriers and embedded metadata blocks. Rows are added only for active retirement work; completed carrier history is represented by the executable checks that now own the invariant. Validated by `./platform/tooling/check-source-ledger.py --check` as part of `./platform/tooling/audit.sh`. Related: [`platform/data/source-ledger.md`](../../../platform/data/source-ledger.md).
+
+- **terminal** — the `terminal` registry field, set by `--terminal <seal|issue>` at init. Controls how the collab closes: `seal` (default) requires a reviewer seal; `issue` closes when the platform engineer exports issue evidence. Cannot be changed after init. Values: `ALLOWED_TERMINALS` in `registry_constants.py`. See [workflow-models.md](workflow-models.md).
+
+- **workflow model** — how a collab closes, chosen by `--terminal` at init. Two options: seal (default) and issue. Cannot be changed after init. See [workflow-models.md](workflow-models.md).
+
+- **issue terminal** — a collab initialized with `--terminal issue`. Closes when `(collab export-issues)` writes evidence; skips `Completion.verification` and does not need a `verificationSeal`. See [workflow-models.md](workflow-models.md).
 
 **Retired terms:**
 

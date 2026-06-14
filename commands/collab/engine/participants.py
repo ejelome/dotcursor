@@ -12,7 +12,7 @@ COMMAND_SYSTEM_DIR = ROOT / 'platform' / 'tooling'
 if str(COMMAND_SYSTEM_DIR) not in sys.path:
     sys.path.insert(0, str(COMMAND_SYSTEM_DIR))
 
-from roles import load_role
+from roles import load_projector, load_role, projectors_dir_for_roles
 from commands.collab.engine.errors import die
 from commands.collab.engine.registry_constants import (
     CALLER_DECLINED_AGENT_ID,
@@ -24,12 +24,21 @@ from commands.collab.engine.registry_constants import (
     PHASES,
 )
 
-def validate_participant_role_files(role_keys: list[str], roles_dir: Path, source: str) -> None:
+def validate_participant_role_files(
+    role_keys: list[str],
+    roles_dir: Path,
+    source: str,
+    projectors_dir: Path | None = None,
+) -> None:
+    projector_source = projectors_dir or projectors_dir_for_roles(roles_dir)
     for role in role_keys:
         try:
             load_role(roles_dir, role)
         except SystemExit as exc:
-            die(f'{source}: participants role file unreadable for {role}: {roles_dir / f"{role}.json"}: {exc}')
+            try:
+                load_projector(projector_source, role)
+            except SystemExit:
+                die(f'{source}: participants role file unreadable for {role}: {roles_dir / f"{role}.json"}: {exc}')
 
 def reviewer_role(entry: dict) -> str | None:
     value = entry.get('reviewerRole')
@@ -73,13 +82,23 @@ def pending_reviewer_role(entry: dict) -> str | None:
     return None
 
 def reviewer_mode(entry: dict) -> str:
-    return entry.get('reviewerMode') or DEFAULT_REVIEWER_MODE
+    if 'reviewerMode' in entry:
+        value = entry['reviewerMode']
+        if isinstance(value, str) and value.strip():
+            return value
+    if entry.get('createdAt') is None:
+        return DEFAULT_REVIEWER_MODE
+    die('registry: collab.reviewerMode is required when createdAt is present')
 
 def reviewer_optional_phases(entry: dict) -> list[str]:
-    value = entry.get('reviewerOptionalPhases')
-    if value is None:
+    if 'reviewerOptionalPhases' in entry:
+        value = entry['reviewerOptionalPhases']
+        if isinstance(value, list):
+            return list(value)
+        die('registry: collab.reviewerOptionalPhases must be a list when present')
+    if entry.get('createdAt') is None:
         return list(DEFAULT_REVIEWER_OPTIONAL_PHASES)
-    return list(value)
+    die('registry: collab.reviewerOptionalPhases is required when createdAt is present')
 
 def parse_reviewer_optional_phases(value: str | None) -> list[str]:
     if value is None or not value.strip():

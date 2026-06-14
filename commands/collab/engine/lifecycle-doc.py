@@ -15,7 +15,14 @@ from commands.collab.engine.registry import (  # noqa: E402
     ALLOWED_COMPLETION_SUBSTATES,
     AUTO_ADVANCE_EXEMPT_PHASES,
     CONVERGENT_REVIEWER_PHASES,
+    CREATED_AT_REQUIRED_COLLAB_FIELDS,
+    CREATED_AT_REQUIRED_REVIEWER_FIELDS,
+    CREATED_AT_REQUIRED_VERIFICATION_FIELDS,
+    DEFAULT_OPEN_ROSTER_EFFORT,
+    DEFAULT_REVIEWER_MODE,
     DEFAULT_REVIEWER_OPTIONAL_PHASES,
+    DEFAULT_TERMINAL,
+    DEFAULT_VERIFICATION_CAP,
     MOD_EXCLUDED_PHASES,
     ONE_SPEAK_PHASES,
     PHASES,
@@ -92,11 +99,38 @@ def glossary_rows() -> list[str]:
         ),
         (
             'reviewerMode',
-            'Reviewer behavior mode; current helper behavior supports last-in-convergent-phases.',
+            'Stamped reviewer behavior mode for records with `createdAt`; default is '
+            f'`{DEFAULT_REVIEWER_MODE}`.',
         ),
         (
             'reviewerOptionalPhases',
-            'Phases where the reviewer may speak without blocking the ordinary expected speaker.',
+            'Stamped phases where the reviewer may speak without blocking the ordinary expected speaker; '
+            f'default is {", ".join(f"`{phase}`" for phase in DEFAULT_REVIEWER_OPTIONAL_PHASES)}.',
+        ),
+        (
+            'terminal',
+            f'Stamped workflow terminal for records with `createdAt`; default is `{DEFAULT_TERMINAL}`.',
+        ),
+        (
+            'verification.cap',
+            f'Stamped participant/reviewer verification attempt cap; default is `{DEFAULT_VERIFICATION_CAP}`.',
+        ),
+        (
+            'verification.participantVerification',
+            'Stamped boolean that enables participant verification; readers must use the stored value.',
+        ),
+        (
+            'open-roster effort',
+            f'Fallback effort level for joined roles absent from the effort matrix; default is `{DEFAULT_OPEN_ROSTER_EFFORT}`.',
+        ),
+        (
+            'createdAt required fields',
+            'Records with `createdAt` must declare '
+            f'{", ".join(f"`{field}`" for field in CREATED_AT_REQUIRED_COLLAB_FIELDS)}; '
+            'reviewer-backed records must also declare '
+            f'{", ".join(f"`{field}`" for field in CREATED_AT_REQUIRED_REVIEWER_FIELDS)}; '
+            'verification records must declare '
+            f'{", ".join(f"`verification.{field}`" for field in CREATED_AT_REQUIRED_VERIFICATION_FIELDS)}.',
         ),
         (
             'execution.<role>',

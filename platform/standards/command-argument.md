@@ -6,13 +6,13 @@ Command argument contract for command routes. Routes adopt named flags by declar
 
 - **Long-form tokens only.** Flags use the `--name` form. Short aliases (e.g., `-f`) are not recognized.
 - **Exact case-sensitive match.** `--force` and `--Force` are distinct tokens; only the declared form matches.
-- **Flags appear immediately after the route selector and before positional arguments.** A route signature of the form `/agent install --force` places the flag after the command verb and before any positional.
+- **Flags appear immediately after the route selector and before positional arguments.** A routed form such as `(agent install --force)` places the flag after the command verb and before any positional.
 - **Flag-and-positional interleaving is not supported.** Interleaving flags with positional arguments is not supported. A future route requiring trailing flags must amend this document; the absence of that support is intentional, not an oversight.
 - **Unsupported flags abort before any route mutation.** A route that does not declare a `route-flag` block for a given flag must abort with a clear error when that flag is supplied; it must not silently ignore or pass through the flag.
 
 ## `route-flag` Block Schema
 
-Every route that supports or explicitly rejects a named flag must carry a fenced `route-flag` block. The block is machine-readable and validated by the route-flag lint in `platform/tooling/`.
+Every route that supports or explicitly rejects a named flag must carry a fenced `route-flag` block. The block is machine-readable and validated by `platform/tooling/audit-flag-scope.sh` (eligibility schema declared below; cross-scope override declarations governed by [`platform/tooling/flag-scope-validator-contract.md`](../tooling/flag-scope-validator-contract.md)).
 
 **Required fields**
 
@@ -28,6 +28,7 @@ Every route that supports or explicitly rejects a named flag must carry a fenced
 - `eligibility: eligible` + a `guard-class` listed in the ineligibility table -> lint error.
 - `eligibility: ineligible` + empty or absent `ineligibility-reason` -> lint error.
 - At most one `route-flag` block per `flag` value per route.
+- Unknown fields, missing required fields, unknown guard classes, and duplicate flag declarations fail the lint.
 
 **Example — eligible**
 
@@ -85,7 +86,7 @@ Flag adoption does not change the gate shape or exact-confirmation-token contrac
 
 Apply this tree when choosing a gate tier for a new mutation gate:
 
-1. Does the operation modify state outside framework-owned ungated write paths (such as registry-mediated writes performed by `/collab speak`)? If no, no gate. If yes, continue.
+1. Does the operation modify state outside framework-owned ungated write paths (such as registry-mediated writes performed by `(collab speak)`)? If no, no gate. If yes, continue.
 2. Is the modification reversible by an obvious counter-operation the user already knows? If yes, **standard** tier. If no, **destructive** tier.
 
 ## Reserved Keyword Vocabulary
@@ -181,7 +182,7 @@ Every route that declares user-facing arguments must carry a fenced `route-arg` 
 
 | Field | Description |
 |-------|-------------|
-| `dispatch` | Full dispatch signature, mirroring the route signature in the Trigger section |
+| `dispatch` | Full routed form, matching the route's `**Dispatch:**` line exactly |
 | `param` | One line per parameter; see **`param` field** below |
 
 **`param` field**

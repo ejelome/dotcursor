@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -u
+set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT" || exit 1
@@ -15,6 +15,46 @@ ok() {
   printf 'OK: %s\n' "$*"
 }
 
+check_runtime_preflight() {
+  local contract="platform/standards/runtime-contract.md"
+  local python_status=0
+  local bash_status=0
+  local git_root=""
+
+  [[ -f "$contract" ]] || fail "runtime-contract: missing $contract"
+
+  if ! command -v python3 >/dev/null 2>&1; then
+    fail "runtime-contract: missing required executable: python3"
+  else
+    python3 - <<'PYCODE' || python_status=$?
+import sys
+
+if sys.version_info < (3, 9):
+    print(
+        "runtime-contract: Python >= 3.9 required; found "
+        f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+PYCODE
+    ((python_status == 0)) || fail "runtime-contract: Python >= 3.9 required"
+  fi
+
+  if ! command -v bash >/dev/null 2>&1; then
+    fail "runtime-contract: missing required executable: bash"
+  else
+    bash -c '((BASH_VERSINFO[0] > 3 || (BASH_VERSINFO[0] == 3 && BASH_VERSINFO[1] >= 2)))' || bash_status=$?
+    ((bash_status == 0)) || fail "runtime-contract: bash >= 3.2 required"
+  fi
+
+  if ! command -v git >/dev/null 2>&1; then
+    fail "runtime-contract: missing required executable: git"
+  else
+    git_root="$(git -C "$ROOT" rev-parse --show-toplevel 2>/dev/null || true)"
+    [[ "$git_root" == "$ROOT" ]] || fail "runtime-contract: audit.sh must resolve to the repository root"
+  fi
+}
+
 require_file() {
   local path="$1"
   [[ -f "$path" ]] && ok "found $path" || fail "missing required file: $path"
@@ -27,7 +67,7 @@ require_dir() {
 
 is_source_path() {
   case "$1" in
-    .gitignore|.collab.json|CLAUDE.md|AGENTS.md|README.md|REPOSITORY.md|registry.schema.json) return 0 ;;
+    .gitignore|.collab.json|CLAUDE.md|AGENTS.md|GEMINI.md|README.md|REPOSITORY.md|registry.schema.json) return 0 ;;
     .github/*) return 0 ;;
     platform/standards/*|platform/data/*|platform/tooling/*|generated/*|platform/templates/*|tests/specs/*|commands/*|tests/*) return 0 ;;
     *) return 1 ;;
@@ -37,6 +77,7 @@ is_source_path() {
 check_required_surface() {
   require_file CLAUDE.md
   require_file AGENTS.md
+  require_file GEMINI.md
   require_file README.md
   require_file .collab.json
   require_file commands/commands.md
@@ -49,6 +90,7 @@ check_required_surface() {
 
 check_adapters() {
   grep -Fq 'AGENTS.md' CLAUDE.md || fail "CLAUDE.md does not route to AGENTS.md"
+  grep -Fq 'AGENTS.md' GEMINI.md || fail "GEMINI.md does not route to AGENTS.md"
   grep -Fq 'commands/commands.md' AGENTS.md || fail "AGENTS.md does not route to commands/commands.md"
   ok "adapter entry surfaces are named"
 }
@@ -70,7 +112,8 @@ check_runtime_boundary() {
 }
 
 check_collab_contract_terms() {
-  python3 - <<'PY'
+  local status=0
+  python3 - <<'PY' || status=$?
 from __future__ import annotations
 
 import re
@@ -117,13 +160,13 @@ if failures:
     print('\n'.join(failures), file=sys.stderr)
     sys.exit(1)
 PY
-  local status=$?
   ((status == 0)) || failures=$((failures + 1))
   ((status == 0)) && ok "collab retired vocabulary and topology stay contained"
 }
 
 check_collab_registry_lock() {
-  python3 - <<'PY'
+  local status=0
+  python3 - <<'PY' || status=$?
 from __future__ import annotations
 
 import json
@@ -162,12 +205,12 @@ if result.returncode:
     sys.exit(result.returncode)
 print('OK: collab registry lock state is valid')
 PY
-  local status=$?
   ((status == 0)) || failures=$((failures + 1))
 }
 
 check_retired_name_allowlist() {
-  python3 - <<'PY'
+  local status=0
+  python3 - <<'PY' || status=$?
 from __future__ import annotations
 
 import re
@@ -217,7 +260,6 @@ if failures:
     sys.exit(1)
 print('OK: retired-name vocabulary is allowlisted')
 PY
-  local status=$?
   ((status == 0)) || failures=$((failures + 1))
 }
 
@@ -251,10 +293,6 @@ check_tracked_source_boundary() {
 }
 
 check_generated_freshness() {
-  local topology_mode=""
-  if find commands -maxdepth 1 -type f -name '*.md' ! -name 'commands.md' | grep -q .; then
-    topology_mode="--migration"
-  fi
   python3 platform/tooling/check-source-ledger.py --check || failures=$((failures + 1))
   platform/tooling/sync-context-gate.sh --check || failures=$((failures + 1))
   platform/tooling/sync-commands-catalog.sh --check || failures=$((failures + 1))
@@ -262,17 +300,9 @@ check_generated_freshness() {
   platform/tooling/sync-roles-roster.sh --check || failures=$((failures + 1))
   python3 platform/tooling/command-advisories.py --check || failures=$((failures + 1))
   python3 platform/tooling/command-reference.py --check || failures=$((failures + 1))
-  if [[ -n "$topology_mode" ]]; then
-    platform/tooling/audit-topology.sh "$topology_mode" || failures=$((failures + 1))
-  else
-    platform/tooling/audit-topology.sh || failures=$((failures + 1))
-  fi
+  platform/tooling/audit-topology.sh || failures=$((failures + 1))
   platform/tooling/audit-flag-scope.sh || failures=$((failures + 1))
-  if [[ -n "$topology_mode" ]]; then
-    platform/tooling/audit-placement.sh "$topology_mode" || failures=$((failures + 1))
-  else
-    platform/tooling/audit-placement.sh || failures=$((failures + 1))
-  fi
+  platform/tooling/audit-placement.sh || failures=$((failures + 1))
   commands/collab/engine/lifecycle-doc.py --check || failures=$((failures + 1))
   platform/tooling/coverage-gate.sh || failures=$((failures + 1))
   platform/tooling/audit-role-prose.sh || failures=$((failures + 1))
@@ -295,7 +325,8 @@ check_generated_boundary() {
 }
 
 check_links() {
-  python3 - <<'PY'
+  local status=0
+  python3 - <<'PY' || status=$?
 from __future__ import annotations
 
 import re
@@ -365,12 +396,18 @@ if bad:
     sys.exit(1)
 print("OK: markdown reference graph has no broken local links")
 PY
-  local status=$?
+  ((status == 0)) || failures=$((failures + 1))
+}
+
+check_public_dispatch_surface() {
+  local status=0
+  python3 platform/tooling/check-public-dispatch-surface.py --root "$ROOT" || status=$?
   ((status == 0)) || failures=$((failures + 1))
 }
 
 check_route_arg_defaults() {
-  python3 - <<'PY'
+  local status=0
+  python3 - <<'PY' || status=$?
 from __future__ import annotations
 
 import sys
@@ -401,9 +438,14 @@ if failures:
     sys.exit(1)
 print('OK: route-arg optional defaults are declared')
 PY
-  local status=$?
   ((status == 0)) || failures=$((failures + 1))
 }
+
+check_runtime_preflight
+if ((failures > 0)); then
+  printf 'audit: runtime preflight failed with %d issue(s)\n' "$failures" >&2
+  exit 1
+fi
 
 check_required_surface
 check_adapters
@@ -413,6 +455,7 @@ check_collab_contract_terms
 check_untracked_payload
 check_tracked_source_boundary
 check_collab_registry_lock
+check_public_dispatch_surface
 check_generated_freshness
 check_generated_boundary
 check_links

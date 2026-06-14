@@ -12,7 +12,6 @@ import datetime as dt
 import fcntl
 import fnmatch
 import hashlib
-import html
 import json
 import os
 import re
@@ -54,6 +53,9 @@ from commands.collab.engine.registry_constants import (
     CALLER_DECLINED_AGENT_ID,
     CONTENT_ONLY_GUARD,
     CONVERGENT_REVIEWER_PHASES,
+    CREATED_AT_REQUIRED_COLLAB_FIELDS,
+    CREATED_AT_REQUIRED_REVIEWER_FIELDS,
+    CREATED_AT_REQUIRED_VERIFICATION_FIELDS,
     DEFAULT_OPEN_ROSTER_EFFORT,
     DEFAULT_REVIEWER_MODE,
     DEFAULT_REVIEWER_OPTIONAL_PHASES,
@@ -77,7 +79,6 @@ from commands.collab.engine.registry_constants import (
     MODERATOR_ONLY_ACTIONS,
     ONE_SPEAK_PHASES,
     PHASES,
-    RESERVED_ISSUE_TERMINAL_MESSAGE,
     REGISTRY_EVENT_DIR,
     REGISTRY_EVENT_IGNORED_ROOT_KEYS,
     REGISTRY_EVENT_SCHEMA,
@@ -99,6 +100,7 @@ from commands.collab.engine.digests import (
     active_execution_entries,
     content_digest_for_touched_paths,
     details_block_end,
+    execution_coverage_entries,
     execution_identity,
     execution_signature,
     full_body_signature_for_transcript,
@@ -106,11 +108,11 @@ from commands.collab.engine.digests import (
     managed_full_body_blocks,
     participant_execution_signature,
     participant_write_scope_signature,
-    rendered_transcript_without_full_bodies,
     strip_managed_full_body_lines,
     touched_paths_for_execution,
     validation_scopes_for_execution,
 )
+from commands.collab.engine.dispatch_forms import collab_dispatch
 from commands.collab.engine.execution import (
     all_execution_completed,
     assert_disjoint_scopes,
@@ -202,12 +204,12 @@ from commands.collab.engine.participants import (
 )
 from commands.collab.engine.phase_lifecycle import (
     discussion_turn_notice,
+    lifecycle_status_notice,
     next_phase_name,
     notice_message,
     print_lifecycle_diagnostic,
     print_notice_diagnostic,
     print_phase_result,
-    terminal_notice,
     transition_notice,
 )
 from commands.collab.engine.registry_io import (
@@ -242,9 +244,16 @@ from commands.collab.engine.registry_io import (
 )
 from commands.collab.engine.transcript_render import (
     append_phase_block,
+    contribution_store_digest,
+    RAW_PROVENANCE_BANNER,
+    is_projection_hidden_metadata_line,
     insert_toc_entry,
     print_header_overwrite,
+    projection_excerpt_source,
+    projection_source_digest,
+    projection_stance_for_content,
     prepend_revision_history,
+    raw_transcript_path_for_entry,
     reject_full_body_details_controls,
     reject_hand_authored_excerpt_details,
     render_contribution_block,
@@ -252,12 +261,15 @@ from commands.collab.engine.transcript_render import (
     render_initial_transcript,
     render_initial_transcript_legacy,
     render_managed_header_text,
+    render_moderator_project_transcript,
+    render_raw_transcript_from_contribution_store,
     rendered_collapsible_block,
     rendered_participants_table,
     rendered_retracted_content_block,
     rendered_reviewer_section,
     rendered_status_table,
     revision_history_start,
+    STANCE_DECLARATION_RE,
 )
 from commands.collab.engine import seal_verification as _seal_verification
 from commands.collab.engine.seal_verification import (
@@ -316,6 +328,7 @@ from commands.collab.engine.seal_verification import (
     verification_review_substate,
     verification_state,
     verification_substate,
+    write_seal_verdict_companion,
 )
 
 # Public import surface — frozen for the duration of the decomposition:
@@ -388,6 +401,7 @@ def resolve_config_root() -> Path:
 
 DEFAULT_CONFIG_ROOT = resolve_config_root()
 DEFAULT_ROLES_DIR = DEFAULT_CONFIG_ROOT / 'commands/collab/reference/roles'
+DEFAULT_PROJECTORS_DIR = DEFAULT_CONFIG_ROOT / 'commands/collab/reference/projectors'
 DEFAULT_EFFORT_PATH = DEFAULT_CONFIG_ROOT / 'commands/collab/reference/agent-effort.json'
 DEFAULT_AGENT_MODEL_PATH = DEFAULT_CONFIG_ROOT / 'commands/collab/reference/agent-model.md'
 DEFAULT_BUDGET_PATH = DEFAULT_CONFIG_ROOT / 'commands/collab/reference/contribution-budget.md'
@@ -678,6 +692,47 @@ def completed_execution_unchecked_items(entry: dict, transcript: str) -> list[di
     return violations
 
 
+def require_created_at_fields(
+    container: dict,
+    fields: list[str],
+    source: str,
+    prefix: str,
+    created_at: str | None,
+) -> None:
+    if created_at is None:
+        return
+    for field in fields:
+        if field not in container:
+            die(f'{source}: {prefix}.{field} is required when createdAt is present')
+
+
+def terminal_value(entry: dict) -> str:
+    if 'terminal' in entry:
+        terminal = entry['terminal']
+        if isinstance(terminal, str) and terminal in ALLOWED_TERMINALS:
+            return terminal
+    if entry.get('createdAt') is None:
+        return DEFAULT_TERMINAL
+    die(f'registry: collab terminal must be one of {sorted(ALLOWED_TERMINALS)}')
+
+
+def seal_terminal(entry: dict) -> bool:
+    return terminal_value(entry) == 'seal'
+
+
+def issue_terminal(entry: dict) -> bool:
+    return terminal_value(entry) == 'issue'
+
+
+def exported_issue_handoff_present(entry: dict) -> bool:
+    exported = entry.get('exportedIssues')
+    return (
+        isinstance(exported, dict)
+        and isinstance(exported.get('issues'), list)
+        and bool(exported.get('issues'))
+    )
+
+
 def invalidate_verification_seal(entry: dict, reason: str) -> None:
     original_reviewer_backed = _seal_verification.reviewer_backed
     original_incomplete = _seal_verification.participant_verification_incomplete
@@ -801,7 +856,23 @@ def speak_state_for_entry(entry: dict, transcript: str) -> dict:
         state['verificationReviewSubState'] = review_substate
         state['participantVerification'] = participant_verification_enabled(entry)
         state['nextParticipantVerificationRole'] = first_pending_participant_verification_role(entry)
-        if completion_substate == 'verification':
+        if completion_substate == 'execution':
+            execution_roles = [role for role in order if role != entry.get('moderatorRole')]
+            execution = entry.get('execution') if isinstance(entry.get('execution'), dict) else {}
+            expected = next(
+                (
+                    role
+                    for role in execution_roles
+                    if not (
+                        isinstance(execution.get(role), dict)
+                        and execution[role].get('status') == 'completed'
+                    )
+                ),
+                None,
+            )
+            state['expectedRole'] = expected
+            state['allowedRoles'] = execution_roles
+        elif completion_substate == 'verification':
             if review_substate == 'participant':
                 expected = state['nextParticipantVerificationRole']
                 allowed_roles = [expected] if expected else []
@@ -909,6 +980,13 @@ def validate_registry(data: dict, path: Path | None = None) -> None:
         transcriptPath = entry.get('transcriptPath')
         reviewerRole = entry.get('reviewerRole')
         sequence = entry.get('sequence')
+        require_created_at_fields(
+            entry,
+            CREATED_AT_REQUIRED_COLLAB_FIELDS,
+            source,
+            'collab',
+            created_at,
+        )
 
         for field, value in (
             ('id', collab_id),
@@ -958,7 +1036,7 @@ def validate_registry(data: dict, path: Path | None = None) -> None:
         participant_role_keys = [p['role'] for p in participants]
         if len(set(participant_role_keys)) != len(participant_role_keys):
             die(f'{source}: participants must not contain duplicate roles')
-        validate_participant_role_files(participant_role_keys, DEFAULT_ROLES_DIR, source)
+        validate_participant_role_files(participant_role_keys, DEFAULT_ROLES_DIR, source, DEFAULT_PROJECTORS_DIR)
         if moderatorRole not in participant_role_keys:
             die(f'{source}: moderatorRole must be listed in participants')
 
@@ -983,7 +1061,19 @@ def validate_registry(data: dict, path: Path | None = None) -> None:
             if mode == 'last-in-convergent-phases' and reviewerRole in turnOrder:
                 die(f'{source}: reviewerRole must not appear in turnOrder')
 
-            optional_phases = entry.get('reviewerOptionalPhases', DEFAULT_REVIEWER_OPTIONAL_PHASES)
+            require_created_at_fields(
+                entry,
+                CREATED_AT_REQUIRED_REVIEWER_FIELDS,
+                source,
+                'collab',
+                created_at,
+            )
+            if 'reviewerOptionalPhases' in entry:
+                optional_phases = entry['reviewerOptionalPhases']
+            elif created_at is None:
+                optional_phases = list(DEFAULT_REVIEWER_OPTIONAL_PHASES)
+            else:
+                die(f'{source}: collab.reviewerOptionalPhases is required when createdAt is present')
             if not isinstance(optional_phases, list):
                 die(f'{source}: reviewerOptionalPhases must be a list when present')
             if not all(isinstance(phase, str) and phase in PHASES for phase in optional_phases):
@@ -1042,8 +1132,25 @@ def validate_registry(data: dict, path: Path | None = None) -> None:
         if verification is not None:
             if not isinstance(verification, dict):
                 die(f'{source}: verification must be an object when present')
-            rounds = verification.get('rounds', 0)
-            cap = verification.get('cap', DEFAULT_VERIFICATION_CAP)
+            require_created_at_fields(
+                verification,
+                CREATED_AT_REQUIRED_VERIFICATION_FIELDS,
+                source,
+                'verification',
+                created_at,
+            )
+            if 'rounds' in verification:
+                rounds = verification['rounds']
+            elif created_at is None:
+                rounds = 0
+            else:
+                die(f'{source}: verification.rounds is required when createdAt is present')
+            if 'cap' in verification:
+                cap = verification['cap']
+            elif created_at is None:
+                cap = DEFAULT_VERIFICATION_CAP
+            else:
+                die(f'{source}: verification.cap is required when createdAt is present')
             verification_substate = verification.get('subState')
             if not isinstance(rounds, int) or rounds < 0:
                 die(f'{source}: verification.rounds must be a non-negative integer when present')
@@ -1130,6 +1237,38 @@ def validate_registry(data: dict, path: Path | None = None) -> None:
                     die(f'{source}: verificationSeal.followUp.evidence must be an object')
                 if not isinstance(failure_category, str) or not failure_category.strip():
                     die(f'{source}: verificationSeal.followUp.failureCategory must be a non-empty string')
+
+        exported_issues = entry.get('exportedIssues')
+        if exported_issues is not None:
+            if not isinstance(exported_issues, dict):
+                die(f'{source}: exportedIssues must be an object when present')
+            exported_at = exported_issues.get('exportedAt')
+            exported_by = exported_issues.get('exportedBy')
+            if not isinstance(exported_at, str) or not exported_at.strip():
+                die(f'{source}: exportedIssues.exportedAt must be a non-empty string')
+            if not isinstance(exported_by, str) or not exported_by.strip():
+                die(f'{source}: exportedIssues.exportedBy must be a non-empty string')
+            if exported_by not in participant_role_keys:
+                die(f'{source}: exportedIssues.exportedBy must already be a participant')
+            issues = exported_issues.get('issues')
+            if not isinstance(issues, list) or not issues:
+                die(f'{source}: exportedIssues.issues must be a non-empty list')
+            for issue in issues:
+                if not isinstance(issue, dict):
+                    die(f'{source}: exportedIssues.issues entries must be objects')
+                title = issue.get('title')
+                if not isinstance(title, str) or not title.strip():
+                    die(f'{source}: exportedIssues issue title must be a non-empty string')
+                for optional in ('url', 'body', 'owner', 'delivery'):
+                    value = issue.get(optional)
+                    if value is not None and (not isinstance(value, str) or not value.strip()):
+                        die(f'{source}: exportedIssues issue {optional} must be a non-empty string when present')
+                requires = issue.get('requires')
+                if requires is not None:
+                    if not isinstance(requires, list) or any(
+                        not isinstance(item, str) or not item.strip() for item in requires
+                    ):
+                        die(f'{source}: exportedIssues issue requires must be a list of non-empty strings')
 
         verdict = entry.get('verdict')
         if verdict is not None:
@@ -1241,9 +1380,16 @@ def resume_command_invocation(entry: dict, role: str) -> str:
     return f'commands/collab/engine/registry.py speak-state --resume {entry["id"]} {role}'
 
 
-def transcript_view_command(entry: dict, phase: str | None = None) -> str:
+def transcript_view_command(entry: dict, phase: str | None = None, raw: bool = False) -> str:
     selected_phase = phase or entry['activePhase']
-    return f'commands/collab/engine/registry.py transcript-view {entry["id"]} {shlex.quote(selected_phase)}'
+    command = f'commands/collab/engine/registry.py transcript-view {entry["id"]} {shlex.quote(selected_phase)}'
+    if raw:
+        command += ' --raw'
+    return command
+
+
+def transcript_view_command_for_role(entry: dict, role: str, phase: str | None = None) -> str:
+    return transcript_view_command(entry, phase, raw=role != entry.get('moderatorRole'))
 
 
 def active_phase_anchors(transcript: str, phase: str) -> list[str]:
@@ -1270,10 +1416,10 @@ def current_completion_command(entry: dict) -> str | None:
         ):
             pending_role = first_pending_participant_verification_role(entry)
             if pending_role:
-                return f'/collab participant verify {entry["id"]} {pending_role}'
-            return f'/collab participant verify {entry["id"]}'
-        return f'/collab seal verification {entry["id"]}'
-    return f'/collab run plan {entry["id"]}'
+                return collab_dispatch('participant verify', entry["id"], pending_role)
+            return collab_dispatch('participant verify', entry["id"])
+        return collab_dispatch('seal verification', entry["id"])
+    return collab_dispatch('run plan', entry["id"])
 
 
 def next_command_for_state(entry: dict, transcript: str | None = None) -> str | None:
@@ -1286,7 +1432,7 @@ def next_command_for_state(entry: dict, transcript: str | None = None) -> str | 
         transcript = read_transcript_for_entry(entry)
     state = speak_state_for_entry(entry, transcript)
     if state.get('expectedRole') and state.get('expectedRole') != entry.get('moderatorRole'):
-        return f'/collab speak {entry["id"]}'
+        return collab_dispatch('speak', entry["id"])
     return None
 
 
@@ -1334,7 +1480,7 @@ def add_participation_resume_fields(
     next_command = next_command_for_state(entry, transcript)
     if next_command:
         state['nextCommand'] = next_command
-    state['nextTranscriptCommand'] = transcript_view_command(entry)
+    state['nextTranscriptCommand'] = transcript_view_command_for_role(entry, role)
     state['policyBlockers'] = policy_blockers_for_role(state, role, pending_reviewer)
     state['phaseSummary'] = phase_summary_for_state(entry, state)
     anchors = active_phase_anchors(transcript, entry['activePhase'])
@@ -1386,25 +1532,25 @@ def next_line_for_state(entry: dict, transcript: str | None = None) -> str:
         return 'NEXT: Collab archived; run /clear before starting another collab.'
     phase = entry['activePhase']
     if phase == 'Completion':
-        return f"NEXT: Run /collab run plan for role {effective_turn_order(entry)[0]}."
+        return f"NEXT: Run {collab_dispatch('run plan')} for role {effective_turn_order(entry)[0]}."
     if transcript is None:
         try:
             transcript = read_transcript_for_entry(entry)
         except SystemExit:
             order = effective_turn_order(entry)
             if order:
-                return f'NEXT: Run /collab speak for role {order[0]}.'
+                return f'NEXT: Run {collab_dispatch("speak")} for role {order[0]}.'
             return f'NEXT: Active phase is {phase}.'
     try:
         state = speak_state_for_entry(entry, transcript)
     except SystemExit:
         order = effective_turn_order(entry)
         if order:
-            return f'NEXT: Run /collab speak for role {order[0]}.'
+            return f'NEXT: Run {collab_dispatch("speak")} for role {order[0]}.'
         return f'NEXT: Active phase is {phase}.'
     expected = state.get('expectedRole')
     if expected:
-        return f'NEXT: Run /collab speak for role {expected}.'
+        return f'NEXT: Run {collab_dispatch("speak")} for role {expected}.'
     return f'NEXT: Active phase is {phase}.'
 
 
@@ -1436,6 +1582,7 @@ def effort_value(defaults: dict, phase: str, role: str) -> str | None:
         die(f'effort source missing phase: {phase}')
     phase_defaults = matrix[phase]
     if role not in phase_defaults:
+        # Explicit-values exemption: open-roster effort is matrix-resolved advisory state, not registry record state.
         return DEFAULT_OPEN_ROSTER_EFFORT
     effort = phase_defaults[role]
     if effort is not None and not isinstance(effort, str):
@@ -1701,7 +1848,7 @@ def apply_speak_lifecycle_to_entry(
     entry['activePhase'] = next_phase
     if next_phase in MOD_EXCLUDED_PHASES:
         remove_moderator_from_turn_order(entry, order)
-    if next_phase == 'Completion':
+    if next_phase == 'Completion' and seal_terminal(entry):
         initialize_completion_state(entry, 'execution', reset_rounds=True)
     return True
 
@@ -1727,6 +1874,8 @@ def close_eligible_after_execution(entry: dict, assigned_roles: list[str]) -> bo
     completed = all(execution.get(role, {}).get('status') == 'completed' for role in roles)
     if not completed:
         return False
+    if issue_terminal(entry):
+        return exported_issue_handoff_present(entry)
     if reviewer_backed(entry):
         seal = entry.get('verificationSeal')
         return isinstance(seal, dict) and not seal.get('stale') and successful_verdict(entry)
@@ -1741,13 +1890,24 @@ def next_line_after_execution(entry: dict, assigned_roles: list[str]) -> str:
         if assigned_role == entry['moderatorRole']:
             continue
         if execution.get(assigned_role, {}).get('status') != 'completed':
-            return f'NEXT: Run /collab run plan for role {assigned_role}.'
+            return f'NEXT: Run {collab_dispatch("run plan")} for role {assigned_role}.'
+    if issue_terminal(entry):
+        if not exported_issue_handoff_present(entry):
+            export_role = 'pe' if has_participant(entry, 'pe') else next(
+                (
+                    role for role in effective_turn_order(entry)
+                    if role != entry['moderatorRole']
+                ),
+                'pe',
+            )
+            return f'NEXT: Run {collab_dispatch("export-issues")} for role {export_role}.'
+        return next_line_for_state(entry)
     if reviewer_backed(entry):
         if participant_verification_enabled(entry):
             pending_role = first_pending_participant_verification_role(entry)
             if pending_role:
-                return f'NEXT: Run /collab participant verify for role {pending_role}.'
-        return f'NEXT: Run /collab seal verification for role {reviewer_role(entry)}.'
+                return f'NEXT: Run {collab_dispatch("participant verify")} for role {pending_role}.'
+        return f'NEXT: Run {collab_dispatch("seal verification")} for role {reviewer_role(entry)}.'
     return next_line_for_state(entry)
 
 
@@ -1788,7 +1948,7 @@ def set_field(
                     die(f'active-phase must be one of {PHASES}')
                 entry['activePhase'] = value
                 forced_active_phase = True
-                if value == 'Completion':
+                if value == 'Completion' and seal_terminal(entry):
                     # Mirror advance_phase's Completion entry so a forced jump
                     # cannot bypass the scope-aware reset and strand a reopened
                     # cycle at rounds=0 with every stage preserved (the old
@@ -1802,13 +1962,14 @@ def set_field(
                     die('reviewer requires a role or --clear')
                 if not has_participant(entry, value):
                     die('reviewer must already be a participant')
+                load_role(roles_dir, value)
                 if value == entry['moderatorRole']:
                     die('reviewer must not be the moderator')
                 if value in entry['turnOrder']:
                     die('reviewer must not appear in turnOrder')
                 entry['reviewerRole'] = value
                 entry['reviewerMode'] = DEFAULT_REVIEWER_MODE
-                entry.setdefault('reviewerOptionalPhases', list(DEFAULT_REVIEWER_OPTIONAL_PHASES))
+                entry['reviewerOptionalPhases'] = list(DEFAULT_REVIEWER_OPTIONAL_PHASES)
         elif field == 'reviewer-optional-phases':
             if not reviewer_role(entry):
                 die('reviewer-optional-phases requires reviewerRole')
@@ -1839,7 +2000,8 @@ def set_field(
             if not value.strip():
                 die(f'{field} requires a non-empty value')
             entry[field] = value
-        transcript_path = Path(entry['transcriptPath'])
+        migrate_raw_transcript_for_entry(entry)
+        transcript_path = lifecycle_transcript_path_for_entry(entry)
         if transcript_path.exists():
             rendered, header_changed = render_managed_header_text(transcript_path.read_text(), entry, roles_dir)
             if forced_active_phase:
@@ -1885,7 +2047,8 @@ def unset_field(
         clear_reviewer(next_entry)
         validate_registry(nextdata, path)
 
-        transcript_path = Path(next_entry['transcriptPath'])
+        migrate_raw_transcript_for_entry(next_entry)
+        transcript_path = lifecycle_transcript_path_for_entry(next_entry)
         if not transcript_path.exists():
             die(f'transcript missing: {transcript_path}')
         rendered, header_changed = render_managed_header_text(transcript_path.read_text(), next_entry, roles_dir)
@@ -1906,7 +2069,8 @@ def speak_lifecycle(path: Path, target: str, contributors: list[str]) -> int:
         for role in contributors:
             if not has_participant(entry, role):
                 die(f'contributor must already be a participant: {role}')
-        transcript_path = Path(entry['transcriptPath'])
+        migrate_raw_transcript_for_entry(entry)
+        transcript_path = lifecycle_transcript_path_for_entry(entry)
         transcript = transcript_path.read_text() if transcript_path.exists() else None
         advanced, notice = apply_speak_lifecycle_with_notice(entry, contributors, transcript)
         if transcript_path.exists():
@@ -1920,11 +2084,296 @@ def speak_lifecycle(path: Path, target: str, contributors: list[str]) -> int:
     return 0
 
 
+def path_for_entry_target(registry_path: Path, entry: dict, target_path: str) -> Path:
+    path = Path(target_path)
+    if path.is_absolute():
+        return path
+    return registry_path.parent / path
+
+
+def ensure_init_project_metadata(data: dict, registry_path: Path) -> None:
+    project = data.get('project')
+    if isinstance(project, dict):
+        return
+    metadata = project_metadata_from_identity()
+    if metadata is not None:
+        data['project'] = metadata
+        return
+    project_root = registry_path.parent.resolve()
+    data['project'] = {
+        'projectId': hashlib.sha256(str(project_root).encode()).hexdigest()[:32],
+        'label': project_root.name or 'command-project',
+    }
+
+
+def projection_transcript_path_for_entry(entry: dict) -> str:
+    aggregate = entry.get('aggregate')
+    if isinstance(aggregate, dict):
+        configured = aggregate.get('moderatorProjectTranscriptPath')
+        if isinstance(configured, str) and configured.strip():
+            return configured.strip()
+    return entry['transcriptPath']
+
+
+def lifecycle_transcript_path_for_entry(entry: dict) -> Path:
+    return Path(raw_transcript_path_for_entry(entry))
+
+
+def legacy_projection_transcript_path_for_entry(entry: dict) -> Path:
+    return Path(projection_transcript_path_for_entry(entry))
+
+
+def migrate_raw_transcript_for_entry(entry: dict) -> bool:
+    raw_path = lifecycle_transcript_path_for_entry(entry)
+    if raw_path.exists():
+        inject_raw_provenance_banner_for_entry(entry)
+        return False
+    projection_path = legacy_projection_transcript_path_for_entry(entry)
+    if not projection_path.exists():
+        return False
+    raw_path.parent.mkdir(parents=True, exist_ok=True)
+    raw_path.write_text(projection_path.read_text())
+    inject_raw_provenance_banner_for_entry(entry)
+    return True
+
+
+def inject_raw_provenance_banner_for_entry(entry: dict) -> bool:
+    raw_path = lifecycle_transcript_path_for_entry(entry)
+    if not raw_path.exists():
+        return False
+    text = raw_path.read_text()
+    if RAW_PROVENANCE_BANNER in text:
+        return False
+    lines = text.splitlines()
+    header_index = next(
+        (index for index, line in enumerate(lines) if line.strip() == HEADER_MANAGED_BEGIN),
+        None,
+    )
+    if header_index is None:
+        return False
+    insert_at = header_index
+    if insert_at > 0 and lines[insert_at - 1].strip() == '':
+        insert_at -= 1
+    lines.insert(insert_at, RAW_PROVENANCE_BANNER)
+    tmp = raw_path.with_suffix('.tmp')
+    tmp.write_text('\n'.join(lines) + '\n')
+    tmp.replace(raw_path)
+    return True
+
+
 def read_transcript_for_entry(entry: dict) -> str:
-    transcript_path = Path(entry['transcriptPath'])
+    migrate_raw_transcript_for_entry(entry)
+    inject_raw_provenance_banner_for_entry(entry)
+    transcript_path = lifecycle_transcript_path_for_entry(entry)
     if not transcript_path.exists():
         die(f'transcript missing: {transcript_path}')
     return transcript_path.read_text()
+
+
+def migrate_raw_transcript(path: Path, target: str | None = None) -> int:
+    with registry_lock(path):
+        data = load_registry(path)
+        entry = resolve_collab(data, target) if target else require_active_collab(data)
+        migrated = migrate_raw_transcript_for_entry(entry)
+        raw_path = lifecycle_transcript_path_for_entry(entry)
+    print(json.dumps({
+        'migrated': migrated,
+        'path': str(raw_path),
+        'target': entry['id'],
+    }, sort_keys=True))
+    return 0
+
+
+def contribution_store_path_for_entry(registry_path: Path, entry: dict) -> Path:
+    aggregate = entry.get('aggregate')
+    if isinstance(aggregate, dict):
+        configured = aggregate.get('contributionStorePath')
+        if isinstance(configured, str) and configured.strip():
+            return path_for_entry_target(registry_path, entry, configured.strip())
+    transcript_path = Path(projection_transcript_path_for_entry(entry))
+    return path_for_entry_target(
+        registry_path,
+        entry,
+        str(transcript_path.with_name(f'{transcript_path.stem}-contributions.json')),
+    )
+
+
+def read_contribution_store_for_entry(registry_path: Path, entry: dict) -> object:
+    store_path = contribution_store_path_for_entry(registry_path, entry)
+    try:
+        return json.loads(store_path.read_text())
+    except FileNotFoundError:
+        die('ABORT: record unreadable. Check the registry and contribution-store paths.')
+    except json.JSONDecodeError as exc:
+        die(f'ABORT: record unreadable. Check the registry and contribution-store paths. {exc}')
+
+
+def empty_contribution_store(timestamp: str | None = None) -> dict:
+    store = {'contributions': []}
+    if timestamp:
+        store['metadata'] = {'rawTranscriptTimestamp': timestamp}
+    return store
+
+
+def mutable_contribution_store_for_entry(registry_path: Path, entry: dict) -> dict:
+    store_path = contribution_store_path_for_entry(registry_path, entry)
+    if not store_path.exists():
+        return empty_contribution_store()
+    try:
+        loaded = json.loads(store_path.read_text())
+    except json.JSONDecodeError as exc:
+        die(f'contribution store invalid JSON: {store_path}: {exc}')
+    if isinstance(loaded, list):
+        return {'contributions': loaded}
+    if not isinstance(loaded, dict):
+        die(f'contribution store must be an object: {store_path}')
+    contributions = loaded.setdefault('contributions', [])
+    if not isinstance(contributions, list):
+        die(f'contribution store contributions must be a list: {store_path}')
+    return loaded
+
+
+def write_contribution_store_for_entry(registry_path: Path, entry: dict, store: dict) -> None:
+    store_path = contribution_store_path_for_entry(registry_path, entry)
+    store_path.parent.mkdir(parents=True, exist_ok=True)
+    store_path.write_text(json.dumps(store, indent=2, ensure_ascii=True) + '\n')
+
+
+def stance_for_content(content: str) -> str:
+    return projection_stance_for_content(content)
+
+
+def contribution_store_record(
+    phase: str,
+    role: str,
+    anchor: str,
+    content: str,
+    timestamp: str,
+    full_body: str | None = None,
+) -> dict:
+    compact = re.sub(r'\s+', ' ', projection_excerpt_source(content)).strip()
+    record = {
+        'phase': phase,
+        'role': role,
+        'anchor': anchor,
+        'stance': stance_for_content(content),
+        'excerpt': compact,
+        'content': content,
+        'timestamp': timestamp,
+    }
+    if full_body is not None:
+        record['fullBody'] = full_body
+    return record
+
+
+def append_contribution_store_record(
+    registry_path: Path,
+    entry: dict,
+    record: dict,
+) -> None:
+    store = mutable_contribution_store_for_entry(registry_path, entry)
+    store.setdefault('contributions', []).append(record)
+    write_contribution_store_for_entry(registry_path, entry, store)
+
+
+def replace_latest_contribution_store_record(
+    registry_path: Path,
+    entry: dict,
+    phase: str,
+    role: str,
+    record: dict,
+) -> None:
+    store = mutable_contribution_store_for_entry(registry_path, entry)
+    contributions = store.setdefault('contributions', [])
+    for index in range(len(contributions) - 1, -1, -1):
+        existing = contributions[index]
+        if isinstance(existing, dict) and existing.get('phase') == phase and existing.get('role') == role:
+            contributions[index] = record
+            write_contribution_store_for_entry(registry_path, entry, store)
+            return
+    contributions.append(record)
+    write_contribution_store_for_entry(registry_path, entry, store)
+
+
+def raw_transcript_timestamp_from_store(store: object) -> str:
+    if isinstance(store, dict):
+        metadata = store.get('metadata')
+        if isinstance(metadata, dict):
+            timestamp = metadata.get('rawTranscriptTimestamp')
+            if isinstance(timestamp, str) and timestamp.strip():
+                return timestamp.strip()
+    return format_banner_timestamp()
+
+
+def render_raw_transcript(path: Path, target: str | None = None) -> int:
+    data = load_registry(path)
+    entry = resolve_collab(data, target) if target else require_active_collab(data)
+    store = read_contribution_store_for_entry(path, entry)
+    rendered = render_raw_transcript_from_contribution_store(
+        data,
+        entry,
+        store,
+        DEFAULT_ROLES_DIR,
+        raw_transcript_timestamp_from_store(store),
+    )
+    transcript_path = path_for_entry_target(path, entry, raw_transcript_path_for_entry(entry))
+    transcript_path.parent.mkdir(parents=True, exist_ok=True)
+    transcript_path.write_text(rendered)
+    print(json.dumps({
+        'path': str(transcript_path),
+        'sha256': hashlib.sha256(rendered.encode()).hexdigest(),
+        'target': entry['id'],
+    }, sort_keys=True))
+    return 0
+
+
+def write_text_atomic(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = path.with_name(f'.{path.name}.{os.getpid()}.tmp')
+    try:
+        with temp_path.open('w') as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp_path, path)
+        try:
+            directory_fd = os.open(path.parent, os.O_RDONLY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
+        except OSError:
+            pass
+    except BaseException:
+        try:
+            temp_path.unlink()
+        except FileNotFoundError:
+            pass
+        raise
+
+
+def aggregate_transcript(path: Path, target: str | None = None, emit_json: bool = False) -> int:
+    data = load_registry(path)
+    entry = resolve_collab(data, target) if target else require_active_collab(data)
+    store = read_contribution_store_for_entry(path, entry)
+    observed_revision = registry_revision(data)
+    rendered = render_moderator_project_transcript(data, entry, store, observed_revision)
+    transcript_path = path_for_entry_target(path, entry, projection_transcript_path_for_entry(entry))
+    write_text_atomic(transcript_path, rendered)
+    result = {
+        'path': str(transcript_path),
+        'registryRevision': observed_revision,
+        'sourceDigest': projection_source_digest(data, entry, store, observed_revision),
+        'contributionStoreDigest': contribution_store_digest(store),
+    }
+    if emit_json:
+        print(json.dumps(result, sort_keys=True))
+    else:
+        print(f'path: {result["path"]}')
+        print(f'registryRevision: {result["registryRevision"]}')
+        print(f'sourceDigest: {result["sourceDigest"]}')
+        print(f'contributionStoreDigest: {result["contributionStoreDigest"]}')
+    return 0
 
 
 def speak_state(path: Path, target: str, role: str, resume: bool = False) -> int:
@@ -2009,9 +2458,19 @@ def transcript_view(path: Path, target: str, phase: str, raw: bool = False) -> i
         die(f'phase must be one of: {", ".join(PHASES)}')
     data = load_registry(path)
     entry = resolve_collab(data, target)
-    transcript = read_transcript_for_entry(entry)
-    rendered = transcript if raw or phase == 'Audit' else rendered_transcript_without_full_bodies(transcript)
-    lines = rendered.splitlines()
+    if raw:
+        raw_path = path_for_entry_target(path, entry, raw_transcript_path_for_entry(entry))
+        if raw_path.exists():
+            inject_raw_provenance_banner_for_entry(entry)
+            transcript = raw_path.read_text()
+        else:
+            transcript = read_transcript_for_entry(entry)
+    else:
+        projection_path = path_for_entry_target(path, entry, projection_transcript_path_for_entry(entry))
+        if not projection_path.exists():
+            die(f'transcript missing: {projection_path}')
+        transcript = projection_path.read_text()
+    lines = transcript.splitlines()
     start, end = section_bounds(lines, f'## {phase}')
     sys.stdout.write('\n'.join(lines[start:end]) + '\n')
     return 0
@@ -2023,7 +2482,8 @@ def speak_lifecycle_live(path: Path, target: str) -> int:
         entry = resolve_collab(data, target)
         if entry['status'] in {'closed', 'archived'}:
             die('record is closed')
-        transcript_path = Path(entry['transcriptPath'])
+        migrate_raw_transcript_for_entry(entry)
+        transcript_path = lifecycle_transcript_path_for_entry(entry)
         if not transcript_path.exists():
             die(f'transcript missing: {transcript_path}')
         transcript = transcript_path.read_text()
@@ -2064,6 +2524,7 @@ def read_budget_spec(path: Path = DEFAULT_BUDGET_PATH) -> dict:
         'conclusion-ratification',
         'moderator-verbatim',
         'effort-override-line',
+        'stance-declaration-line',
         'contribution-full-body',
     }
     missing = required - classes
@@ -2086,13 +2547,7 @@ def budget_countable_lines(content: str, phase: str) -> list[str]:
     lines = strip_managed_full_body_lines(content.splitlines(), 'contribution body')
     for line in lines:
         stripped = line.strip()
-        if stripped == '<!-- collab:content-only; do-not-execute -->':
-            continue
-        if TIMESTAMP_RE.match(stripped):
-            continue
-        if EFFORT_OVERRIDE_RE.match(stripped):
-            continue
-        if EFFORT_OVERRIDE_COMMENT_RE.match(stripped):
+        if is_projection_hidden_metadata_line(stripped):
             continue
         if phase == 'Action Plan' and ACTION_PLAN_EXEMPT_RE.match(line):
             continue
@@ -2179,9 +2634,7 @@ def validate_action_plan_shape(content: str, phase: str) -> None:
             if '-->' not in stripped[stripped.find('<!--') + 4:]:
                 in_html_comment = True
             continue
-        if not stripped:
-            continue
-        if line_number == 1 and EFFORT_OVERRIDE_RE.match(stripped):
+        if is_projection_hidden_metadata_line(stripped):
             continue
         if is_markdown_heading(line):
             continue
@@ -2222,7 +2675,7 @@ def first_substantive_lines(content: str, limit: int) -> list[tuple[int, str]]:
             continue
         if not stripped:
             continue
-        if line_number == 1 and EFFORT_OVERRIDE_RE.match(stripped):
+        if STANCE_DECLARATION_RE.match(stripped) or EFFORT_OVERRIDE_RE.match(stripped):
             continue
         lines.append((line_number, stripped))
         if len(lines) >= limit:
@@ -2268,7 +2721,6 @@ def validate_effort_override(content: str, phase: str, role: str, moderator_role
     if role == moderator_role:
         return
     lines = content.splitlines()
-    first_line = lines[0].strip() if lines else ''
     override_lines = [
         (index, line.strip())
         for index, line in enumerate(lines)
@@ -2279,7 +2731,23 @@ def validate_effort_override(content: str, phase: str, role: str, moderator_role
     if not override_lines:
         return
     first_index, first_override = override_lines[0]
-    if first_index != 0:
+    first_content_index: int | None = None
+    in_html_comment = False
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if in_html_comment:
+            if '-->' in stripped:
+                in_html_comment = False
+            continue
+        if stripped.startswith('<!--'):
+            if '-->' not in stripped[stripped.find('<!--') + 4:]:
+                in_html_comment = True
+            continue
+        if not stripped or STANCE_DECLARATION_RE.match(stripped):
+            continue
+        first_content_index = index
+        break
+    if first_index != first_content_index:
         die('EFFORT OVERRIDE must be the first content line')
     if not EFFORT_OVERRIDE_RE.match(first_override):
         die('EFFORT OVERRIDE line has invalid format')
@@ -2444,7 +2912,8 @@ def render_speak(
                 f'{resume}'
             )
 
-        transcript_path = Path(current_entry['transcriptPath'])
+        migrate_raw_transcript_for_entry(current_entry)
+        transcript_path = lifecycle_transcript_path_for_entry(current_entry)
         if not transcript_path.exists():
             die(f'transcript missing: {transcript_path}')
         transcript = transcript_path.read_text()
@@ -2475,12 +2944,21 @@ def render_speak(
 
         lines = transcript.splitlines()
         counter = next_anchor_counter(lines, phase, role)
+        render_timestamp = timestamp or format_timestamp()
         anchor, block = render_contribution_block(
             phase,
             role,
             counter,
             content,
-            timestamp or format_timestamp(),
+            render_timestamp,
+            full_body,
+        )
+        contribution_record = contribution_store_record(
+            phase,
+            role,
+            anchor,
+            content,
+            render_timestamp,
             full_body,
         )
         rendered_lines = append_phase_block(lines, phase, block)
@@ -2496,12 +2974,13 @@ def render_speak(
         notice = add_completion_summary_notice(notice, rendered_text)
         print('BOUNDARY: transcript write only; no shell commands or source edits outside the user-scope collab state root')
         print('SUCCINCTLY: stay within role concerns; do not pad or summarize other roles')
-        print('RETRACT: use /collab retract speak to tombstone the latest active-phase contribution')
+        print(f'RETRACT: use {collab_dispatch("retract speak")} to tombstone the latest active-phase contribution')
         print_header_overwrite(header_changed)
         label_advisory = action_plan_label_advisory(content, phase)
         if label_advisory:
             print(label_advisory)
         commit_registry_and_transcript(path, nextdata, transcript_path, rendered_text)
+        append_contribution_store_record(path, next_entry, contribution_record)
     print_post_action_advisories(
         next_entry,
         role,
@@ -2548,6 +3027,19 @@ def contribution_block_bounds(lines: list[str], phase: str, role: str) -> tuple[
     return latest
 
 
+def latest_contribution_anchor(transcript: str, phase: str, role: str) -> str:
+    lines = transcript.splitlines()
+    bounds = contribution_block_bounds(lines, phase, role)
+    if bounds is None:
+        die(f'no prior contribution to rewrite; use {collab_dispatch("speak")} to create the first contribution')
+    start, _end = bounds
+    if start > 0:
+        match = ANCHOR_RE.match(lines[start - 1].strip())
+        if match:
+            return match.group('anchor')
+    die('contribution anchor missing')
+
+
 def replace_latest_contribution(
     transcript: str,
     phase: str,
@@ -2559,7 +3051,7 @@ def replace_latest_contribution(
     lines = transcript.splitlines()
     bounds = contribution_block_bounds(lines, phase, role)
     if bounds is None:
-        die('no prior contribution to rewrite; use /collab speak to create the first contribution')
+        die(f'no prior contribution to rewrite; use {collab_dispatch("speak")} to create the first contribution')
     start, end = bounds
     block = lines[start:end]
 
@@ -2645,7 +3137,8 @@ def render_re_speak(
             die('rewrite-speak-render is not permitted in Completion')
         if not has_participant(entry, role):
             die(f'role must already be a participant: {role}')
-        transcript_path = Path(entry['transcriptPath'])
+        migrate_raw_transcript_for_entry(entry)
+        transcript_path = lifecycle_transcript_path_for_entry(entry)
         if not transcript_path.exists():
             die(f'transcript missing: {transcript_path}')
         transcript = transcript_path.read_text()
@@ -2661,25 +3154,35 @@ def render_re_speak(
         validate_action_plan_shape(content, phase)
         handoff_state = parse_handoff_content(content) if phase == 'Handoff' else None
         reviewer_notice = reviewer_notice_for_rewrite(entry, transcript, role)
+        render_timestamp = timestamp or format_timestamp()
         rendered = replace_latest_contribution(
             transcript,
             phase,
             role,
             content,
-            timestamp or format_timestamp(),
+            render_timestamp,
+            full_body,
+        )
+        replacement_record = contribution_store_record(
+            phase,
+            role,
+            latest_contribution_anchor(rendered, phase, role),
+            content,
+            render_timestamp,
             full_body,
         )
         if handoff_state is not None:
             rendered_lines = rendered.splitlines()
             bounds = contribution_block_bounds(rendered_lines, phase, role)
             if bounds is None:
-                die('no prior contribution to rewrite; use /collab speak to create the first contribution')
+                die(f'no prior contribution to rewrite; use {collab_dispatch("speak")} to create the first contribution')
             start, end = bounds
             handoff_state['body'] = '\n'.join(contribution_body_lines(rendered_lines[start:end])).rstrip('\n')
             set_handoff_state(entry, role, handoff_state)
             rendered, header_changed = render_managed_header_text(rendered, entry, DEFAULT_ROLES_DIR)
             print_header_overwrite(header_changed)
         commit_registry_and_transcript(path, data, transcript_path, rendered)
+        replace_latest_contribution_store_record(path, entry, phase, role, replacement_record)
     if reviewer_notice:
         print(reviewer_notice)
     print_post_action_advisories(
@@ -2708,7 +3211,8 @@ def advance_phase(
             die('record is closed')
         index = PHASES.index(entry['activePhase'])
         from_phase = entry['activePhase']
-        transcript_path = Path(entry['transcriptPath'])
+        migrate_raw_transcript_for_entry(entry)
+        transcript_path = lifecycle_transcript_path_for_entry(entry)
         transcript = transcript_path.read_text() if transcript_path.exists() else None
         if direction == 'next':
             if index == len(PHASES) - 1:
@@ -2720,7 +3224,7 @@ def advance_phase(
             entry['activePhase'] = PHASES[index + 1]
             if entry['activePhase'] in MOD_EXCLUDED_PHASES:
                 remove_moderator_from_turn_order(entry)
-            if entry['activePhase'] == 'Completion':
+            if entry['activePhase'] == 'Completion' and seal_terminal(entry):
                 # Scope-aware on (re)entry into Completion: a fresh round, and for
                 # a reopen that preserved prior verification, keep the completed
                 # verification of roles whose write scope is unchanged so only the
@@ -2789,7 +3293,8 @@ def record_execution(
         for assigned_role in assigned_roles:
             if not has_participant(entry, assigned_role):
                 die(f'assigned role must already be a participant: {assigned_role}')
-        transcript = read_transcript_for_entry(entry) if Path(entry['transcriptPath']).exists() else ''
+        migrate_raw_transcript_for_entry(entry)
+        transcript = read_transcript_for_entry(entry) if lifecycle_transcript_path_for_entry(entry).exists() else ''
         if status == 'completed' and entry['activePhase'] == 'Completion':
             unchecked_count = unchecked_assigned_item_count(transcript, role)
             if unchecked_count:
@@ -2819,10 +3324,17 @@ def record_execution(
             execution_state['touchedPaths'] = normalized_touched_paths
         previous_signature = execution_signature(entry)
         entry.setdefault('execution', {})[role] = execution_state
-        if reviewer_backed(entry) and previous_signature != execution_signature(entry):
+        if seal_terminal(entry) and reviewer_backed(entry) and previous_signature != execution_signature(entry):
             invalidate_verification_seal(entry, f'execution changed for {role}')
+            write_seal_verdict_companion(path, entry)
         closed = False
-        if reviewer_backed(entry) and entry['activePhase'] == 'Completion':
+        if issue_terminal(entry) and entry['activePhase'] == 'Completion':
+            if auto_close and close_eligible_after_execution(entry, assigned_roles):
+                entry['status'] = 'closed'
+                closed = True
+                if data.get('activeCollabId') == entry['id']:
+                    data['activeCollabId'] = None
+        elif seal_terminal(entry) and reviewer_backed(entry) and entry['activePhase'] == 'Completion':
             if close_eligible_after_execution(entry, assigned_roles):
                 if auto_close:
                     entry['status'] = 'closed'
@@ -2847,9 +3359,10 @@ def record_execution(
             if data.get('activeCollabId') == entry['id']:
                 data['activeCollabId'] = None
 
-        notice = terminal_notice('closed') if closed else None
+        notice = lifecycle_status_notice('closed') if closed else None
         next_line = next_line_after_execution(entry, assigned_roles)
-        transcript_path = Path(entry['transcriptPath'])
+        migrate_raw_transcript_for_entry(entry)
+        transcript_path = lifecycle_transcript_path_for_entry(entry)
         if closed and transcript_path.exists():
             rendered, header_changed = render_managed_header_text(transcript, entry, DEFAULT_ROLES_DIR)
             if completion_summary_empty(rendered):
@@ -2863,6 +3376,102 @@ def record_execution(
         else:
             save_registry(path, data)
     print_post_action_advisories(entry, role, 'Completion', notice, next_line)
+    print(entry['status'])
+    print_notice_diagnostic(notice, emit_json)
+    return 0
+
+
+def normalize_issue_export_evidence(evidence_path: Path) -> list[dict]:
+    try:
+        raw = json.loads(evidence_path.read_text())
+    except FileNotFoundError:
+        die(f'issue export evidence file missing: {evidence_path}')
+    except json.JSONDecodeError as exc:
+        die(f'issue export evidence file invalid JSON: {evidence_path}: {exc}')
+    if not isinstance(raw, dict):
+        die('issue export evidence must be a JSON object')
+    issues = raw.get('issues')
+    if not isinstance(issues, list) or not issues:
+        die('issue export evidence requires a non-empty issues list')
+    normalized: list[dict] = []
+    for index, issue in enumerate(issues, start=1):
+        if not isinstance(issue, dict):
+            die(f'issue export evidence issue {index} must be an object')
+        title = issue.get('title')
+        if not isinstance(title, str) or not title.strip():
+            die(f'issue export evidence issue {index} requires title')
+        item = {'title': title.strip()}
+        for optional in ('url', 'body', 'owner', 'delivery'):
+            value = issue.get(optional)
+            if value is None:
+                continue
+            if not isinstance(value, str) or not value.strip():
+                die(f'issue export evidence issue {index} {optional} must be a non-empty string')
+            item[optional] = value.strip()
+        requires = issue.get('requires')
+        if requires is not None:
+            if not isinstance(requires, list) or any(
+                not isinstance(value, str) or not value.strip() for value in requires
+            ):
+                die(f'issue export evidence issue {index} requires must be a list of non-empty strings')
+            item['requires'] = [value.strip() for value in requires]
+        normalized.append(item)
+    return normalized
+
+
+def export_issues(
+    path: Path,
+    target: str,
+    role: str,
+    evidence_file: Path,
+    timestamp: str | None = None,
+    emit_json: bool = False,
+    caller_role: str | None = None,
+) -> int:
+    issues = normalize_issue_export_evidence(evidence_file)
+    with registry_lock(path):
+        data = load_registry(path)
+        entry = resolve_collab(data, target)
+        assert_caller_role(entry, caller_role, 'export-issues', role)
+        if entry['status'] in {'closed', 'archived'}:
+            die('record is closed')
+        if entry['activePhase'] != 'Completion':
+            die(f'{collab_dispatch("export-issues")} is valid only in Completion')
+        if not issue_terminal(entry):
+            die(f'{collab_dispatch("export-issues")} requires terminal issue')
+        if role != 'pe':
+            die('issue export must be authored by platform engineer role pe')
+        if not has_participant(entry, role):
+            die(f'issue export role must already be a participant: {role}')
+        if not all_execution_completed(entry):
+            die('issue export blocked: pending execution role(s) remain')
+        entry['exportedIssues'] = {
+            'exportedAt': timestamp or dt.datetime.now().astimezone().isoformat(timespec='seconds'),
+            'exportedBy': role,
+            'issues': issues,
+        }
+        closed = close_eligible_after_execution(entry, effective_turn_order(entry))
+        if closed:
+            entry['status'] = 'closed'
+            if data.get('activeCollabId') == entry['id']:
+                data['activeCollabId'] = None
+        notice = lifecycle_status_notice('closed') if closed else None
+        migrate_raw_transcript_for_entry(entry)
+        transcript_path = lifecycle_transcript_path_for_entry(entry)
+        if closed and transcript_path.exists():
+            transcript = transcript_path.read_text()
+            rendered, header_changed = render_managed_header_text(transcript, entry, DEFAULT_ROLES_DIR)
+            if completion_summary_empty(rendered):
+                rendered = append_completion_summary(
+                    rendered,
+                    default_close_summary(entry),
+                    summary_date_from_timestamp(entry['exportedIssues']['exportedAt']),
+                )
+            print_header_overwrite(header_changed)
+            commit_registry_and_transcript(path, data, transcript_path, rendered)
+        else:
+            save_registry(path, data)
+    print_post_action_advisories(entry, role, 'Completion', notice, next_line_for_state(entry))
     print(entry['status'])
     print_notice_diagnostic(notice, emit_json)
     return 0
@@ -3003,6 +3612,8 @@ def replace_participants_table_text(transcript: str, entry: dict, roles_dir: Pat
 
 
 def replace_participants_table(transcript_path: Path, entry: dict, roles_dir: Path) -> None:
+    migrate_raw_transcript_for_entry(entry)
+    transcript_path = lifecycle_transcript_path_for_entry(entry)
     if not transcript_path.exists():
         die(f'transcript missing: {transcript_path}')
     transcript = transcript_path.read_text()
@@ -3029,20 +3640,27 @@ def reopen_collab(
         if entry['status'] == 'archived':
             die('record is archived')
         if entry['activePhase'] != 'Completion':
-            die('/collab reopen is valid only after a non-success Completion verdict')
+            die(f'{collab_dispatch("reopen")} is valid only after a non-success Completion verdict')
         verdict = entry.get('verdict')
         if not isinstance(verdict, dict) or verdict.get('outcome') not in {'incomplete', 'failed'}:
-            die('/collab reopen requires a non-success Completion verdict')
+            die(f'{collab_dispatch("reopen")} requires a non-success Completion verdict')
         restore_target = verdict.get('restoreTarget')
         if restore_target != phase:
             expected_token = 'handoff' if restore_target == 'Handoff' else 'action-plan'
-            die(f'/collab reopen phase mismatch: verdict restoreTarget is {restore_target}; expected {expected_token}')
-        transcript_path = Path(entry['transcriptPath'])
+            die(f'{collab_dispatch("reopen")} phase mismatch: verdict restoreTarget is {restore_target}; expected {expected_token}')
+        migrate_raw_transcript_for_entry(entry)
+        transcript_path = lifecycle_transcript_path_for_entry(entry)
         if not transcript_path.exists():
             die(f'transcript missing: {transcript_path}')
         transcript = transcript_path.read_text()
         findings_anchor = latest_reviewer_findings_anchor(transcript)
         derived_turn_order = assert_turn_order_not_drifted(entry, phase)
+        coverage_entries = execution_coverage_entries(entry)
+        if coverage_entries:
+            entry['reopenCoverage'] = {
+                'createdAt': dt.datetime.now().astimezone().isoformat(timespec='seconds'),
+                'executionEntries': coverage_entries,
+            }
         entry['status'] = 'open'
         entry['archived'] = False
         entry['activePhase'] = phase
@@ -3070,7 +3688,8 @@ def render_status(path: Path, target: str) -> int:
     with registry_lock(path):
         data = load_registry(path)
         entry = resolve_collab(data, target)
-        transcript_path = Path(entry['transcriptPath'])
+        migrate_raw_transcript_for_entry(entry)
+        transcript_path = lifecycle_transcript_path_for_entry(entry)
         if not transcript_path.exists():
             die(f'transcript missing: {transcript_path}')
         rendered, header_changed = render_managed_header_text(transcript_path.read_text(), entry, DEFAULT_ROLES_DIR)
@@ -3088,7 +3707,8 @@ def re_summarize_collab(path: Path, target: str, summary_file: Path, date: str |
         entry = resolve_collab(data, target)
         if entry['status'] == 'archived':
             die('record is archived')
-        transcript_path = Path(entry['transcriptPath'])
+        migrate_raw_transcript_for_entry(entry)
+        transcript_path = lifecycle_transcript_path_for_entry(entry)
         if not transcript_path.exists():
             die(f'transcript missing: {transcript_path}')
         summary_date = date or dt.date.today().isoformat()
@@ -3102,7 +3722,8 @@ def render_participants(path: Path, target: str, roles_dir: Path) -> int:
     with registry_lock(path):
         data = load_registry(path)
         entry = resolve_collab(data, target)
-        transcript_path = Path(entry['transcriptPath'])
+        migrate_raw_transcript_for_entry(entry)
+        transcript_path = lifecycle_transcript_path_for_entry(entry)
         if not transcript_path.exists():
             die(f'transcript missing: {transcript_path}')
         rendered, header_changed = render_managed_header_text(transcript_path.read_text(), entry, roles_dir)
@@ -3176,11 +3797,13 @@ configure_seal_verification_facade(
 )
 
 
-def commit_new_registry_and_transcript(
+def commit_new_collab_artifacts(
     registry_path: Path,
     data: dict,
-    transcript_path: Path,
-    transcript_text: str,
+    entry: dict,
+    raw_transcript_path: Path,
+    raw_transcript_text: str,
+    contribution_store: dict,
 ) -> None:
     registry_before = registry_path.read_text() if registry_path.exists() else None
     sync_registry_project_metadata(data)
@@ -3191,20 +3814,51 @@ def commit_new_registry_and_transcript(
         bump_registry_event_index(data)
         registry_event = finalize_registry_event(data, registry_event)
     validate_registry(data, registry_path)
-    if transcript_path.exists():
-        die(f'record already exists: {transcript_path}')
 
+    projection_transcript_path = path_for_entry_target(
+        registry_path,
+        entry,
+        projection_transcript_path_for_entry(entry),
+    )
+    contribution_store_path = contribution_store_path_for_entry(registry_path, entry)
+    artifacts = [
+        raw_transcript_path,
+        projection_transcript_path,
+        contribution_store_path,
+    ]
+    for artifact_path in artifacts:
+        if artifact_path.exists():
+            die(f'record already exists: {artifact_path}')
+
+    projection_text = render_moderator_project_transcript(
+        data,
+        entry,
+        contribution_store,
+        registry_revision(data),
+    )
+    store_text = json.dumps(contribution_store, indent=2, ensure_ascii=True) + '\n'
     registry_after = json.dumps(data, indent=2) + '\n'
     registry_tmp = registry_path.with_name(f'{registry_path.name}.tmp')
-    transcript_tmp = transcript_path.with_name(f'{transcript_path.name}.tmp')
+    artifact_payloads = [
+        (raw_transcript_path, raw_transcript_text),
+        (projection_transcript_path, projection_text),
+        (contribution_store_path, store_text),
+    ]
+    artifact_tmps = [
+        (artifact_path.with_name(f'{artifact_path.name}.tmp'), artifact_path)
+        for artifact_path, _text in artifact_payloads
+    ]
 
     registry_path.parent.mkdir(parents=True, exist_ok=True)
-    transcript_path.parent.mkdir(parents=True, exist_ok=True)
+    for artifact_path, _text in artifact_payloads:
+        artifact_path.parent.mkdir(parents=True, exist_ok=True)
     try:
         registry_tmp.write_text(registry_after)
-        transcript_tmp.write_text(transcript_text)
+        for (artifact_path, text), (tmp_path, _target_path) in zip(artifact_payloads, artifact_tmps):
+            tmp_path.write_text(text)
         registry_tmp.replace(registry_path)
-        transcript_tmp.replace(transcript_path)
+        for tmp_path, target_path in artifact_tmps:
+            tmp_path.replace(target_path)
         if registry_event is not None:
             write_revision_event(registry_path, registry_event)
     except OSError as exc:
@@ -3216,12 +3870,14 @@ def commit_new_registry_and_transcript(
                 registry_path.write_text(registry_before)
         except OSError:
             inconsistent.append(str(registry_path))
-        try:
-            transcript_path.unlink(missing_ok=True)
-        except OSError:
-            inconsistent.append(str(transcript_path))
+        for artifact_path, _text in artifact_payloads:
+            try:
+                artifact_path.unlink(missing_ok=True)
+            except OSError:
+                inconsistent.append(str(artifact_path))
         registry_tmp.unlink(missing_ok=True)
-        transcript_tmp.unlink(missing_ok=True)
+        for tmp_path, _target_path in artifact_tmps:
+            tmp_path.unlink(missing_ok=True)
         if inconsistent:
             die(f'collab init failed; inconsistent state may remain: {", ".join(inconsistent)}: {exc}')
         die(f'collab init failed; restored pre-operation state: {exc}')
@@ -3305,18 +3961,20 @@ def init_collab(
     opener: Callable[[str], bool] = webbrowser.open_new_tab,
 ) -> int:
     title, agent_id, reviewer, open_requested, participant_verification, terminal, work_repo_raw = parse_init_tokens(tokens)
-    if terminal == 'issue':
-        die(RESERVED_ISSUE_TERMINAL_MESSAGE)
     with registry_lock(path):
         data = load_registry_or_bootstrap(path)
+        ensure_init_project_metadata(data, path)
         date = dt.date.today().isoformat()
         slug = normalize_slug(title)
         collab_id = f'{date}-{slug}'
         transcript_rel = f'records/{collab_id}.md'
         transcript_path = Path(transcript_rel)
+        raw_transcript_path = transcript_path.with_name(f'{transcript_path.stem}-raw.md')
 
         if transcript_path.exists():
             die(f'record already exists: {transcript_path}')
+        if raw_transcript_path.exists():
+            die(f'record already exists: {raw_transcript_path}')
         if any(entry['id'] == collab_id for entry in data['collabs']):
             die(f'registry collision: {collab_id}')
         if any(entry['slug'] == slug for entry in data['collabs']):
@@ -3357,12 +4015,12 @@ def init_collab(
             entry['reviewerRole'] = reviewer
             entry['reviewerMode'] = DEFAULT_REVIEWER_MODE
             entry['reviewerOptionalPhases'] = list(DEFAULT_REVIEWER_OPTIONAL_PHASES)
-        if participant_verification:
+        if terminal == 'seal':
             entry['verification'] = {
                 'rounds': 0,
                 'cap': DEFAULT_VERIFICATION_CAP,
-                'subState': 'participant',
-                'participantVerification': True,
+                'subState': 'participant' if participant_verification else 'seal',
+                'participantVerification': participant_verification,
                 'participants': {},
             }
 
@@ -3370,11 +4028,15 @@ def init_collab(
         count_caller_declined_agent_id_write(nextdata, agent_id)
         nextdata['collabs'].append(entry)
         nextdata['activeCollabId'] = collab_id
-        rendered = render_initial_transcript(title, entry, roles_dir, format_banner_timestamp())
-        commit_new_registry_and_transcript(path, nextdata, transcript_path, rendered)
-    print(transcript_path)
+        rendered_timestamp = format_banner_timestamp()
+        rendered = render_initial_transcript(title, entry, roles_dir, rendered_timestamp)
+        raw_transcript_path = path_for_entry_target(path, entry, raw_transcript_path_for_entry(entry))
+        projection_transcript_path = projection_transcript_path_for_entry(entry)
+        contribution_store = empty_contribution_store(rendered_timestamp)
+        commit_new_collab_artifacts(path, nextdata, entry, raw_transcript_path, rendered, contribution_store)
+    print(projection_transcript_path)
     if open_requested:
-        file_uri = transcript_path.resolve().as_uri()
+        file_uri = path_for_entry_target(path, entry, projection_transcript_path).resolve().as_uri()
         open_failure = open_browser_uri(file_uri, opener)
         if open_failure is None:
             print(f'OPEN: {file_uri}')
@@ -3392,6 +4054,7 @@ def join_participants(
     emit_json: bool = False,
 ) -> int:
     normalized_agent_id = normalize_join_agent_id(agent_id)
+    load_role(roles_dir, role)
     recorded_agent_id = normalized_agent_id
     identity_warning: str | None = None
     with registry_lock(path):
@@ -3414,7 +4077,8 @@ def join_participants(
             count_caller_declined_agent_id_write(nextdata, normalized_agent_id)
         validate_registry(nextdata, path)
 
-        transcript_path = Path(next_entry['transcriptPath'])
+        migrate_raw_transcript_for_entry(next_entry)
+        transcript_path = lifecycle_transcript_path_for_entry(next_entry)
         if not transcript_path.exists():
             die(f'transcript missing: {transcript_path}')
         transcript = transcript_path.read_text()
@@ -3427,9 +4091,9 @@ def join_participants(
         role,
         next_entry['activePhase'],
         None,
-        'NEXT: Run /collab show policy before first speak.',
+        f'NEXT: Run {collab_dispatch("show policy")} before first speak.',
     )
-    print(f'TRANSCRIPT: {transcript_view_command(next_entry)}')
+    print(f'TRANSCRIPT: {transcript_view_command_for_role(next_entry, role)}')
     print(f'IDENTITY: {role} {recorded_agent_id}')
     if identity_warning:
         print(identity_warning)
@@ -3439,7 +4103,7 @@ def join_participants(
             'agentId': recorded_agent_id,
             'freshRegistryRead': True,
             'identityWarning': identity_warning,
-            'nextTranscriptCommand': transcript_view_command(next_entry),
+            'nextTranscriptCommand': transcript_view_command_for_role(next_entry, role),
             'participants': participant_roles(next_entry),
             'resumeCommand': resume_command_invocation(next_entry, role),
             'target': next_entry['id'],
@@ -3480,14 +4144,15 @@ def archive_collab(
         entry['archived'] = True
         if data.get('activeCollabId') == entry['id']:
             data['activeCollabId'] = None
-        transcript_path = Path(entry['transcriptPath'])
+        migrate_raw_transcript_for_entry(entry)
+        transcript_path = lifecycle_transcript_path_for_entry(entry)
         if transcript_path.exists():
             rendered, header_changed = render_managed_header_text(transcript_path.read_text(), entry, DEFAULT_ROLES_DIR)
             print_header_overwrite(header_changed)
             commit_registry_and_transcript(path, data, transcript_path, rendered)
         else:
             save_registry(path, data)
-    notice = terminal_notice('archived')
+    notice = lifecycle_status_notice('archived')
     print_post_action_advisories(entry, None, None, notice, next_line_for_state(entry))
     print(entry['id'])
     print_notice_diagnostic(notice, emit_json)
@@ -3506,7 +4171,8 @@ def close_collab(
         assert_caller_role(entry, caller_role, 'close')
         if entry['status'] == 'archived':
             die('record is archived')
-        transcript_path = Path(entry['transcriptPath'])
+        migrate_raw_transcript_for_entry(entry)
+        transcript_path = lifecycle_transcript_path_for_entry(entry)
         if not transcript_path.exists():
             die(f'transcript missing: {transcript_path}')
         transcript = transcript_path.read_text()
@@ -3519,12 +4185,19 @@ def close_collab(
                 'close blocked: completed execution has unchecked assigned Action Plan item(s): '
                 f'{details}; loop target: Handoff for missing execution evidence'
             )
-        if reviewer_backed(entry) and entry['activePhase'] == 'Completion':
+        if issue_terminal(entry) and entry['activePhase'] == 'Completion':
+            if not all_execution_completed(entry):
+                die('close blocked: issue terminal requires completed execution')
+            if not exported_issue_handoff_present(entry):
+                die('close blocked: issue terminal requires exported issue handoff evidence')
+        elif seal_terminal(entry) and reviewer_backed(entry) and entry['activePhase'] == 'Completion':
             seal = entry.get('verificationSeal')
             if not isinstance(seal, dict):
                 die('close blocked: reviewer-backed Completion requires verificationSeal')
             invalidate_seal_on_content_drift(entry)
             if seal.get('stale'):
+                write_seal_verdict_companion(path, entry)
+                save_registry(path, data)
                 reason = seal.get('staleReason') or 'unknown'
                 die(f'close blocked: verificationSeal is stale: {reason}')
             if not successful_verdict(entry):
@@ -3535,7 +4208,7 @@ def close_collab(
         rendered, header_changed = render_managed_header_text(transcript, entry, DEFAULT_ROLES_DIR)
         print_header_overwrite(header_changed)
         commit_registry_and_transcript(path, data, transcript_path, rendered)
-    notice = terminal_notice('closed')
+    notice = lifecycle_status_notice('closed')
     print_post_action_advisories(entry, None, None, notice, next_line_for_state(entry))
     print(entry['id'])
     print_notice_diagnostic(notice, emit_json)
@@ -3548,7 +4221,8 @@ def audit_closed(path: Path) -> int:
     for entry in data['collabs']:
         if entry['status'] != 'closed':
             continue
-        transcript_path = Path(entry['transcriptPath'])
+        migrate_raw_transcript_for_entry(entry)
+        transcript_path = lifecycle_transcript_path_for_entry(entry)
         if not transcript_path.exists():
             die(f'transcript missing: {transcript_path}')
         transcript = transcript_path.read_text()
@@ -3571,12 +4245,16 @@ def delete_collab(path: Path, target: str, confirmed: bool, caller_role: str | N
         data = load_registry(path)
         entry = resolve_collab(data, target)
         assert_caller_role(entry, caller_role, 'delete')
-        transcript_path = Path(entry['transcriptPath'])
+        migrate_raw_transcript_for_entry(entry)
+        raw_transcript_path = lifecycle_transcript_path_for_entry(entry)
+        projection_transcript_path = legacy_projection_transcript_path_for_entry(entry)
+        contribution_store_path = contribution_store_path_for_entry(path, entry)
         data['collabs'] = [candidate for candidate in data['collabs'] if candidate['id'] != entry['id']]
         if data.get('activeCollabId') == entry['id']:
             data['activeCollabId'] = None
-        if transcript_path.exists():
-            transcript_path.unlink()
+        for owned_path in (raw_transcript_path, projection_transcript_path, contribution_store_path):
+            if owned_path.exists():
+                owned_path.unlink()
         save_registry(path, data)
     print(entry['id'])
     return 0
@@ -3631,7 +4309,8 @@ def retract_latest_contribution(
             die('retract-speak is not permitted after Completion')
         if not has_participant(entry, role):
             die(f'role must already be a participant: {role}')
-        transcript_path = Path(entry['transcriptPath'])
+        migrate_raw_transcript_for_entry(entry)
+        transcript_path = lifecycle_transcript_path_for_entry(entry)
         if not transcript_path.exists():
             die(f'transcript missing: {transcript_path}')
         transcript = transcript_path.read_text()
@@ -3724,11 +4403,11 @@ def validate_source_contracts() -> None:
 
     seal_verification = DEFAULT_CONFIG_ROOT / 'commands/collab/seal-verification/index.md'
     require_source_text(seal_verification, 'restore-route-recovery', 'restore-route recovery anchor')
-    require_source_text(seal_verification, '/collab show verdict', 'restore-route verdict inspection')
-    require_source_text(seal_verification, '/collab reopen action-plan', 'restore-route action-plan reopen')
-    require_source_text(seal_verification, '/collab reopen handoff', 'restore-route handoff reopen')
-    require_source_text(seal_verification, '/collab run plan', 'restore-route rerun step')
-    require_source_text(seal_verification, '/collab seal verification', 'restore-route reseal step')
+    require_source_text(seal_verification, '(collab show verdict)', 'restore-route verdict inspection')
+    require_source_text(seal_verification, '(collab reopen action-plan)', 'restore-route action-plan reopen')
+    require_source_text(seal_verification, '(collab reopen handoff)', 'restore-route handoff reopen')
+    require_source_text(seal_verification, '(collab run plan)', 'restore-route rerun step')
+    require_source_text(seal_verification, '(collab seal verification)', 'restore-route reseal step')
 
     invariants = DEFAULT_CONFIG_ROOT / 'commands/collab/reference/invariants.md'
     require_source_text(invariants, 'Rollback triggers', 'rollback trigger section')
@@ -3930,6 +4609,14 @@ def build_parser() -> argparse.ArgumentParser:
     execution_parser.add_argument('--json', action='store_true')
     execution_parser.add_argument('--caller-role')
 
+    export_issues_parser = subparsers.add_parser('export-issues')
+    export_issues_parser.add_argument('target')
+    export_issues_parser.add_argument('role')
+    export_issues_parser.add_argument('--evidence-file', required=True)
+    export_issues_parser.add_argument('--timestamp')
+    export_issues_parser.add_argument('--json', action='store_true')
+    export_issues_parser.add_argument('--caller-role')
+
     repair_execution_parser = subparsers.add_parser('repair-execution-provenance')
     repair_execution_parser.add_argument('target')
     repair_execution_parser.add_argument('role')
@@ -3959,6 +4646,16 @@ def build_parser() -> argparse.ArgumentParser:
     transcript_view_parser.add_argument('target')
     transcript_view_parser.add_argument('phase', choices=PHASES)
     transcript_view_parser.add_argument('--raw', action='store_true')
+
+    aggregate_parser = subparsers.add_parser('aggregate')
+    aggregate_parser.add_argument('target', nargs='?')
+    aggregate_parser.add_argument('--json', action='store_true')
+
+    migrate_raw_parser = subparsers.add_parser('migrate-raw-transcript')
+    migrate_raw_parser.add_argument('target', nargs='?')
+
+    render_raw_parser = subparsers.add_parser('render-raw-transcript')
+    render_raw_parser.add_argument('target', nargs='?')
 
     participant_verify_state_parser = subparsers.add_parser('participant-verify-state')
     participant_verify_state_parser.add_argument('target')
@@ -4056,7 +4753,7 @@ def main(argv: list[str]) -> int:
                 if item.startswith('--'):
                     die(f'unknown flag: {item}')
         parser.error(f'unrecognized arguments: {" ".join(unknown_args)}')
-    for path_arg in ('content_file', 'full_body_file', 'summary_file'):
+    for path_arg in ('content_file', 'full_body_file', 'summary_file', 'evidence_file'):
         if hasattr(args, path_arg) and getattr(args, path_arg):
             setattr(args, path_arg, str(Path(getattr(args, path_arg)).resolve()))
 
@@ -4184,6 +4881,16 @@ def main(argv: list[str]) -> int:
             args.json,
             args.caller_role,
         )
+    if args.command == 'export-issues':
+        return export_issues(
+            path,
+            args.target,
+            args.role,
+            Path(args.evidence_file),
+            args.timestamp,
+            args.json,
+            args.caller_role,
+        )
     if args.command == 'repair-execution-provenance':
         return repair_execution_provenance(
             path,
@@ -4201,6 +4908,12 @@ def main(argv: list[str]) -> int:
         return out_of_scope_patch(path, args.target, args.role, args.path, args.caller_role)
     if args.command == 'transcript-view':
         return transcript_view(path, args.target, args.phase, args.raw)
+    if args.command == 'aggregate':
+        return aggregate_transcript(path, args.target, args.json)
+    if args.command == 'migrate-raw-transcript':
+        return migrate_raw_transcript(path, args.target)
+    if args.command == 'render-raw-transcript':
+        return render_raw_transcript(path, args.target)
     if args.command == 'participant-verify-state':
         return participant_verify_state(path, args.target, args.role, args.resume)
     if args.command == 'participant-verify-render':

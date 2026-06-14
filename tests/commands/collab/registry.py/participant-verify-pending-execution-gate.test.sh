@@ -33,7 +33,7 @@ entry['handoff'] = {
         'tw': {'writeScope': ['REPOSITORY.md'], 'validationCommands': [['./platform/tooling/audit.sh']]},
     }
 }
-transcript = registry.parent / entry['transcriptPath']
+transcript = registry.parent / Path(entry['transcriptPath']).with_name(f"{Path(entry['transcriptPath']).stem}-raw.md")
 text = transcript.read_text()
 marker = '## Action Plan\n<!-- collab:content-only; do-not-execute -->\n'
 replacement = marker + '\n- [x] **pe:** [execute] Complete platform migration.\n- [ ] **tw:** [execute] Rewrite repository contract.\n'
@@ -52,7 +52,7 @@ set +e
 pv_output="$("$ROOT/commands/collab/engine/registry.py" participant-verify-state "$TARGET" pe 2>&1)"
 pv_status=$?
 set -e
-if [[ "$pv_status" -eq 0 || "$pv_output" != *"participant verification blocked: pending execution role(s): tw; unchecked assigned Action Plan item(s): tw=1; run /collab run plan for role tw"* ]]; then
+if [[ "$pv_status" -eq 0 || "$pv_output" != *"participant verification blocked: pending execution role(s): tw; unchecked assigned Action Plan item(s): tw=1; run (collab run plan) for role tw"* ]]; then
   printf 'FAIL: participant verification did not block on pending peer execution\n%s\n' "$pv_output" >&2
   exit 1
 fi
@@ -78,7 +78,7 @@ registry.write_text(json.dumps(data, indent=2) + '\n')
 PY
 
 seal_state="$("$ROOT/commands/collab/engine/registry.py" seal-state "$TARGET" pa)"
-if [[ "$seal_state" != *'"readyToSeal": false'* || "$seal_state" != *'"executionBlocker": "pending execution role(s): tw; unchecked assigned Action Plan item(s): tw=1; run /collab run plan for role tw"'* ]]; then
+if [[ "$seal_state" != *'"readyToSeal": false'* || "$seal_state" != *'"executionBlocker": "pending execution role(s): tw; unchecked assigned Action Plan item(s): tw=1; run (collab run plan) for role tw"'* ]]; then
   printf 'FAIL: seal-state did not expose pending execution blocker\n%s\n' "$seal_state" >&2
   exit 1
 fi
@@ -87,7 +87,7 @@ set +e
 seal_output="$("$ROOT/commands/collab/engine/registry.py" seal-render "$TARGET" pa --observed-revision "$revision" --caller-role pa 2>&1)"
 seal_status=$?
 set -e
-if [[ "$seal_status" -eq 0 || "$seal_output" != *"verification seal blocked: pending execution role(s): tw; unchecked assigned Action Plan item(s): tw=1; run /collab run plan for role tw"* ]]; then
+if [[ "$seal_status" -eq 0 || "$seal_output" != *"verification seal blocked: pending execution role(s): tw; unchecked assigned Action Plan item(s): tw=1; run (collab run plan) for role tw"* ]]; then
   printf 'FAIL: seal-render did not reject pending execution blocker\n%s\n' "$seal_output" >&2
   exit 1
 fi

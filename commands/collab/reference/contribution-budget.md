@@ -26,7 +26,7 @@ The **excerpt** of each contribution is capped at **250 words**.
 
 The cap is a visible-excerpt budget, not a total contribution budget. When useful role-material detail would be removed to stay under the cap, the contribution must keep a standalone excerpt and place the complete detail in the full body. Agents must not summarize away or omit that detail solely to satisfy the excerpt cap.
 
-The cap applies to `/collab speak` excerpts only; `participant-verify-render` audit, remediation, and final-audit turn bodies are unbounded by design.
+The cap applies to `(collab speak)` excerpts only; `participant-verify-render` audit, remediation, and final-audit turn bodies are unbounded by design.
 
 The limit is derived from the `platform/standards/context-management.md` 250-line file discipline — the same human load-window rationale applies to contribution length.
 
@@ -40,6 +40,7 @@ The following named classes are excluded from the 250-word count. Each class is 
 | `conclusion-ratification` | Flat one-line-per-item ratification entries; no inline prose or sub-bullets | Conclusion phase contributions only |
 | `moderator-verbatim` | Content from the moderator role, with or without `--verbatim` | Moderator-role contributions only |
 | `effort-override-line` | The single `EFFORT OVERRIDE: <level> — <category>: <signal>` declaration line | Any phase; exactly one line |
+| `stance-declaration-line` | The single `STANCE: converges \| dissents \| qualifies` declaration line | Any phase; exactly one line |
 | `contribution-full-body` | Single helper-owned `<details>` block with `<summary>Full contribution</summary>`; exact shape defined in **Full-body block shape** below | Any phase; uncapped; entire block excluded from word count |
 
 ## Full-body block shape
@@ -61,9 +62,9 @@ The `<summary>` label is exactly `Full contribution` — the single named elemen
 
 The word count applies to the **excerpt** after stripping:
 
-1. The `<!-- collab:content-only; do-not-execute -->` marker line and any `<!-- collab:effort-override b64:<payload> -->` comment line
+1. The `<!-- collab:content-only; do-not-execute -->` marker line and any hidden metadata comment line such as `<!-- collab:effort-override b64:<payload> -->` or `<!-- collab:stance <token> -->`
 2. The timestamp `<p><em>...</em></p>` line
-3. All content matching an exempt class (lines are excluded in full; partial-line exemptions are not supported)
+3. All content matching an exempt class, including leading `STANCE: ...`, `EFFORT OVERRIDE: ...`, and Conclusion directive-gap declaration lines (lines are excluded in full; partial-line exemptions are not supported)
 
 Remaining text is split on whitespace. The count is the number of tokens after splitting.
 

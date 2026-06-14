@@ -53,12 +53,9 @@ if [[ "$none_terminal_status" -eq 0 || "$none_terminal_output" != *'--terminal r
   exit 1
 fi
 
-set +e
 issue_terminal_output="$("$ROOT/commands/collab/engine/registry.py" init --agent-id codex --terminal issue "Issue Terminal" 2>&1)"
-issue_terminal_status=$?
-set -e
-if [[ "$issue_terminal_status" -eq 0 || "$issue_terminal_output" != *'--terminal issue is reserved and not yet implemented; use --terminal seal or omit --terminal'* ]]; then
-  printf 'FAIL: init accepted reserved --terminal issue value\n%s\n' "$issue_terminal_output" >&2
+if [[ "$issue_terminal_output" != records/*issue-terminal.md || "$issue_terminal_output" == *-raw.md* ]]; then
+  printf 'FAIL: init did not report an issue-terminal moderator project transcript\n%s\n' "$issue_terminal_output" >&2
   exit 1
 fi
 
@@ -72,8 +69,8 @@ if [[ "$slug_empty_status" -eq 0 || "$slug_empty_output" != *'slug is empty'* ]]
 fi
 
 default_output="$("$ROOT/commands/collab/engine/registry.py" init --agent-id codex "Default Seal" 2>&1)"
-if [[ "$default_output" != records/*default-seal.md* ]]; then
-  printf 'FAIL: init did not create a default-seal transcript\n%s\n' "$default_output" >&2
+if [[ "$default_output" != records/*default-seal.md || "$default_output" == *-raw.md* ]]; then
+  printf 'FAIL: init did not report a default-seal moderator project transcript\n%s\n' "$default_output" >&2
   exit 1
 fi
 
@@ -88,6 +85,61 @@ assert len(registries) == 1, registries
 data = json.loads(registries[0].read_text())
 entry = next(item for item in data['collabs'] if item['slug'] == 'default-seal')
 assert entry['terminal'] == 'seal', entry
+projection = registries[0].parent / entry['transcriptPath']
+raw = projection.with_name(f'{projection.stem}-raw.md')
+store = projection.with_name(f'{projection.stem}-contributions.json')
+assert projection.exists(), projection
+assert raw.exists(), raw
+assert store.exists(), store
+assert projection.read_text() != raw.read_text()
+issue = next(item for item in data['collabs'] if item['slug'] == 'issue-terminal')
+assert issue['terminal'] == 'issue', issue
+issue_projection = registries[0].parent / issue['transcriptPath']
+assert issue_projection.exists(), issue_projection
+assert issue_projection.with_name(f'{issue_projection.stem}-raw.md').exists()
+assert issue_projection.with_name(f'{issue_projection.stem}-contributions.json').exists()
+assert 'verificationSeal' not in issue, issue
+assert 'verification' not in issue, issue
 PY
 
-printf 'OK: init argument validation rejects missing names, invalid reviewer values, retired verification flags, invalid terminal selectors, reserved issue-terminal, and empty slugs; default terminal is seal\n'
+python3 - "$ROOT" <<'PY'
+import importlib.util
+import re
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+constants_path = root / 'commands/collab/engine/registry_constants.py'
+spec = importlib.util.spec_from_file_location('registry_constants', constants_path)
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+
+if 'issue' not in module.ALLOWED_TERMINALS:
+    raise SystemExit(0)
+
+paths = [
+    root / 'commands/collab/reference/workflow-models.md',
+    root / 'commands/collab/init/index.md',
+    root / 'commands/collab/reference/glossary.md',
+]
+bad = re.compile(r'reserved|not yet implemented|hard[- ]?aborts?|hard[- ]?aborting', re.I)
+issue = re.compile(r'--terminal\s+issue|terminal\s+issue|issue\s+terminal|issue\s+workflow|`issue`', re.I)
+
+failures = []
+for path in paths:
+    lines = path.read_text().splitlines()
+    for index, line in enumerate(lines):
+        if not bad.search(line):
+            continue
+        window = '\n'.join(lines[max(0, index - 2): index + 3])
+        if issue.search(window):
+            failures.append(f'{path.relative_to(root)}:{index + 1}: {line}')
+
+if failures:
+    raise SystemExit(
+        'issue terminal is active but docs still describe it as reserved or hard-aborting:\n'
+        + '\n'.join(failures)
+    )
+PY
+
+printf 'OK: init argument validation rejects missing names, invalid reviewer values, retired verification flags, invalid terminal selectors, and empty slugs; default terminal is seal and issue terminal initializes without seal state\n'

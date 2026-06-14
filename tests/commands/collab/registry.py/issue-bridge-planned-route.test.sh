@@ -28,9 +28,9 @@ def write(rel: str, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text)
 
-write('commands/collab/export-issues/index.md', '# /collab export-issues\n')
-write('commands/collab/index.md', '# /collab\n')
-write('commands/commands.md', '# /commands\n')
+write('commands/collab/export-issues/index.md', '# (collab export-issues)\n')
+write('commands/collab/index.md', '# (collab)\n')
+write('commands/commands.md', '# (commands)\n')
 write(
     'commands/collab/reference/helper-output.md',
     '\n'.join([
@@ -74,9 +74,28 @@ else:
     raise AssertionError('planned route gate accepted missing workflow-model selection contract')
 
 write(
+    'commands/collab/reference/workflow-models.md',
+    '\n'.join([
+        '# Workflow models',
+        '## Issue workflow model (`--terminal issue`)',
+        '### Issue lifecycle',
+        '### Seal-free close',
+        '### Replacement close-gate',
+    ]),
+)
+write(
+    'commands/collab/reference/glossary.md',
+    '\n'.join([
+        '- **terminal**',
+        '- **workflow model**',
+        '- **issue terminal**',
+    ]),
+)
+
+write(
     'commands/collab/init/index.md',
     '\n'.join([
-        '# /collab init',
+        '# (collab init)',
         'Use --terminal seal|issue.',
         '```route-arg',
         'param: name=--terminal; values=seal|issue; default=seal',
@@ -86,7 +105,7 @@ write(
 write(
     'commands/collab/reference/registry.md',
     '\n'.join([
-        '# /collab registry',
+        '# Collab registry',
         '| `terminal` | string | Workflow-model terminal selector: seal|issue. |',
     ]),
 )
@@ -110,7 +129,7 @@ except SystemExit as exc:
     assert 'issue requires preservation' in message, message
     assert 'issue implement handoff shape' in message, message
 else:
-    raise AssertionError('planned route gate accepted missing /git issue contract')
+    raise AssertionError('planned route gate accepted missing (git issue) contract')
 
 write(
     'commands/git/issue/index.md',
@@ -146,13 +165,8 @@ old_cwd = Path.cwd()
 try:
     os.chdir(init_tmp)
     registry = init_tmp / 'registry.json'
-    try:
-        module.init_collab(registry, ['--agent-id', 'codex', '--terminal', 'issue', 'Issue Init'], root / 'commands/collab/reference/roles')
-    except SystemExit as exc:
-        assert str(exc) == '--terminal issue is reserved and not yet implemented; use --terminal seal or omit --terminal', exc
-    else:
-        raise AssertionError('init accepted reserved issue terminal selector')
     with redirect_stdout(StringIO()):
+        module.init_collab(registry, ['--agent-id', 'codex', '--terminal', 'issue', 'Issue Init'], root / 'commands/collab/reference/roles')
         module.init_collab(registry, ['--agent-id', 'codex', '--terminal', 'seal', 'Seal Init'], root / 'commands/collab/reference/roles')
         module.init_collab(registry, ['--agent-id', 'codex', 'Default Init'], root / 'commands/collab/reference/roles')
 finally:
@@ -160,6 +174,8 @@ finally:
 
 data = json.loads((init_tmp / 'registry.json').read_text())
 by_slug = {entry['slug']: entry for entry in data['collabs']}
+assert by_slug['issue-init']['terminal'] == 'issue', by_slug['issue-init']
+assert 'verification' not in by_slug['issue-init'], by_slug['issue-init']
 assert by_slug['seal-init']['terminal'] == 'seal', by_slug['seal-init']
 assert by_slug['default-init']['terminal'] == 'seal', by_slug['default-init']
 assert by_slug['seal-init']['createdAt'], by_slug['seal-init']

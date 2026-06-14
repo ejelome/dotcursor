@@ -111,30 +111,30 @@ def write(rel: str, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text)
 
-write('commands/collab/export-issues/index.md', '# /collab export-issues\n')
-write('commands/collab/index.md', '# /collab\n')
-write('commands/commands.md', '# /commands\n')
+write('commands/collab/export-issues/index.md', '# (collab export-issues)\n')
+write('commands/collab/index.md', '# (collab)\n')
+write('commands/commands.md', '# (commands)\n')
 write(
     'commands/collab/init/index.md',
     '\n'.join([
-        '# /collab init',
-        'Use --terminal seal|issue|none.',
+        '# (collab init)',
+        'Use --terminal seal|issue.',
         '```route-arg',
-        'param: name=--terminal; values=seal|issue|none; default=seal',
+        'param: name=--terminal; values=seal|issue; default=seal',
         '```',
     ]),
 )
 write(
     'commands/collab/reference/registry.md',
     '\n'.join([
-        '# /collab registry',
-        '| `terminal` | string | Workflow-model terminal selector: seal|issue|none. |',
+        '# Collab registry',
+        '| `terminal` | string | Workflow-model terminal selector: seal|issue. |',
     ]),
 )
 write(
     'commands/collab/engine/registry.py',
     '\n'.join([
-        "ALLOWED_TERMINALS = {'seal', 'issue', 'none'}",
+        "ALLOWED_TERMINALS = {'seal', 'issue'}",
         "if token == '--terminal': pass",
         "entry = {'terminal': terminal}",
     ]),
@@ -167,6 +167,24 @@ write(
         '# projectId rebinding',
         '# agentId rebinding',
         '# issue bridge',
+    ]),
+)
+write(
+    'commands/collab/reference/workflow-models.md',
+    '\n'.join([
+        '# Workflow models',
+        '## Issue workflow model (`--terminal issue`)',
+        '### Issue lifecycle',
+        '### Seal-free close',
+        '### Replacement close-gate',
+    ]),
+)
+write(
+    'commands/collab/reference/glossary.md',
+    '\n'.join([
+        '- **terminal**',
+        '- **workflow model**',
+        '- **issue terminal**',
     ]),
 )
 module.validate_issue_bridge_block(tmp)
