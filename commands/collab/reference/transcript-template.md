@@ -5,7 +5,7 @@
 
 Target format for the human-facing moderator projection of a collab record. Aspirational (post-G9 synthesis implementation); current engine output (`(collab aggregate)`) renders a deterministic projection, not this synthesized form.
 
-Rendered by `(collab aggregate)`; format authority: [commands/collab/aggregate/index.md](../aggregate/index.md).
+Rendered by `(collab synthesize)`. This file shows the `collapsed` projection format; set the active mode via `(collab set projection.mode collapsed | per-piece)`.
 
 The example below is from Collab #8 (transcript file design, June 2026).
 

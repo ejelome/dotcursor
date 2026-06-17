@@ -67,9 +67,9 @@ if [[ "$(banner_count)" != "1" ]]; then
 fi
 
 "$ROOT/commands/collab/engine/registry.py" transcript-view "$TARGET" Audit --raw >/dev/null
-"$ROOT/commands/collab/engine/registry.py" aggregate "$TARGET" >/dev/null
+"$ROOT/commands/collab/engine/registry.py" synthesize-state "$TARGET" >/dev/null
 if [[ "$(banner_count)" != "1" ]]; then
-  printf 'FAIL: repeated read or aggregate changed provenance banner count\n' >&2
+  printf 'FAIL: repeated read or synthesize-state changed provenance banner count\n' >&2
   exit 1
 fi
 

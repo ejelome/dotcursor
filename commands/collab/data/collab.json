@@ -75,10 +75,10 @@
       "rationale": "Switches the active collab pointer in the registry."
     },
     {
-      "route": "aggregate",
-      "capabilityTier": "transformation",
-      "effortTier": "low",
-      "rationale": "Renders the moderator project transcript from canonical registry state and the contribution store."
+      "route": "synthesize",
+      "capabilityTier": "reasoning",
+      "effortTier": "high",
+      "rationale": "Generates agent-authored synthesis from contribution records; stale-read guard and source-unit binding require judgment."
     },
     {
       "route": "open",

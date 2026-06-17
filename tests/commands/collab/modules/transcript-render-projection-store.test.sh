@@ -27,6 +27,7 @@ entry = {
     ],
     'turnOrder': ['tw'],
     'transcriptPath': 'records/2026-06-10-render-test.md',
+    'projection': {'mode': 'per-piece'},
     'archived': False,
 }
 store = {
@@ -59,8 +60,43 @@ store = {
 }
 
 projection = tr.render_moderator_project_transcript(registry, entry, store, 7)
+collapsed_default_projection = tr.render_moderator_project_transcript(
+    registry,
+    {key: value for key, value in entry.items() if key != 'projection'},
+    store,
+    7,
+)
+projection_with_synthesis = tr.render_moderator_project_transcript(
+    registry,
+    entry,
+    store,
+    7,
+    {
+        'Conclusion': [
+            '## Conclusion — Round 1 synthesis',
+            '',
+            '_Not yet produced. Run (collab synthesize) to generate._',
+            '',
+        ]
+    },
+)
 raw = tr.render_raw_transcript_from_contribution_store(
     registry, entry, store, roles_dir, 'Jun 10, 2026 @ 6:00 PM'
+)
+
+retracted_store = {
+    'contributions': [
+        dict(
+            store['contributions'][0],
+            retracted=True,
+            retractionReason='test withdrawal',
+            retractionTimestamp='2026-06-10 18:30 +02:00',
+        )
+    ]
+}
+retracted_projection = tr.render_moderator_project_transcript(registry, entry, retracted_store, 7)
+retracted_raw = tr.render_raw_transcript_from_contribution_store(
+    registry, entry, retracted_store, roles_dir, 'Jun 10, 2026 @ 6:00 PM'
 )
 
 mutated_raw_entry = dict(entry)
@@ -82,8 +118,22 @@ changed_raw = tr.render_raw_transcript_from_contribution_store(
 )
 
 assert '2026-06-10-render-test-raw.md#conclusion-tw-1' in projection
+assert projection.index('Collab 2026-06-10-render-test') < projection.index('**State**')
+assert projection.index('**State**') < projection.index('**Participants**')
+assert projection.index('**Participants**') < projection.index('**Table of contents**')
+assert projection.index('**Table of contents**') < projection.index('## Conclusion')
+assert projection.index('## Conclusion') < projection.index('**Projection metadata**')
+assert projection.index('projectionMode: `per-piece`') > projection.index('**Projection metadata**')
+assert 'projectionMode: `collapsed`' in collapsed_default_projection
+assert '| Source | Role | Stance | Detail |' not in collapsed_default_projection
+assert projection_with_synthesis.index('## Conclusion — Round 1 synthesis') < projection_with_synthesis.index('| Source | Role | Stance | Detail |')
 assert "Moderator's projection derives from canonical contribution state." in projection
 assert 'Full body detail remains visible in the moderator projection.' in projection
+assert "Moderator's projection derives from canonical contribution state." not in retracted_projection
+assert 'RETRACTED: contribution withdrawn; retained for audit history.' in retracted_raw
+assert 'RETRACTION REASON: test withdrawal' in retracted_raw
+assert 'RETRACTION TIMESTAMP: 2026-06-10 18:30 +02:00' in retracted_raw
+assert '<details><summary>Retracted content</summary>' in retracted_raw
 assert '&#x27;' not in projection
 assert '| converges | Moderator' in projection
 assert '<p>' not in projection

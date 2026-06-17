@@ -28,14 +28,26 @@ exploration, keep it out of Action Plan instead.
 
 `(collab synthesize)` must reach projection parity before `(collab aggregate)`
 is removed. Parity means synthesize owns the moderator-facing projection surface
-that aggregate currently protects:
+for both supported projection modes:
 
 - header and status metadata;
-- participant contribution detail beneath the synthesis block;
 - source anchors for every rendered contribution;
 - projection source revision, source digest, and contribution-store digest;
 - no raw-transcript parsing for projection data;
 - complete-or-absent output writes.
+
+In `per-piece` mode, parity also requires participant contribution detail
+beneath the synthesis block, including the inline detail table for every
+rendered contribution.
+
+In `collapsed` mode, parity requires an explicit raw-reference trail for the
+condensed `dotcursor` reading-copy blocks. The projection must not render the
+inline detail table in this mode, but each block must link back to raw source
+anchors so no contribution becomes unauditable.
+
+Projection refresh is synthesize-owned. Lifecycle writes update raw transcript
+and contribution-store state; they do not rewrite the moderator projection until
+the next `(collab synthesize)` run.
 
 The aggregate projection tests are the parity oracle. At minimum, the charter
 must port or retarget:
@@ -45,6 +57,8 @@ must port or retarget:
 
 The public aggregate route is retired only after synthesize passes the parity
 oracle. Route retirement is a separate change from initial synthesize delivery.
+
+**Supersession note (collab `2026-06-16-collab-synthesize-implementation-charter`):** The moderator authorized single-charter retirement of `(collab aggregate)` in the implementation charter (Discussion phase, first moderator contribution); the separate-change and retire-only-after sequencing of this clause is relaxed. The parity oracle, the shared deterministic layer, and the freshness-binding clauses are **not waived**.
 
 ## Shared deterministic layer
 
@@ -64,7 +78,8 @@ The `sy` identity, if introduced, is generative and must live outside
 
 The charter must audit existing `dp` references before deleting `dp.json` or
 changing role prose. Deterministic projection may become unnamed infrastructure;
-`sy` is the accountable synthesis author, not a projector alias.
+`sy` is the accountable synthesis author, not a projector alias. Identity
+record: [`synthesizers/sy.json`](synthesizers/sy.json).
 
 ## Freshness binding
 

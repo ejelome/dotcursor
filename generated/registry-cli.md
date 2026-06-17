@@ -26,14 +26,6 @@ Arguments and flags:
 - `--json` optional; flag
 - `--caller-role` optional; value
 
-### `aggregate`
-
-Usage: `registry.py aggregate [-h] [--json] [target]`
-
-Arguments and flags:
-- `target` required; nargs=?
-- `--json` optional; flag
-
 ### `archive`
 
 Usage: `registry.py archive [-h] [--json] [--caller-role CALLER_ROLE] target`
@@ -503,6 +495,27 @@ Usage: `registry.py summary-role [-h] line`
 
 Arguments and flags:
 - `line` required; required
+
+### `synthesize`
+
+Usage: `registry.py synthesize [-h] --observed-revision OBSERVED_REVISION
+                              --content-file CONTENT_FILE
+                              [--agent-id AGENT_ID] [--json]
+                              [target]`
+
+Arguments and flags:
+- `target` required; nargs=?
+- `--observed-revision` required; value
+- `--content-file` required; value
+- `--agent-id` optional; value
+- `--json` optional; flag
+
+### `synthesize-state`
+
+Usage: `registry.py synthesize-state [-h] [target]`
+
+Arguments and flags:
+- `target` required; nargs=?
 
 ### `timestamp`
 

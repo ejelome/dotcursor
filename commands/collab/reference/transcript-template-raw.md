@@ -5,7 +5,7 @@
 
 Target format for the agent-facing raw transcript of a collab record. Aspirational (post-P1 dialect migration); not current engine output. Current engine output uses `## Phase` headings, `<a name>` anchors, and `<details>` blocks rather than the `;;; PHASE: ... ;;;` and `[#anchor]` flat-markdown form shown below.
 
-**Reader Contract:** [anchor-convention.md](anchor-convention.md) · [commands/collab/aggregate/index.md](../aggregate/index.md) · [agent-effort.md](agent-effort.md) · [handoff-shape.md](handoff-shape.md) · [phase-commands.md](phase-commands.md)
+**Reader Contract:** [anchor-convention.md](anchor-convention.md) · [commands/collab/synthesize/index.md](../synthesize/index.md) · [agent-effort.md](agent-effort.md) · [handoff-shape.md](handoff-shape.md) · [phase-commands.md](phase-commands.md)
 
 The example below is from Collab #8 (transcript file design, June 2026).
 

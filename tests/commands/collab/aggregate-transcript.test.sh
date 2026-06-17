@@ -9,9 +9,9 @@ cd "$TMPDIR"
 export COLLAB_STATE_HOME="$TMPDIR/state-home"
 
 RUN_DATE="$(date +%Y-%m-%d)"
-TARGET="$RUN_DATE-aggregate-transcript"
+TARGET="$RUN_DATE-synthesize-transcript"
 
-init_output="$("$ROOT/commands/collab/engine/registry.py" init --agent-id codex "Aggregate Transcript")"
+init_output="$("$ROOT/commands/collab/engine/registry.py" init --agent-id codex "Synthesize Transcript")"
 if [[ "$init_output" != "records/$TARGET.md" ]]; then
   printf 'FAIL: init did not report the moderator project transcript path\n%s\n' "$init_output" >&2
   exit 1
@@ -19,6 +19,7 @@ fi
 REGISTRY="$("$ROOT/commands/collab/engine/registry.py" registry-path)"
 "$ROOT/commands/collab/engine/registry.py" join-participants "$TARGET" pe --agent-id codex >/dev/null
 "$ROOT/commands/collab/engine/registry.py" set "$TARGET" turn-order pe --caller-role mod >/dev/null
+"$ROOT/commands/collab/engine/registry.py" set "$TARGET" projection.mode per-piece --caller-role mod >/dev/null
 
 python3 - "$REGISTRY" <<'PY'
 import json
@@ -52,6 +53,38 @@ PROJECTION="$(paths_json | python3 -c 'import json,sys; print(json.load(sys.stdi
 RAW="$(paths_json | python3 -c 'import json,sys; print(json.load(sys.stdin)["raw"])')"
 STORE="$(paths_json | python3 -c 'import json,sys; print(json.load(sys.stdin)["store"])')"
 
+synthesize_projection() {
+  local output_file="$1"
+  local state revision phase round anchors
+  state="$("$ROOT/commands/collab/engine/registry.py" synthesize-state "$TARGET")"
+  revision="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["observedRevision"])' <<<"$state")"
+  phase="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["phase"])' <<<"$state")"
+  round="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["roundNumber"])' <<<"$state")"
+  anchors="$(python3 -c 'import json,sys; print(", ".join(json.load(sys.stdin)["contributionAnchors"]))' <<<"$state")"
+  cat >synthesis.md <<EOF
+## $phase — Round $round synthesis
+
+| Role | Stance | Summary |
+|------|--------|---------|
+| pe | qualifies | Projection derives from canonical contribution state. |
+
+**Converged**
+- preserve source anchors: $anchors
+
+**Open**
+- none
+
+**Action-plan deltas**
+- none
+
+_Synthesized by sy/codex from registry revision $revision._
+EOF
+  "$ROOT/commands/collab/engine/registry.py" synthesize "$TARGET" \
+    --observed-revision "$revision" \
+    --content-file synthesis.md \
+    --agent-id codex >"$output_file"
+}
+
 if [[ ! -s "$RAW" ]]; then
   printf 'FAIL: init did not create raw transcript\n' >&2
   exit 1
@@ -70,7 +103,12 @@ if cmp -s "$RAW" "$PROJECTION"; then
   printf 'FAIL: init wrote lifecycle bytes to projection path\n' >&2
   exit 1
 fi
-grep -Fq '> Moderator project transcript; raw transcript remains canonical sibling output.' "$PROJECTION"
+grep -Fq 'Collab #' "$PROJECTION"
+grep -Fq '**State**' "$PROJECTION"
+grep -Fq '**Participants**' "$PROJECTION"
+grep -Fq '**Table of contents**' "$PROJECTION"
+grep -Fq '**Projection metadata**' "$PROJECTION"
+grep -Fq 'projectionMode: `collapsed`' "$PROJECTION"
 grep -Fq '<!-- collab:projection-source observedRevision=' "$PROJECTION"
 python3 - "$STORE" <<'PY'
 import json
@@ -99,7 +137,7 @@ if [[ ! -s "$RAW" ]]; then
 fi
 projection_after_speak_hash="$(shasum -a 256 "$PROJECTION" | awk '{print $1}')"
 if [[ "$projection_init_hash" != "$projection_after_speak_hash" ]]; then
-  printf 'FAIL: lifecycle modified projection transcript before aggregate\n' >&2
+  printf 'FAIL: lifecycle modified projection transcript before synthesize\n' >&2
   exit 1
 fi
 if [[ ! -s "$STORE" ]]; then
@@ -131,7 +169,7 @@ fi
 "$ROOT/commands/collab/engine/registry.py" advance "$TARGET" next --caller-role mod >/dev/null
 projection_after_advance_hash="$(shasum -a 256 "$PROJECTION" | awk '{print $1}')"
 if [[ "$projection_init_hash" != "$projection_after_advance_hash" ]]; then
-  printf 'FAIL: advance modified projection transcript before aggregate\n' >&2
+  printf 'FAIL: advance modified projection transcript before synthesize\n' >&2
   exit 1
 fi
 python3 - "$REGISTRY" "$TARGET" <<'PY'
@@ -143,40 +181,43 @@ target = sys.argv[2]
 entry = next(item for item in json.loads(registry.read_text())['collabs'] if item['id'] == target)
 assert entry['activePhase'] == 'Conclusion', entry['activePhase']
 PY
-raw_before_aggregate_hash="$(shasum -a 256 "$RAW" | awk '{print $1}')"
+"$ROOT/commands/collab/engine/registry.py" set "$TARGET" active-phase Audit --force --caller-role mod >/dev/null
+raw_before_synthesize_hash="$(shasum -a 256 "$RAW" | awk '{print $1}')"
 
-"$ROOT/commands/collab/engine/registry.py" aggregate "$TARGET" >aggregate.out
-grep -Fq 'registryRevision:' aggregate.out
-grep -Fq 'sourceDigest:' aggregate.out
+synthesize_projection synthesize.out
+grep -Fq 'registryRevision:' synthesize.out
+grep -Fq 'sourceDigest:' synthesize.out
+grep -Fq 'artifactId:' synthesize.out
 
 if [[ ! -s "$PROJECTION" ]]; then
-  printf 'FAIL: aggregate did not write projection transcript\n' >&2
+  printf 'FAIL: synthesize did not write projection transcript\n' >&2
   exit 1
 fi
 grep -Fq 'project: **' "$PROJECTION"
 grep -Fq "$(basename "${PROJECTION%.md}")"'-raw.md#audit-pe-1' "$PROJECTION"
+grep -Fq '## Audit — Round 1 synthesis' "$PROJECTION"
 grep -Fq 'Projection derives from canonical contribution state.' "$PROJECTION"
 grep -Fq '| qualifies | Projection derives from canonical contribution state.' "$PROJECTION"
 grep -Fq '<!-- collab:projection-source observedRevision=' "$PROJECTION"
-projection_after_aggregate_hash="$(shasum -a 256 "$PROJECTION" | awk '{print $1}')"
-if [[ "$projection_init_hash" == "$projection_after_aggregate_hash" ]]; then
-  printf 'FAIL: aggregate did not refresh projection transcript\n' >&2
+projection_after_synthesize_hash="$(shasum -a 256 "$PROJECTION" | awk '{print $1}')"
+if [[ "$projection_init_hash" == "$projection_after_synthesize_hash" ]]; then
+  printf 'FAIL: synthesize did not refresh projection transcript\n' >&2
   exit 1
 fi
-raw_after_aggregate_hash="$(shasum -a 256 "$RAW" | awk '{print $1}')"
-if [[ "$raw_before_aggregate_hash" != "$raw_after_aggregate_hash" ]]; then
-  printf 'FAIL: aggregate modified raw transcript\n' >&2
+raw_after_synthesize_hash="$(shasum -a 256 "$RAW" | awk '{print $1}')"
+if [[ "$raw_before_synthesize_hash" != "$raw_after_synthesize_hash" ]]; then
+  printf 'FAIL: synthesize modified raw transcript\n' >&2
   exit 1
 fi
 
-state_after_aggregate="$("$ROOT/commands/collab/engine/registry.py" speak-state --resume "$TARGET" pe)"
-next_transcript_command="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["nextTranscriptCommand"])' <<<"$state_after_aggregate")"
+state_after_synthesize="$("$ROOT/commands/collab/engine/registry.py" speak-state --resume "$TARGET" pe)"
+next_transcript_command="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["nextTranscriptCommand"])' <<<"$state_after_synthesize")"
 if [[ "$next_transcript_command" != *'transcript-view '* || "$next_transcript_command" != *' --raw' ]]; then
   printf 'FAIL: agent speak-state did not return raw transcript-view command\n%s\n' "$next_transcript_command" >&2
   exit 1
 fi
-mod_state_after_aggregate="$("$ROOT/commands/collab/engine/registry.py" speak-state --resume "$TARGET" mod)"
-mod_transcript_command="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["nextTranscriptCommand"])' <<<"$mod_state_after_aggregate")"
+mod_state_after_synthesize="$("$ROOT/commands/collab/engine/registry.py" speak-state --resume "$TARGET" mod)"
+mod_transcript_command="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["nextTranscriptCommand"])' <<<"$mod_state_after_synthesize")"
 if [[ "$mod_transcript_command" != *'transcript-view '* || "$mod_transcript_command" == *' --raw' ]]; then
   printf 'FAIL: moderator speak-state did not return projection transcript-view command\n%s\n' "$mod_transcript_command" >&2
   exit 1
@@ -217,22 +258,22 @@ data['contributions'][0]['excerpt'] = 'Canonical contribution state changed.'
 data['contributions'][0]['content'] = 'Canonical contribution state changed.'
 path.write_text(json.dumps(data, indent=2) + '\n')
 PY
-"$ROOT/commands/collab/engine/registry.py" aggregate "$TARGET" >/dev/null
+synthesize_projection synthesize-store.out
 grep -Fq '| missing-stance | Canonical contribution state changed.' "$PROJECTION"
 if grep -Fq '| qualifies | Canonical contribution state changed.' "$PROJECTION"; then
-  printf 'FAIL: aggregate preserved silent qualifies default without source stance\n' >&2
+  printf 'FAIL: synthesize projection preserved silent qualifies default without source stance\n' >&2
   exit 1
 fi
 after_store_projection_hash="$(shasum -a 256 "$PROJECTION" | awk '{print $1}')"
-"$ROOT/commands/collab/engine/registry.py" aggregate "$TARGET" >/dev/null
+"$ROOT/commands/collab/engine/registry.py" transcript-view "$TARGET" Audit >/dev/null
 repeat_store_projection_hash="$(shasum -a 256 "$PROJECTION" | awk '{print $1}')"
 if [[ "$after_store_projection_hash" != "$repeat_store_projection_hash" ]]; then
-  printf 'FAIL: aggregate projection is not deterministic\n' >&2
+  printf 'FAIL: transcript-view changed synthesize projection bytes\n' >&2
   exit 1
 fi
 grep -Fq 'Canonical contribution state changed.' "$PROJECTION"
 if grep -Fq 'Canonical contribution state changed.' "$RAW"; then
-  printf 'FAIL: aggregate/store mutation changed raw transcript\n' >&2
+  printf 'FAIL: synthesize/store mutation changed raw transcript\n' >&2
   exit 1
 fi
 
@@ -261,11 +302,11 @@ data['contributions'][0]['content'] = (
 )
 path.write_text(json.dumps(data, indent=2) + '\n')
 PY
-"$ROOT/commands/collab/engine/registry.py" aggregate "$TARGET" >/dev/null
+synthesize_projection synthesize-hidden.out
 grep -Fq '| converges | Canonical contribution state changed.' "$PROJECTION"
 for leaked in '<p>' 'do-not-execute' 'EFFORT OVERRIDE' 'STANCE:' '**Directive:**' '**Action Plan:'; do
   if grep -Fq "$leaked" "$PROJECTION"; then
-    printf 'FAIL: aggregate projection leaked hidden excerpt scaffolding: %s\n' "$leaked" >&2
+    printf 'FAIL: synthesize projection leaked hidden excerpt scaffolding: %s\n' "$leaked" >&2
     exit 1
   fi
 done
@@ -280,22 +321,22 @@ data['contributions'][0]['stance'] = 'guessed'
 path.write_text(json.dumps(data, indent=2) + '\n')
 PY
 set +e
-invalid_output="$("$ROOT/commands/collab/engine/registry.py" aggregate "$TARGET" 2>&1)"
+invalid_output="$("$ROOT/commands/collab/engine/registry.py" synthesize-state "$TARGET" 2>&1)"
 invalid_status=$?
 set -e
 if [[ "$invalid_status" -eq 0 || "$invalid_output" != *'stance token missing or invalid'* ]]; then
-  printf 'FAIL: aggregate accepted invalid stance\n%s\n' "$invalid_output" >&2
+  printf 'FAIL: synthesize-state accepted invalid stance\n%s\n' "$invalid_output" >&2
   exit 1
 fi
 
 rm "$STORE"
 set +e
-missing_output="$("$ROOT/commands/collab/engine/registry.py" aggregate "$TARGET" 2>&1)"
+missing_output="$("$ROOT/commands/collab/engine/registry.py" synthesize-state "$TARGET" 2>&1)"
 missing_status=$?
 set -e
 if [[ "$missing_status" -eq 0 || "$missing_output" != *'ABORT: record unreadable. Check the registry and contribution-store paths.'* ]]; then
-  printf 'FAIL: aggregate accepted missing contribution store\n%s\n' "$missing_output" >&2
+  printf 'FAIL: synthesize-state accepted missing contribution store\n%s\n' "$missing_output" >&2
   exit 1
 fi
 
-printf 'OK: lifecycle writes raw transcript and aggregate writes projection only\n'
+printf 'OK: lifecycle writes raw transcript and synthesize writes projection only\n'
