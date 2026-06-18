@@ -2517,6 +2517,29 @@ def render_raw_transcript(path: Path, target: str | None = None) -> int:
     return 0
 
 
+def render_projection_transcript(path: Path, target: str | None = None) -> int:
+    data = load_registry(path)
+    entry = resolve_collab(data, target) if target else require_active_collab(data)
+    contribution_store = read_contribution_store_for_entry(path, entry)
+    synthesis_store = read_synthesis_store_for_entry(path, entry)
+    rendered = render_moderator_project_transcript(
+        data,
+        entry,
+        contribution_store,
+        registry_revision(data),
+        synthesis_blocks_for_projection(data, entry, contribution_store, synthesis_store),
+        collapsed_synthesis_units_for_projection(data, entry, contribution_store, synthesis_store),
+    )
+    transcript_path = path_for_entry_target(path, entry, projection_transcript_path_for_entry(entry))
+    write_text_atomic(transcript_path, rendered)
+    print(json.dumps({
+        'path': str(transcript_path),
+        'sha256': hashlib.sha256(rendered.encode()).hexdigest(),
+        'target': entry['id'],
+    }, sort_keys=True))
+    return 0
+
+
 def write_text_atomic(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temp_path = path.with_name(f'.{path.name}.{os.getpid()}.tmp')
@@ -5021,6 +5044,9 @@ def build_parser() -> argparse.ArgumentParser:
     render_raw_parser = subparsers.add_parser('render-raw-transcript')
     render_raw_parser.add_argument('target', nargs='?')
 
+    render_projection_parser = subparsers.add_parser('render-projection-transcript')
+    render_projection_parser.add_argument('target', nargs='?')
+
     participant_verify_state_parser = subparsers.add_parser('participant-verify-state')
     participant_verify_state_parser.add_argument('target')
     participant_verify_state_parser.add_argument('role')
@@ -5287,6 +5313,8 @@ def main(argv: list[str]) -> int:
         return migrate_raw_transcript(path, args.target)
     if args.command == 'render-raw-transcript':
         return render_raw_transcript(path, args.target)
+    if args.command == 'render-projection-transcript':
+        return render_projection_transcript(path, args.target)
     if args.command == 'participant-verify-state':
         return participant_verify_state(path, args.target, args.role, args.resume)
     if args.command == 'participant-verify-render':

@@ -311,6 +311,46 @@ for leaked in '<p>' 'do-not-execute' 'EFFORT OVERRIDE' 'STANCE:' '**Directive:**
   fi
 done
 
+python3 - "$REGISTRY" "$TARGET" <<'PY'
+import json
+import sys
+from pathlib import Path
+registry = Path(sys.argv[1])
+target = sys.argv[2]
+data = json.loads(registry.read_text())
+entry = next(item for item in data['collabs'] if item['id'] == target)
+entry['status'] = 'closed'
+entry['activePhase'] = 'Completion'
+entry.setdefault('completion', {})['subState'] = 'verification'
+entry.setdefault('verification', {})['subState'] = 'assessment'
+registry.write_text(json.dumps(data, indent=2) + '\n')
+PY
+printf 'stale projection sentinel\n' >"$PROJECTION"
+projection_refresh_output="$("$ROOT/commands/collab/engine/registry.py" render-projection-transcript "$TARGET")"
+if [[ "$projection_refresh_output" != *"\"target\": \"$TARGET\""* ]]; then
+  printf 'FAIL: projection refresh did not report target\n%s\n' "$projection_refresh_output" >&2
+  exit 1
+fi
+grep -Fq '| closed |' "$PROJECTION"
+grep -Fq '| converges | Canonical contribution state changed.' "$PROJECTION"
+grep -Fq '**Projection metadata**' "$PROJECTION"
+if grep -Fq 'stale projection sentinel' "$PROJECTION"; then
+  printf 'FAIL: projection refresh preserved stale bytes\n' >&2
+  exit 1
+fi
+python3 - "$REGISTRY" "$TARGET" <<'PY'
+import json
+import sys
+from pathlib import Path
+registry = Path(sys.argv[1])
+target = sys.argv[2]
+data = json.loads(registry.read_text())
+entry = next(item for item in data['collabs'] if item['id'] == target)
+entry['status'] = 'open'
+entry['activePhase'] = 'Audit'
+registry.write_text(json.dumps(data, indent=2) + '\n')
+PY
+
 python3 - "$STORE" <<'PY'
 import json
 import sys

@@ -275,6 +275,13 @@ Arguments and flags:
 - `target` required; required
 - `--roles-dir` optional; value
 
+### `render-projection-transcript`
+
+Usage: `registry.py render-projection-transcript [-h] [target]`
+
+Arguments and flags:
+- `target` required; nargs=?
+
 ### `render-raw-transcript`
 
 Usage: `registry.py render-raw-transcript [-h] [target]`
