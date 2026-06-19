@@ -15,7 +15,6 @@ TARGET="$RUN_DATE-full-body-flow"
 REGISTRY="$("$ROOT/commands/collab/engine/registry.py" registry-path)"
 "$ROOT/commands/collab/engine/registry.py" join-participants "$TARGET" pe --agent-id gpt >/dev/null
 "$ROOT/commands/collab/engine/registry.py" set "$TARGET" turn-order pe --caller-role mod >/dev/null
-"$ROOT/commands/collab/engine/registry.py" set "$TARGET" projection.mode per-piece --caller-role mod >/dev/null
 "$ROOT/commands/collab/engine/registry.py" set "$TARGET" active-phase Discussion --force --caller-role mod >/dev/null
 
 state="$("$ROOT/commands/collab/engine/registry.py" speak-state "$TARGET" pe)"
@@ -39,7 +38,7 @@ from pathlib import Path
 registry = Path(sys.argv[1])
 target = sys.argv[2]
 entry = next(item for item in json.loads(registry.read_text())['collabs'] if item['id'] == target)
-print(registry.parent / Path(entry['transcriptPath']).with_name(f"{Path(entry['transcriptPath']).stem}-raw.md"))
+print(registry.parent / Path(entry['transcriptPath']))
 PY
 )"
 
@@ -54,32 +53,6 @@ PY
 
 "$ROOT/commands/collab/engine/registry.py" transcript-view "$TARGET" Discussion --raw >raw-view.md
 "$ROOT/commands/collab/engine/registry.py" transcript-view "$TARGET" Audit --raw >audit-view.md
-state="$("$ROOT/commands/collab/engine/registry.py" synthesize-state "$TARGET")"
-synth_revision="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["observedRevision"])' <<<"$state")"
-synth_phase="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["phase"])' <<<"$state")"
-synth_round="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["roundNumber"])' <<<"$state")"
-cat >synthesis.md <<EOF
-## $synth_phase — Round $synth_round synthesis
-
-| Role | Stance | Summary |
-|------|--------|---------|
-| pe | missing-stance | Full body projection remains visible. |
-
-**Converged**
-- preserve full contribution detail
-
-**Open**
-- none
-
-**Action-plan deltas**
-- none
-
-_Synthesized by sy/codex from registry revision $synth_revision._
-EOF
-"$ROOT/commands/collab/engine/registry.py" synthesize "$TARGET" \
-  --observed-revision "$synth_revision" \
-  --content-file synthesis.md \
-  --agent-id codex >/dev/null
 "$ROOT/commands/collab/engine/registry.py" transcript-view "$TARGET" Discussion >discussion-view.md
 
 grep -Fq 'fullbodyword279' raw-view.md
@@ -88,7 +61,7 @@ if grep -Fq 'Visible excerpt with the standalone finding.' audit-view.md; then
   exit 1
 fi
 if ! grep -Fq 'fullbodyword279' discussion-view.md; then
-  printf 'FAIL: rendered Discussion view omitted full-body content from moderator projection\n' >&2
+  printf 'FAIL: rendered Discussion view omitted full-body content\n' >&2
   exit 1
 fi
 grep -Fq 'Visible excerpt with the standalone finding.' discussion-view.md

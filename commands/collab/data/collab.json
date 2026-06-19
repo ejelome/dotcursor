@@ -75,10 +75,10 @@
       "rationale": "Switches the active collab pointer in the registry."
     },
     {
-      "route": "synthesize",
+      "route": "summarize",
       "capabilityTier": "reasoning",
-      "effortTier": "high",
-      "rationale": "Generates agent-authored synthesis from contribution records; stale-read guard and source-unit binding require judgment."
+      "effortTier": "medium",
+      "rationale": "Generates a concise agent-authored summary of the active phase's contributions."
     },
     {
       "route": "open",

@@ -14,7 +14,7 @@ Document the gate policy that decides when a collaboration needs a reviewer judg
 3. Resolve the reviewer from registry `reviewerRole` when set; otherwise apply the **Reviewer fallback** in **Notes**.
 4. If a trigger fires and no safe assignee exists, pause the collab as gate-blocked instead of advancing.
 5. Do not mutate registry state from this documentation-only route.
-6. To list available joinable roles, call `commands/collab/engine/registry.py roles` from the repository root. This reads every file under `commands/collab/reference/roles/` and outputs one participant-row per role. It does not read projector metadata.
+6. To list available joinable roles, call `commands/collab/engine/registry.py roles` from the repository root. This reads every file under `commands/collab/reference/roles/` and outputs one participant-row per role.
 
 ## Notes
 

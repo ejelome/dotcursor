@@ -1,0 +1,9 @@
+{
+  "key": "dp",
+  "displayName": "Deterministic Projector",
+  "concerns": [
+    "transcript rendering",
+    "moderator projection"
+  ],
+  "prohibitions": ["Role retired. Preserved in roles/ for closed-collab participant ledger integrity only. Do not join new collabs with this role."]
+}

@@ -32,10 +32,7 @@ from __future__ import annotations
 
 import re
 import sys
-import hashlib
 import html
-import json
-import datetime as dt
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -76,16 +73,8 @@ ANCHOR_RE = re.compile(r'^<a name="(?P<anchor>[A-Za-z0-9_-]+)"></a>$')
 DETAILS_CONTROL_LINE_RE = re.compile(r'^</?details(?:\s+[^>]*)?\s*>$')
 PROHIBITION_SEPARATOR = ' \u00b7 '
 AUTHOR_DECLARED_STANCES = {'converges', 'dissents', 'qualifies'}
-MISSING_PROJECTION_STANCE = 'missing-stance'
-PROJECTION_STANCES = AUTHOR_DECLARED_STANCES | {MISSING_PROJECTION_STANCE}
-PROJECTION_FOOTER_PREFIX = '<!-- collab:projection-source '
-PROJECTION_MODE_DEFAULT = 'collapsed'
-PROJECTION_MODES = {'collapsed', 'per-piece'}
+MISSING_STANCE = 'missing-stance'
 DEFAULT_ROLES_DIR = ROOT / 'commands/collab/reference/roles'
-RAW_PROVENANCE_BANNER = (
-    '> Raw transcript is lifecycle provenance, not unprocessed markdown; '
-    'it may contain managed HTML scaffolding and execution-boundary guards.'
-)
 STANCE_DECLARATION_RE = re.compile(r'^\s*STANCE:\s*(converges|dissents|qualifies)\s*$', re.IGNORECASE)
 TIMESTAMP_WRAPPER_RE = re.compile(r'^\s*<p><em>.*</em></p>\s*$')
 CONTENT_ONLY_GUARD_RE = re.compile(r'^\s*<!--\s*collab:content-only;\s*do-not-execute\s*-->\s*$')
@@ -116,11 +105,11 @@ def declared_stance_for_content(content: str) -> str | None:
     return None
 
 
-def projection_stance_for_content(content: str) -> str:
-    return declared_stance_for_content(content) or MISSING_PROJECTION_STANCE
+def stance_for_content(content: str) -> str:
+    return declared_stance_for_content(content) or MISSING_STANCE
 
 
-def is_projection_structural_scaffold_line(line: str) -> bool:
+def is_scaffold_line(line: str) -> bool:
     stripped = line.strip()
     normalized = html.unescape(stripped)
     return any(
@@ -133,12 +122,12 @@ def is_projection_structural_scaffold_line(line: str) -> bool:
     )
 
 
-def is_projection_hidden_metadata_line(line: str) -> bool:
+def is_hidden_metadata_line(line: str) -> bool:
     stripped = line.strip()
     if not stripped:
         return True
     normalized = html.unescape(stripped)
-    return is_projection_structural_scaffold_line(stripped) or any(
+    return is_scaffold_line(stripped) or any(
         pattern.match(normalized)
         for pattern in (
             STANCE_DECLARATION_RE,
@@ -151,16 +140,16 @@ def is_projection_hidden_metadata_line(line: str) -> bool:
     )
 
 
-def projection_excerpt_source(value: str) -> str:
+def excerpt_source(value: str) -> str:
     cleaned = INLINE_TIMESTAMP_WRAPPER_RE.sub('\n', value)
     cleaned = INLINE_CONTENT_ONLY_GUARD_RE.sub('\n', cleaned)
     lines = [
         line
         for line in cleaned.splitlines()
-        if not is_projection_structural_scaffold_line(line)
+        if not is_scaffold_line(line)
     ]
     index = 0
-    while index < len(lines) and is_projection_hidden_metadata_line(lines[index]):
+    while index < len(lines) and is_hidden_metadata_line(lines[index]):
         index += 1
     return '\n'.join(lines[index:]).strip()
 
@@ -239,504 +228,6 @@ def append_phase_block(lines: list[str], phase: str, block: list[str]) -> list[s
     if after and insert and insert[-1] != '':
         insert.append('')
     return before + insert + after
-
-
-def projection_config_value(entry: dict, key: str) -> str | None:
-    projection = entry.get('projection')
-    if isinstance(projection, dict):
-        configured = projection.get(key)
-        if isinstance(configured, str) and configured.strip():
-            return configured.strip()
-    aggregate = entry.get('aggregate')
-    if isinstance(aggregate, dict):
-        configured = aggregate.get(key)
-        if isinstance(configured, str) and configured.strip():
-            return configured.strip()
-    return None
-
-
-def projection_mode_for_entry(entry: dict) -> str:
-    mode = projection_config_value(entry, 'mode')
-    if mode is None:
-        return PROJECTION_MODE_DEFAULT
-    if mode not in PROJECTION_MODES:
-        die(f'projection.mode must be one of {sorted(PROJECTION_MODES)}')
-    return mode
-
-
-def raw_transcript_path_for_entry(entry: dict) -> str:
-    configured = projection_config_value(entry, 'rawTranscriptPath')
-    if configured is not None:
-        return configured
-    transcript_path = Path(entry['transcriptPath'])
-    return str(transcript_path.with_name(f'{transcript_path.stem}-raw.md'))
-
-
-def _store_records(contribution_store: object, include_retracted: bool = False) -> list[dict]:
-    if isinstance(contribution_store, dict):
-        records = contribution_store.get('contributions')
-    else:
-        records = contribution_store
-    if not isinstance(records, list):
-        die('contribution store must be a list or an object with contributions')
-    normalized: list[dict] = []
-    for index, record in enumerate(records, start=1):
-        if not isinstance(record, dict):
-            die(f'contribution store record {index} must be an object')
-        if record.get('retracted') is True:
-            if not include_retracted:
-                continue
-        normalized_record = _projection_store_record(record, index)
-        if record.get('retracted') is True:
-            normalized_record['retracted'] = True
-            for field in ('retractionReason', 'retractionTimestamp'):
-                value = record.get(field)
-                if isinstance(value, str) and value.strip():
-                    normalized_record[field] = value.strip()
-        normalized.append(normalized_record)
-    return normalized
-
-
-def _projection_store_records(contribution_store: object) -> list[dict]:
-    return _store_records(contribution_store)
-
-
-def _raw_store_records(contribution_store: object) -> list[dict]:
-    return _store_records(contribution_store, include_retracted=True)
-
-
-def projection_store_records(contribution_store: object) -> list[dict]:
-    return _projection_store_records(contribution_store)
-
-
-def _required_projection_field(record: dict, field: str, index: int) -> str:
-    value = record.get(field)
-    if not isinstance(value, str) or not value.strip():
-        die(f'contribution store record {index} missing {field}')
-    return value.strip()
-
-
-def _projection_store_record(record: dict, index: int) -> dict:
-    phase = _required_projection_field(record, 'phase', index)
-    if phase not in PHASES:
-        die(f'contribution store record {index} has invalid phase: {phase}')
-    role = _required_projection_field(record, 'role', index)
-    anchor = _required_projection_field(record, 'anchor', index)
-    if not re.match(r'^[A-Za-z0-9_-]+$', anchor):
-        die(f'contribution store record {index} has invalid anchor: {anchor}')
-    stored_stance = _required_projection_field(record, 'stance', index)
-    if stored_stance not in PROJECTION_STANCES:
-        die(
-            f'ABORT: stance token missing or invalid for {anchor}. '
-            'Add a valid stance declaration to the source contribution before aggregating.'
-        )
-    excerpt = _required_projection_field(record, 'excerpt', index)
-    timestamp = record.get('timestamp')
-    if timestamp is not None and (not isinstance(timestamp, str) or not timestamp.strip()):
-        die(f'contribution store record {index} has invalid timestamp')
-    full_body = record.get('fullBody')
-    if full_body is not None and not isinstance(full_body, str):
-        die(f'contribution store record {index} has invalid fullBody')
-    content = record.get('content')
-    if content is not None and not isinstance(content, str):
-        die(f'contribution store record {index} has invalid content')
-    content_source = content if isinstance(content, str) else excerpt
-    stance = declared_stance_for_content(content_source) or MISSING_PROJECTION_STANCE
-    return {
-        'phase': phase,
-        'role': role,
-        'anchor': anchor,
-        'stance': stance,
-        'excerpt': excerpt,
-        'timestamp': timestamp.strip() if isinstance(timestamp, str) else None,
-        'content': content if isinstance(content, str) else excerpt,
-        'fullBody': full_body,
-    }
-
-
-def contribution_store_digest(contribution_store: object) -> str:
-    records = _projection_store_records(contribution_store)
-    payload = json.dumps(records, sort_keys=True, separators=(',', ':'), ensure_ascii=True)
-    return hashlib.sha256(payload.encode()).hexdigest()
-
-
-def projection_source_digest(registry_state: dict, entry: dict, contribution_store: object, observed_revision: int) -> str:
-    project = registry_state.get('project')
-    label = project.get('label') if isinstance(project, dict) else None
-    if not isinstance(label, str) or not label.strip():
-        die('ABORT: project label missing. Add project.label to the registry before aggregating.')
-    payload = {
-        'projectLabel': label,
-        'target': entry.get('id'),
-        'status': entry.get('status'),
-        'activePhase': entry.get('activePhase'),
-        'observedRevision': observed_revision,
-        'contributionStoreDigest': contribution_store_digest(contribution_store),
-    }
-    encoded = json.dumps(payload, sort_keys=True, separators=(',', ':'), ensure_ascii=True)
-    return hashlib.sha256(encoded.encode()).hexdigest()
-
-
-def _projection_record_content(record: dict) -> str:
-    content = record['content']
-    full_body = record.get('fullBody')
-    if isinstance(full_body, str) and full_body.strip():
-        return f'{content.rstrip()}\n\n{full_body.strip()}'.strip()
-    return content
-
-
-def _projection_table_cell(value: str) -> str:
-    plain = html.unescape(value)
-    compact = re.sub(r'\s+', ' ', projection_excerpt_source(plain)).strip()
-    return (
-        compact
-        .replace('|', '\\|')
-        .replace('<', '&lt;')
-        .replace('>', '&gt;')
-    )
-
-
-def _projection_raw_link(raw_path: str, anchor: str) -> str:
-    return f'[{anchor}]({Path(raw_path).name}#{anchor})'
-
-
-def _projection_anchor_list(raw_path: str, anchors: list[str]) -> str:
-    if not anchors:
-        return '_Raw sources: none._'
-    return '_Raw sources: ' + ', '.join(_projection_raw_link(raw_path, anchor) for anchor in anchors) + '._'
-
-
-def _projection_blockquote_lines(content_lines: list[str]) -> list[str]:
-    if not content_lines:
-        return ['>']
-    rendered: list[str] = []
-    for line in content_lines:
-        rendered.append('>' if line == '' else f'> {line}')
-    return rendered
-
-
-def _projection_reading_copy_lines(content_lines: list[str]) -> list[str]:
-    lines = list(content_lines)
-    if lines and lines[0].startswith('## '):
-        lines = lines[1:]
-        while lines and lines[0] == '':
-            lines.pop(0)
-    while lines and lines[-1] == '':
-        lines.pop()
-    return lines
-
-
-def _projection_record_reading_copy(record: dict) -> list[str]:
-    return _projection_reading_copy_lines(
-        projection_excerpt_source(_projection_record_content(record)).splitlines()
-    )
-
-
-def _projection_timestamp_label(values: list[str | None]) -> str:
-    labels = [value for value in values if isinstance(value, str) and value.strip()]
-    if not labels:
-        return ''
-    if len(labels) == 1:
-        return f' · {labels[0]}'
-    return f' · {labels[0]}–{labels[-1]}'
-
-
-def _render_collapsed_moderator_block(record: dict, raw_path: str) -> list[str]:
-    lines = [
-        f'### {record["role"]}{_projection_timestamp_label([record.get("timestamp")])}',
-        '',
-        *_projection_blockquote_lines(_projection_record_reading_copy(record)),
-        '>',
-        f'> {_projection_anchor_list(raw_path, [record["anchor"]])}',
-        '',
-    ]
-    return lines
-
-
-def _render_collapsed_collective_block(unit: dict, raw_path: str) -> list[str]:
-    anchors = [
-        anchor
-        for anchor in unit.get('contributionAnchors', [])
-        if isinstance(anchor, str) and anchor.strip()
-    ]
-    timestamps = [
-        timestamp
-        for timestamp in unit.get('timestamps', [])
-        if isinstance(timestamp, str) and timestamp.strip()
-    ]
-    content_lines = _projection_reading_copy_lines(unit.get('contentLines', []))
-    lines = [
-        f'### dotcursor{_projection_timestamp_label(timestamps)}',
-        '',
-        *_projection_blockquote_lines(content_lines),
-        '>',
-        f'> {_projection_anchor_list(raw_path, anchors)}',
-        '',
-    ]
-    return lines
-
-
-def _collapsed_synthesis_units_for_phase(
-    phase: str,
-    phase_records: list[dict],
-    synthesis_blocks: dict[str, list[str]] | None,
-    collapsed_synthesis_units: dict[str, list[dict]] | None,
-) -> list[dict]:
-    units = (collapsed_synthesis_units or {}).get(phase)
-    if units is not None:
-        return units
-    fallback = (synthesis_blocks or {}).get(phase)
-    if fallback is None:
-        return []
-    return [{
-        'roundStartAnchor': None,
-        'contributionAnchors': [record['anchor'] for record in phase_records],
-        'timestamps': [record.get('timestamp') for record in phase_records],
-        'contentLines': fallback,
-    }]
-
-
-def _render_collapsed_phase(
-    phase: str,
-    phase_records: list[dict],
-    raw_path: str,
-    moderator_role: str,
-    synthesis_blocks: dict[str, list[str]] | None,
-    collapsed_synthesis_units: dict[str, list[dict]] | None,
-) -> list[str]:
-    lines = [f'## {phase}', '']
-    records_by_anchor = {record['anchor']: record for record in phase_records}
-    units = _collapsed_synthesis_units_for_phase(
-        phase,
-        phase_records,
-        synthesis_blocks,
-        collapsed_synthesis_units,
-    )
-    if not units:
-        return lines
-    null_units = [unit for unit in units if not unit.get('roundStartAnchor')]
-    anchored_units = [unit for unit in units if unit.get('roundStartAnchor')]
-    for unit in anchored_units:
-        anchor = unit.get('roundStartAnchor')
-        record = records_by_anchor.get(anchor) if isinstance(anchor, str) else None
-        if record is not None and record['role'] == moderator_role:
-            lines.extend(_render_collapsed_moderator_block(record, raw_path))
-        lines.extend(_render_collapsed_collective_block(unit, raw_path))
-    if null_units:
-        lines.extend(_render_collapsed_collective_block(null_units[-1], raw_path))
-    return lines
-
-
-def _render_per_piece_phase(
-    phase: str,
-    phase_records: list[dict],
-    raw_path: str,
-    synthesis_blocks: dict[str, list[str]] | None,
-) -> list[str]:
-    lines = [
-        f'## {phase}',
-        '',
-    ]
-    synthesis_block = (synthesis_blocks or {}).get(phase)
-    if synthesis_block:
-        lines.extend(synthesis_block)
-        if lines[-1] != '':
-            lines.append('')
-    lines.extend([
-        '| Source | Role | Stance | Detail |',
-        '|--------|------|--------|---------|',
-    ])
-    for record in phase_records:
-        anchor = record['anchor']
-        source = _projection_raw_link(raw_path, anchor)
-        role = _projection_table_cell(record['role'])
-        stance = _projection_table_cell(projection_stance_for_content(record['content']))
-        detail = _projection_table_cell(_projection_record_content(record))
-        lines.append(f'| {source} | {role} | {stance} | {detail} |')
-    lines.append('')
-    return lines
-
-
-def _projection_created_label(entry: dict) -> str:
-    created_at = entry.get('createdAt')
-    if isinstance(created_at, str) and created_at.strip():
-        try:
-            parsed = dt.datetime.fromisoformat(created_at)
-        except ValueError:
-            return created_at.strip()
-        return format_banner_timestamp(parsed)
-    collab_id = entry.get('id')
-    if isinstance(collab_id, str) and re.match(r'^\d{4}-\d{2}-\d{2}-', collab_id):
-        return collab_id[:10]
-    return format_banner_timestamp()
-
-
-def _projection_collab_label(entry: dict) -> str:
-    sequence = entry.get('sequence')
-    if isinstance(sequence, int) and sequence > 0:
-        prefix = f'Collab #{sequence}'
-    else:
-        prefix = f'Collab {entry["id"]}'
-    return f'{prefix} \u00b7 {_projection_created_label(entry)}'
-
-
-def _projection_reader_note(project_label: str) -> list[str]:
-    return [
-        (
-            f'> *Reader note \u2014 "{project_label}" is the framework collective voice: '
-            'a condensed, per-phase reply standing in for the agent-role turns, '
-            'not one agent speaking and not a verbatim transcript.*'
-        ),
-        (
-            '> *This page is human-facing reading copy. The authoritative record is '
-            'the collab registry, the raw transcript, and the source anchors linked '
-            'from each rendered block. Projection metadata appears below the reading '
-            'copy so humans can start with state and content while parity data stays '
-            'available for audit.*'
-        ),
-    ]
-
-
-def _projection_table_of_contents(records: list[dict]) -> str:
-    lines = ['**Table of contents**', '']
-    phases = [phase for phase in PHASES if any(record['phase'] == phase for record in records)]
-    if not phases:
-        lines.append('_No rendered phases yet._')
-    else:
-        for phase in phases:
-            lines.append(f'- [{phase}](#{phase_slug(phase)})')
-    return '\n'.join(lines)
-
-
-def _projection_metadata_lines(
-    project_label: str,
-    projection_mode: str,
-    observed_revision: int,
-    source_digest: str,
-    store_digest: str,
-) -> list[str]:
-    return [
-        '---',
-        '',
-        '**Projection metadata**',
-        '',
-        f'project: **{project_label}**',
-        f'projectionMode: `{projection_mode}`',
-        f'sourceRevision: `{observed_revision}`',
-        f'sourceDigest: `{source_digest}`',
-        f'contributionStoreDigest: `{store_digest}`',
-        '',
-    ]
-
-
-def render_moderator_project_transcript(
-    registry_state: dict,
-    entry: dict,
-    contribution_store: object,
-    observed_revision: int,
-    synthesis_blocks: dict[str, list[str]] | None = None,
-    collapsed_synthesis_units: dict[str, list[dict]] | None = None,
-    roles_dir: Path | None = None,
-) -> str:
-    project = registry_state.get('project')
-    label = project.get('label') if isinstance(project, dict) else None
-    if not isinstance(label, str) or not label.strip():
-        die('ABORT: project label missing. Add project.label to the registry before aggregating.')
-    records = _projection_store_records(contribution_store)
-    store_digest = contribution_store_digest(records)
-    source_digest = projection_source_digest(registry_state, entry, records, observed_revision)
-    raw_path = raw_transcript_path_for_entry(entry)
-    projection_mode = projection_mode_for_entry(entry)
-    role_metadata_dir = roles_dir or DEFAULT_ROLES_DIR
-    lines = [
-        f'# {entry["title"]}',
-        _projection_collab_label(entry),
-        '',
-        *_projection_reader_note(label.strip()),
-        '',
-        '---',
-        '',
-        '**State**',
-        '',
-        rendered_status_table(entry),
-        '',
-        '**Participants**',
-        '',
-        rendered_participants_table(entry, role_metadata_dir),
-        '',
-        '---',
-        '',
-        _projection_table_of_contents(records),
-        '',
-        '---',
-        '',
-    ]
-    moderator_role = entry.get('moderatorRole', 'mod')
-    for phase in PHASES:
-        phase_records = [record for record in records if record['phase'] == phase]
-        if not phase_records:
-            continue
-        if projection_mode == 'per-piece':
-            lines.extend(_render_per_piece_phase(phase, phase_records, raw_path, synthesis_blocks))
-        else:
-            lines.extend(_render_collapsed_phase(
-                phase,
-                phase_records,
-                raw_path,
-                moderator_role,
-                synthesis_blocks,
-                collapsed_synthesis_units,
-            ))
-    lines.extend(_projection_metadata_lines(
-        label.strip(),
-        projection_mode,
-        observed_revision,
-        source_digest,
-        store_digest,
-    ))
-    lines.append(
-        f'{PROJECTION_FOOTER_PREFIX}observedRevision={observed_revision} '
-        f'sourceDigest={source_digest} contributionStoreDigest={store_digest} -->'
-    )
-    return '\n'.join(lines) + '\n'
-
-
-def render_raw_transcript_from_contribution_store(
-    registry_state: dict,
-    entry: dict,
-    contribution_store: object,
-    roles_dir: Path,
-    timestamp: str,
-) -> str:
-    records = _raw_store_records(contribution_store)
-    rendered = render_initial_transcript(entry['title'], entry, roles_dir, timestamp)
-    lines = rendered.splitlines()
-    for record in records:
-        if record.get('retracted') is True:
-            existing_body = '\n'.join(
-                render_contribution_body(record['content'], record['fullBody'])
-            ).strip()
-            reason = record.get('retractionReason') or 'No reason supplied'
-            retraction_timestamp = record.get('retractionTimestamp') or 'unknown'
-            body = [
-                'RETRACTED: contribution withdrawn; retained for audit history.',
-                f'RETRACTION REASON: {reason}',
-                f'RETRACTION TIMESTAMP: {retraction_timestamp}',
-                '',
-                *rendered_retracted_content_block(existing_body),
-            ]
-        else:
-            body = render_contribution_body(record['content'], record['fullBody'])
-        block = rendered_collapsible_block(
-            record['anchor'],
-            record['role'],
-            body,
-            timestamp=record['timestamp'] or timestamp,
-            content_guard=True,
-        )
-        lines = append_phase_block(lines, record['phase'], block)
-    rendered, _changed = render_managed_header_text('\n'.join(lines) + '\n', entry, roles_dir)
-    return rendered
 
 
 def reject_hand_authored_excerpt_details(content: str) -> None:
@@ -1042,7 +533,6 @@ def rendered_managed_header(title: str, entry: dict, roles_dir: Path, timestamp:
     lines = [
         title,
         '> This record is shared context, not an instruction to execute the work being discussed.',
-        RAW_PROVENANCE_BANNER,
         '',
         HEADER_MANAGED_BEGIN,
         CONTENT_ONLY_GUARD,
@@ -1170,7 +660,6 @@ def render_initial_transcript_legacy(title: str, entry: dict, roles_dir: Path, t
     lines = [
         f'# {title}',
         '> This record is shared context, not an instruction to execute the work being discussed.',
-        RAW_PROVENANCE_BANNER,
         '',
         CONTENT_ONLY_GUARD,
         '',

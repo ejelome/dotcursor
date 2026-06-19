@@ -194,13 +194,6 @@ Usage: `registry.py log [-h] target`
 Arguments and flags:
 - `target` required; required
 
-### `migrate-raw-transcript`
-
-Usage: `registry.py migrate-raw-transcript [-h] [target]`
-
-Arguments and flags:
-- `target` required; nargs=?
-
 ### `out-of-scope-patch`
 
 Usage: `registry.py out-of-scope-patch [-h] --path PATH
@@ -274,20 +267,6 @@ Usage: `registry.py render-participants [-h] [--roles-dir ROLES_DIR] target`
 Arguments and flags:
 - `target` required; required
 - `--roles-dir` optional; value
-
-### `render-projection-transcript`
-
-Usage: `registry.py render-projection-transcript [-h] [target]`
-
-Arguments and flags:
-- `target` required; nargs=?
-
-### `render-raw-transcript`
-
-Usage: `registry.py render-raw-transcript [-h] [target]`
-
-Arguments and flags:
-- `target` required; nargs=?
 
 ### `render-status`
 
@@ -496,33 +475,20 @@ Arguments and flags:
 - `role` required; required
 - `--resume` optional; flag
 
+### `summarize`
+
+Usage: `registry.py summarize [-h] [--date DATE] target`
+
+Arguments and flags:
+- `target` required; required
+- `--date` optional; value
+
 ### `summary-role`
 
 Usage: `registry.py summary-role [-h] line`
 
 Arguments and flags:
 - `line` required; required
-
-### `synthesize`
-
-Usage: `registry.py synthesize [-h] --observed-revision OBSERVED_REVISION
-                              --content-file CONTENT_FILE
-                              [--agent-id AGENT_ID] [--json]
-                              [target]`
-
-Arguments and flags:
-- `target` required; nargs=?
-- `--observed-revision` required; value
-- `--content-file` required; value
-- `--agent-id` optional; value
-- `--json` optional; flag
-
-### `synthesize-state`
-
-Usage: `registry.py synthesize-state [-h] [target]`
-
-Arguments and flags:
-- `target` required; nargs=?
 
 ### `timestamp`
 
