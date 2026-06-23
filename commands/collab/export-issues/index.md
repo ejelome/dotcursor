@@ -16,7 +16,7 @@ Record exported issue handoff evidence for an issue-terminal collaboration recor
 5. If the active phase is not `Completion`, **ABORT**: `(collab export-issues)` is valid only in `Completion`.
 6. If the stored `terminal` is not `issue`, **ABORT**: `(collab export-issues)` requires terminal issue.
 7. If any non-moderator assigned role lacks a completed execution entry, **ABORT**: issue export blocked: pending execution role(s) remain.
-8. Read `<evidence-file>` as JSON. It must contain an `issues` array with at least one object. Each issue object must contain non-empty `title`; optional `url`, `body`, `owner`, and `delivery` fields must be non-empty strings when present; optional `requires` must be a list of non-empty strings.
+8. Read `<evidence-file>` as JSON. The file must contain an `issues` array with at least one object. Each issue object must contain non-empty `title`; optional `url`, `body`, `owner`, and `delivery` fields must be non-empty strings when present; optional `requires` must be a list of non-empty strings.
 9. Call `commands/collab/engine/registry.py export-issues <target> pe --evidence-file <evidence-file> --caller-role pe`.
 10. Report the helper's `NEXT:` advisory, registry status, and whether the close notice was emitted.
 
@@ -24,9 +24,9 @@ Record exported issue handoff evidence for an issue-terminal collaboration recor
 
 - **Parameters:** target collab slug, id, or numeric `#N` as the first token after `export-issues`; when absent, resolved per **Registry targeting** in **Notes**. `<evidence-file>` is a local JSON file carrying exported issue handoff evidence.
 - **Registry targeting:** Resolve the target collab from the resolved registry, using `commands/collab/engine/registry.py` as the shared helper. When the first token after the route is present and the next token is not an existing file path, treat it as a collab slug, id, or stable numeric position. Otherwise use `activeCollabId`. If the registry is unreadable or invalid, the token does not match any entry, or `activeCollabId` is empty, **ABORT**: registry target unavailable; name the registry field or token.
-- **Evidence contract:** The helper records `exportedIssues = { exportedAt, exportedBy, issues }` in the registry. This is the durable replacement close-gate for issue-terminal records.
+- **Evidence contract:** The helper records `exportedIssues = { exportedAt, exportedBy, issues }` in the registry. The field is the durable replacement close-gate for issue-terminal records.
 - **Close behavior:** When exported issue handoff evidence is recorded and all non-moderator assigned execution roles are complete, the helper closes the record, clears `activeCollabId` when it points at the collab, updates the transcript header status, and writes the default Completion summary when one is absent.
-- **Seal boundary:** This route must not write `verificationSeal` and must not enter `Completion.verification`. Issue-terminal close is governed by exported issue handoff evidence, not reviewer seal state.
+- **Seal boundary:** The route must not write `verificationSeal` and must not enter `Completion.verification`. Issue-terminal close is governed by exported issue handoff evidence, not reviewer seal state.
 
 ```route-arg
 dispatch: (collab export-issues <evidence-file>)

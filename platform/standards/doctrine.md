@@ -1,4 +1,4 @@
-# Platform Design Doctrine
+# Platform design doctrine
 
 Per-design rules that have been deliberated and converged through the collab process. Each entry is a binding ruling, not a guideline; a departure requires a new collab or an explicit supersession note.
 
@@ -38,7 +38,7 @@ Per-design rules that have been deliberated and converged through the collab pro
 
 ## Single-writer helper
 
-**Single-writer helper.** A single Python helper (`commands/collab/engine/registry.py`) owns every write to the registry and transcript. No route, agent, or external script writes registry JSON or transcript Markdown directly. This ensures consistent serialization, revision tracking, stale-write detection, and digest computation across all collab operations.
+**Single-writer helper.** A single Python helper (`commands/collab/engine/registry.py`) owns every write to the registry and transcript. No route, agent, or external script writes registry JSON or transcript Markdown directly. The helper ensures consistent serialization, revision tracking, stale-write detection, and digest computation across all collab operations.
 
 **Source:** collab `2026-06-18-doctrine-naming-glossary-system-reference` (convergence: 2026-06-18)
 
@@ -54,7 +54,7 @@ Per-design rules that have been deliberated and converged through the collab pro
 
 ## Reopen as full reset
 
-**Reopen as full reset.** `(collab reopen <action-plan|handoff>)` performs a complete phase reset before any contributor re-speaks: status, phase, turn order, completion sub-state, stale seal state, and verdict are all cleared. Partial resets via `(collab set active-phase --force)` are prohibited; `(collab reopen)` is the only registered restore primitive. This prevents silent coverage gaps from persisting across reopen rounds.
+**Reopen as full reset.** `(collab reopen <action-plan|handoff>)` performs a complete phase reset before any contributor re-speaks: status, phase, turn order, completion sub-state, stale seal state, and verdict are all cleared. Partial resets via `(collab set active-phase --force)` are prohibited; `(collab reopen)` is the only registered restore primitive. Full reset prevents silent coverage gaps from persisting across reopen rounds.
 
 **Source:** collab `2026-06-18-doctrine-naming-glossary-system-reference` (convergence: 2026-06-18)
 

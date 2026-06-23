@@ -41,7 +41,7 @@ Patch `REPOSITORY.md` in the current repository with repo-specific multi-agent m
 - **Validation:** The patch workflow validates scaffold-local state only: `REPOSITORY.md` remains present and every `<!-- TODO(patch): ... -->` marker is resolved after the write.
 - **Validation inference scope:** Validation commands may be inferred only from the target repo — do not copy command paths from sibling route playbooks or any other source outside the target repo root. Concrete failed example: copying a command path from a sibling route file that resolves under `~/.cursor/` but does not exist in the target repo. When the exact path does not resolve under the target repo, leave a bounded `<!-- TODO(patch): list repo-specific validation commands -->` placeholder.
 - **Confirm-before-write:** `patch.md` is a confirm-before-write route; the confirmation step is mandatory and not optional for any placeholder. Gate contract: `platform/standards/command-argument.md`.
-- **Force flag:** `--force` is eligible only for the route's gated overwrite path. It does not bypass missing-file, idempotency, inference, validation, or permission failures.
+- **Force flag:** `--force` is eligible only for the route's gated overwrite path. `--force` does not bypass missing-file, idempotency, inference, validation, or permission failures.
 
 ```route-arg
 dispatch: (agent patch [--force])

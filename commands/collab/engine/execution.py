@@ -3,11 +3,20 @@
 #        subagent spawns, completion check across all assigned roles, execution-scope advisory.
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
-from commands.collab.engine.digests import active_execution_entries
+from commands.collab.engine.digests import active_execution_entries, touched_paths_for_execution
 from commands.collab.engine.errors import die
-from commands.collab.engine.git_repo import git_commit_paths, work_repo_root
+from commands.collab.engine.git_repo import (
+    git_commit_paths,
+    git_committed_deletion_paths,
+    git_index_or_staged_paths,
+    git_staged_paths,
+    git_unstaged_paths,
+    work_repo_root,
+    working_tree_path_exists,
+)
 from commands.collab.engine.handoff_shape import handoff_state_for_role
 from commands.collab.engine.normalizers import normalize_scope_path, path_is_within, scope_matches_declared
 from commands.collab.engine.participants import effective_turn_order, has_participant
@@ -132,3 +141,30 @@ def all_execution_completed(entry: dict) -> bool:
     if not roles:
         return False
     return all(execution.get(role, {}).get('status') == 'completed' for role in roles)
+
+
+def assert_execution_touched_paths_in_git_state(entry: dict) -> None:
+    touched = touched_paths_for_execution(entry)
+    if not touched:
+        return
+    repo_root = work_repo_root(entry)
+    in_git = git_index_or_staged_paths(touched, repo_root)
+    staged = git_staged_paths(touched, repo_root)
+    unstaged = git_unstaged_paths(touched, repo_root)
+    committed_deletions = git_committed_deletion_paths(touched, repo_root)
+    invalid: list[str] = []
+    for path in touched:
+        if path in staged or path in unstaged:
+            invalid.append(path)
+            continue
+        if path in in_git:
+            continue
+        if path in committed_deletions and not working_tree_path_exists(path, repo_root):
+            continue
+        invalid.append(path)
+    invalid = sorted(invalid)
+    if invalid:
+        die(
+            'SEAL-GIT-STATE: implementation not in git; '
+            f'unstaged or uncommitted touchedPath(s) in {repo_root}: {json.dumps(invalid, separators=(",", ":"))}'
+        )

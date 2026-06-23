@@ -13,7 +13,7 @@
 
 ## Notes
 
-Spec for `commands/collab/engine/registry_state.py` — state-root and project-identity resolution. Extracted from `registry.py` in commit `a55380c`. This module handles path resolution only; it does not read or write registry or transcript data.
+The spec covers `commands/collab/engine/registry_state.py` — state-root and project-identity resolution. Extracted from `registry.py` in commit `a55380c`. The module handles path resolution only; it does not read or write registry or transcript data.
 
 ### Public entry
 

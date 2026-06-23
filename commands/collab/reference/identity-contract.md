@@ -1,6 +1,6 @@
 # Collab project identity contract
 
-The checked-in repo marker (`.collab.json`) binds a repository to its user-scope collab state root. This contract governs the file schema, the `projectId` binding rules, and the state-root resolver's behavior.
+The checked-in repo marker (`.collab.json`) binds a repository to the repository's user-scope collab state root. The contract governs the file schema, the `projectId` binding rules, and the state-root resolver's behavior.
 
 ## Trigger
 
@@ -26,7 +26,7 @@ The checked-in repo marker (`.collab.json`) binds a repository to its user-scope
 
 - **Identity properties:** `projectId` is opaque — tooling must not derive or infer it from path, basename, remote URL, or worktree location. The id follows git history: a renamed or forked repository carries the same id and resolves to the same state root. `projectId` is written once at initialization and never changed, even when `label` is updated or the repository is moved.
 
-- **State root:** The resolver maps `projectId` → `$HOME/.collabs/<projectId>/`. This user-scope collab state root is deliberately non-XDG because records are user-browsed, repo-independent operational state. The `$HOME` expansion happens at runtime; the absolute path is not stored in the repo. The resolver accepts a `COLLAB_STATE_HOME` environment variable that replaces `$HOME/.collabs/` as the base path; this is a test-isolation hook and is not a supported production configuration surface.
+- **State root:** The resolver maps `projectId` → `$HOME/.collabs/<projectId>/`. This user-scope collab state root is deliberately non-XDG because records are user-browsed, repo-independent operational state. The `$HOME` expansion happens at runtime; the absolute path is not stored in the repo. The resolver accepts a `COLLAB_STATE_HOME` environment variable that replaces `$HOME/.collabs/` as the base path; the variable is a test-isolation hook and is not a supported production configuration surface.
 
   | Path under state root | Description |
   | --- | --- |
@@ -38,4 +38,4 @@ The checked-in repo marker (`.collab.json`) binds a repository to its user-scope
 
 - **Label projection:** The `label` field is display metadata only. The helper projects it from `.collab.json` into registry project metadata during writes, uses the identity-file value for list display when available, and synchronizes the user-scope collab state root `label` file whenever the resolver runs. Updating `label` never changes `projectId` or the resolved path.
 
-- **Repo-local state:** Repo-local `.collabs/` state is retired. New records are created only under the user-scope collab state root, and the resolver does not read `.collabs/project.json` or `.collabs/registry.json` as a fallback.
+- **Repo-local state:** Repo-local `.collabs/` state has been retired. New records are created only under the user-scope collab state root, and the resolver does not read `.collabs/project.json` or `.collabs/registry.json` as a fallback.

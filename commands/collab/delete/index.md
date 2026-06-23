@@ -1,6 +1,6 @@
 # (collab delete)
 
-Permanently remove a collab record from the registry and disk. This operation is destructive and requires explicit confirmation.
+Permanently remove a collab record from the registry and disk. The operation is destructive and requires explicit confirmation.
 
 ## Trigger
 

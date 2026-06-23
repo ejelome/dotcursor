@@ -21,7 +21,7 @@ Seal the `Completion.verification` sub-state after a reviewer pass, recording th
 6. If the reported `verificationSubState` is not `verification`, **ABORT**: `Completion.verification` sub-state is not active; current sub-state: `<verificationSubState>`.
 <!-- abort: seal-verification-no-reviewer -->
 7. If `reviewerRole` is absent from the registry `participants` list, **ABORT**: reviewer role is not a registered participant; run `(collab join --role <reviewerRole>)` first.
-<!-- abort: seal-verification-zero-rounds -->
+<!-- abort: seal-verification-zero-round-no-record -->
 8. If `verificationRounds` is zero, **ABORT**: zero verification rounds; at least one reviewer-executor paired event is required before sealing.
 <!-- abort: seal-verification-wrong-role -->
 9. Resolve the sealing participant from the current agent's joined role. If the joining role does not match `reviewerRole`, **ABORT**: seal must be authored by the reviewer role; current role: `<role>`; expected: `<reviewerRole>`.
@@ -38,6 +38,7 @@ Seal the `Completion.verification` sub-state after a reviewer pass, recording th
 ## Notes
 
 - **Parameters:** target collab slug, id, or numeric `#N` as the first token after `seal verification`; when absent, resolved per **Registry targeting** in **Notes**. `--cap-exit <action>` — one of `reopen-action-plan`, `reopen-handoff`, `follow-up-collab`, or `archive`; required when the round cap is reached, optional when the reviewer chooses to end the loop before the cap. With `--cap-exit follow-up-collab`, `--restore-reason <reason>`, `--evidence <json>`, and `--failure-category <category>` are required and are recorded on `verificationSeal.followUp`.
+<!-- abort: seal-verification-registry-target -->
 - **Registry targeting:** Resolve the target collab from the resolved registry, using `commands/collab/engine/registry.py` as the shared helper. When the first token after the route is present, treat it as a collab slug, id, or stable numeric position. Otherwise use `activeCollabId`. If the registry is unreadable or invalid, the token does not match any entry, or `activeCollabId` is empty, **ABORT** (agent-honor-system): registry target unavailable; name the registry field or token.
 - **Reviewer-only:** Only the `reviewerRole` participant may author the seal. Non-reviewer roles must not issue this command.
 - **Git-tracking gate:** `seal-render` enforces Step 12 by checking each execution `touchedPath` against git's committed `HEAD` state, index, and unstaged diff. Committed paths — including paths committed as deletions — pass. A committed deletion passes because the path's final state (removed) is recorded in a commit, even though the file no longer exists on disk. Working-tree-only paths, staged paths, and touched paths with unstaged content fail with `SEAL-GIT-STATE: implementation not in git`. Sealing over uncommitted work would record paths in `verificationSeal.touchedPaths` whose content does not exist in `HEAD`, so helper enforcement blocks the seal before writing.

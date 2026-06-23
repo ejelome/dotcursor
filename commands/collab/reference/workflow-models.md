@@ -12,7 +12,7 @@ How collab records close, and what `--terminal` means at init time. Close behavi
 
 `seal` is the default. Any collab initialized without `--terminal` uses the seal model (`DEFAULT_TERMINAL = 'seal'` in `registry_constants.py`).
 
-New terminal values are additions, not replacements. The `planned-routes.md` gate blocks `--terminal issue` until its prerequisites are in place — using it too early breaks the collab tooling for the whole working tree.
+New terminal values are additions, not replacements. The `planned-routes.md` gate blocks `--terminal issue` until its prerequisites are in place — using `--terminal issue` too early breaks the collab tooling for the whole working tree.
 
 ## Seal model (`--terminal seal`)
 
@@ -41,7 +41,7 @@ Issue-terminal collabs close without a `verificationSeal`; its absence is not an
 
 ### Replacement close-gate
 
-`(collab export-issues)` writes evidence from a file you supply. It does not create issues from Action Plan items. Automatic issue creation is not supported; open a new collab to charter that work.
+`(collab export-issues)` writes evidence from a file you supply. `(collab export-issues)` does not create issues from Action Plan items. Automatic issue creation is not supported; open a new collab to charter that work.
 
 ## `--terminal` flag
 

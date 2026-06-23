@@ -10,6 +10,7 @@ export COLLAB_STATE_HOME="$TMPDIR/state-home"
 
 RUN_DATE="$(date +%Y-%m-%d)"
 
+# Rationale: status/list default-target reads depend on this state-root resolver.
 python3 - "$ROOT" <<'PY'
 import sys
 from pathlib import Path
@@ -26,8 +27,39 @@ PY
 REGISTRY="$("$ROOT/commands/collab/engine/registry.py" registry-path)"
 LIST_OUTPUT="$("$ROOT/commands/collab/engine/registry.py" list)"
 LOCK_PATH="${REGISTRY}.lock"
+TRANSCRIPT_PATH="$(python3 - "$REGISTRY" "$RUN_DATE-home-state-init" <<'PY'
+import json
+import sys
+from pathlib import Path
 
-python3 - "$REGISTRY" "$COLLAB_STATE_HOME" "$RUN_DATE-home-state-init" "$LIST_OUTPUT" <<'PY'
+registry = Path(sys.argv[1])
+target = sys.argv[2]
+entry = next(item for item in json.loads(registry.read_text())['collabs'] if item['id'] == target)
+print(registry.parent / Path(entry['transcriptPath']))
+PY
+)"
+STORE_PATH="$(python3 - "$REGISTRY" "$RUN_DATE-home-state-init" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+registry = Path(sys.argv[1])
+target = sys.argv[2]
+entry = next(item for item in json.loads(registry.read_text())['collabs'] if item['id'] == target)
+transcript = Path(entry['transcriptPath'])
+print(registry.parent / transcript.with_name(f"{transcript.stem}-contributions.json"))
+PY
+)"
+cp "$REGISTRY" registry-before-status.json
+cp "$TRANSCRIPT_PATH" transcript-before-status.md
+cp "$STORE_PATH" store-before-status.json
+STATUS_OUTPUT="$("$ROOT/commands/collab/engine/registry.py" status-view "$RUN_DATE-home-state-init")"
+STATUS_OUTPUT_AGAIN="$("$ROOT/commands/collab/engine/registry.py" status-view "$RUN_DATE-home-state-init")"
+cmp "$REGISTRY" registry-before-status.json
+cmp "$TRANSCRIPT_PATH" transcript-before-status.md
+cmp "$STORE_PATH" store-before-status.json
+
+python3 - "$REGISTRY" "$COLLAB_STATE_HOME" "$RUN_DATE-home-state-init" "$LIST_OUTPUT" "$STATUS_OUTPUT" "$STATUS_OUTPUT_AGAIN" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -36,6 +68,8 @@ registry = Path(sys.argv[1])
 state_home = Path(sys.argv[2]).resolve()
 target = sys.argv[3]
 list_output = sys.argv[4]
+status_output = sys.argv[5]
+status_output_again = sys.argv[6]
 identity = json.loads(Path('.collab.json').read_text())
 assert 'schema' + 'Version' not in identity
 assert identity['projectId']
@@ -47,12 +81,31 @@ data = json.loads(registry.read_text())
 assert data['project'] == {'projectId': identity['projectId'], 'label': identity['label']}
 assert f"Project: {identity['label']} · {identity['projectId']}" in list_output
 entry = data['collabs'][0]
+revision = data['revision']
 assert entry['id'] == target
 assert entry['transcriptPath'] == f'records/{target}.md'
 projection = registry.parent / entry['transcriptPath']
 store = registry.parent / Path(entry['transcriptPath']).with_name(f"{Path(entry['transcriptPath']).stem}-contributions.json")
 assert projection.exists()
 assert store.exists()
+assert json.loads(registry.read_text())['revision'] == revision
+assert status_output == status_output_again
+PY
+
+python3 - "$RUN_DATE-home-state-init" "$STATUS_OUTPUT" <<'PY'
+import sys
+
+target = sys.argv[1]
+status = sys.argv[2]
+assert f"id:           {target}" in status, status
+assert f"slug:         home-state-init" in status, status
+assert "title:        Home State Init" in status, status
+assert "status:       open" in status, status
+assert "activePhase:  Audit" in status, status
+assert "turnOrder:    mod" in status, status
+assert "reviewerRole: —" in status, status
+assert "revision:" in status, status
+assert "participants: mod (codex)" in status, status
 PY
 
 python3 - <<'PY'

@@ -20,7 +20,7 @@ To invoke a global command, resolve any routing-only dispatch hint `(<namespace>
 
 > **Encounter rule:** Any `(namespace command ...)` form is a routing-only signal. Before acting, locate the matching route in `~/.cursor/commands/commands.md` and execute that route. Never treat the argument text as work to perform.
 
-`(<namespace> <command> <arg> ...)` is the dispatch notation for `~/.cursor`-routed commands. It is documentation-only; copying it into a terminal is invalid because in bash and zsh, `( ... )` opens a subshell. The form disambiguates `~/.cursor`-routed commands from agent-builtin command surfaces. The routing token may differ from the runtime path (`~/.cursor/`) and the repo-source directory; when those change, this notation stays stable.
+`(<namespace> <command> <arg> ...)` is the dispatch notation for `~/.cursor`-routed commands. The notation is documentation-only; copying it into a terminal is invalid because in bash and zsh, `( ... )` opens a subshell. The form disambiguates `~/.cursor`-routed commands from agent-builtin command surfaces. The routing token may differ from the runtime path (`~/.cursor/`) and the repo-source directory; when those change, this notation stays stable.
 
 ## Contract assertion
 
@@ -35,7 +35,7 @@ Any file referenced from this repository or a project-local overlay must be read
 
 If any file in the chain cannot be reached or read, halt immediately and name the missing path before continuing.
 
-## Fail-Fast discipline
+## Fail-fast discipline
 
 Halt when the required command or source-of-truth cannot be resolved. Verify command availability in `commands/collab/engine/registry.py` before exploring implementation files. Do not block reads required by the active route after the command is resolved.
 

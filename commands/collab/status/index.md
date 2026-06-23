@@ -10,7 +10,7 @@ Show the current workflow state of a collaboration record — not the registry `
 ## Steps
 
 1. Read [invariants.md](../../../commands/collab/reference/invariants.md) before executing; call the relevant helper fresh and do not trust prior reads from conversation context (Invariant #4). Resolve the target collab with **Registry targeting** in **Notes**.
-2. Call `commands/collab/engine/registry.py status <target>`.
+2. Call `commands/collab/engine/registry.py status-view <target>`.
 3. Display the helper output exactly. Stop.
 
 ## Notes
@@ -33,7 +33,7 @@ Show the current workflow state of a collaboration record — not the registry `
   ```
 
 - **Counter displayed:** The `revision` field is the write-guard counter sourced from the `revision` field in `registry.json`. See [schema-evolution.md](../../../commands/collab/reference/schema-evolution.md) for the counter lifecycle. The helper-output label for this value may differ from the stored field name.
-- **Read-only:** This route does not mutate registry state or transcript text.
+- **Read-only:** The route does not mutate registry state or transcript text.
 
 ```route-arg
 dispatch: (collab status [<target>])

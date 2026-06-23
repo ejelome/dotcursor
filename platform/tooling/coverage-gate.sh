@@ -18,7 +18,7 @@ COLLAB_COMMAND_ROOT = Path("commands/collab")
 
 # Accepted-debt decision — 2026-06-08 (tooling-contracts collab, tw)
 #
-# The 8 routes below have anchored ABORT clauses (structural P9 requirement met) but
+# The 6 routes below have anchored ABORT clauses (structural P9 requirement met) but
 # no corresponding test files. The gate warns instead of enforcing for these routes.
 #
 # Why deferred: each route requires non-trivial registry-state fixtures to exercise its
@@ -26,26 +26,26 @@ COLLAB_COMMAND_ROOT = Path("commands/collab")
 # that exceeds the scope of the tooling-contracts collab, which targeted the paved-path
 # and contract-surface gaps.
 #
-#   diff             — display-only; ABORT paths need registry state stubs
 #   export-issues    — issue-terminal export; needs populated registry + transcript fixtures
 #   log              — audit log display; needs multi-entry registry state
 #   participant-verify — 3-turn lifecycle; significant registry orchestration required
 #   reopen           — lifecycle restore; needs seal + verdict state preconditions
-#   seal-verification — reviewer seal; needs full participant-verification preconditions
 #   show-verdict     — display-only; needs verdict + seal state
 #   status           — display-only; needs varied phase/status state
+#
+# Retired from this deferred set on 2026-06-23:
+#   seal-verification — credited through existing seal-render coverage rows, an anchored
+#   registry-target honor-system clause, and the allowlisted helper write-failure clause.
 #
 # Burn-down trigger: open a dedicated coverage-test-authoring collab when any of the
 # following fires — (1) a new collab explicitly scopes P9 test authoring for these
 # routes, (2) DISCOVERY_DEBT_ROUTE_FILES grows beyond 10 entries, or (3) a test
 # suite regression surfaces in one of these routes during another collab.
 DISCOVERY_DEBT_ROUTE_FILES = {
-    "commands/collab/diff/index.md",
     "commands/collab/export-issues/index.md",
     "commands/collab/log/index.md",
     "commands/collab/participant-verify/index.md",
     "commands/collab/reopen/index.md",
-    "commands/collab/seal-verification/index.md",
     "commands/collab/show-verdict/index.md",
     "commands/collab/status/index.md",
 }
@@ -194,6 +194,24 @@ def existing_test_stems(path: Path) -> set[str]:
     return {item.name.removesuffix(".test.sh") for item in path.glob("*.test.sh")}
 
 
+def central_checker_test_stems(root: Path, inventory_path: Path) -> set[str]:
+    if not inventory_path.exists():
+        return set()
+    stems: set[str] = set()
+    row_re = re.compile(
+        r"^\| `registry\.py/(?P<stem>[^`]+)\.test\.sh` \(removed; consolidated\) "
+        r"\| [^|]+ \| central-checker: `(?P<checker>[^`]+)` \|"
+    )
+    for raw in inventory_path.read_text().splitlines():
+        match = row_re.match(raw)
+        if not match:
+            continue
+        checker = root / match.group("checker")
+        if checker.exists():
+            stems.add(match.group("stem"))
+    return stems
+
+
 def main() -> int:
     args = parse_args()
     root = Path(args.routes_dir)
@@ -220,7 +238,7 @@ def main() -> int:
 
     allowlist = load_allowlist(allowlist_path)
     allowlist_paths = allowlist_path_fingerprints(allowlist)
-    discovered = existing_test_stems(tests_dir)
+    discovered = existing_test_stems(tests_dir) | central_checker_test_stems(root, root / "tests/specs/tests.md")
     required: list[str] = []
     errors: list[str] = []
     allowlisted_unanchored = 0

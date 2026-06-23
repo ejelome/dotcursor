@@ -13,7 +13,7 @@
 
 ## Notes
 
-Defines the required output lines per collab helper command, advisory line ordering, and exit-code semantics. Authoritative for platform-engineer role audits under item #5.
+The document defines the required output lines per collab helper command, advisory line ordering, and exit-code semantics. The definitions are authoritative for platform-engineer role audits under item #5.
 
 ## Exit codes
 

@@ -9,10 +9,10 @@ import uuid
 from pathlib import Path
 
 from commands.collab.engine.dispatch_forms import collab_dispatch
+from commands.collab.engine.registry_constants import DISALLOWED_VERSION_FIELD
 from commands.collab.engine.errors import die
 
 PROJECT_ID_FILENAME = '.collab.json'
-DISALLOWED_VERSION_FIELD = 'schema' + 'Version'
 STATE_HOME_ENV = 'COLLAB_STATE_HOME'
 DEFAULT_STATE_HOME = Path.home() / '.collabs'
 PROJECT_ID_RE = re.compile(r'^[a-z0-9][a-z0-9-]{7,127}$')

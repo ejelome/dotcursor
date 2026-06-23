@@ -187,12 +187,6 @@
       "capabilityTier": "transformation",
       "effortTier": "low",
       "rationale": "Reads registry state and displays the current workflow state of the resolved collab."
-    },
-    {
-      "route": "diff",
-      "capabilityTier": "transformation",
-      "effortTier": "low",
-      "rationale": "Compares registry-derived content state against the content-only transcript sections."
     }
   ]
 }

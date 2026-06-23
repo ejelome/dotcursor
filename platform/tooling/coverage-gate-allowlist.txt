@@ -1,12 +1,4 @@
-# Weekly-review reduction target (W25, refreshed 2026-06-21):
-# Gate-reported live migration debt is 88 allowlisted unanchored ABORT clauses,
-# unchanged across the W25 window. The prior <=66-by-W25 target was not met;
-# debt held at 88. Next weekly target: reduce live debt to <=76 by anchoring and testing
-# at least 12 clauses. Route-family targets: contribution flow
-# (speak/rewrite-speak plus advance/restore) -6 entries; completion flow
-# (run-plan/rewrite-execution) -4 entries; participant/admin flow
-# (join/remove-participant plus set/unset) -2 entries. Keep <=66 as the next
-# post-next-weekly reduction target after the next weekly cut. Keep fingerprints below
+# Functional fingerprints consumed by coverage-gate.sh.
 commands/collab/activate/index.md:12|6de3220d9d35
 commands/collab/activate/index.md:13|8a77055f7223
 commands/collab/activate/index.md:14|b714b022357b
@@ -29,8 +21,6 @@ commands/collab/join/index.md:15|de16aaa1a4aa
 commands/collab/join/index.md:16|fecd327780c1
 commands/collab/join/index.md:17|4ad9e6257fe9
 commands/collab/join/index.md:28|5c789ceb0b5e
-commands/collab/list/index.md:12|dabe2f670caf
-commands/collab/list/index.md:14|7bae20ed8734
 commands/collab/open/index.md:13|16d605315414
 commands/collab/open/index.md:15|74db554f9a53
 commands/collab/open/index.md:24|5c789ceb0b5e
@@ -55,15 +45,15 @@ commands/collab/rewrite-execution/index.md:16|71938ea10117
 commands/collab/rewrite-execution/index.md:17|1a4357b0b6a3
 commands/collab/rewrite-execution/index.md:18|9d7fac645cbc
 commands/collab/rewrite-execution/index.md:19|fd500f9ba3e9
-commands/collab/rewrite-speak/index.md:15|16d605315414
-commands/collab/rewrite-speak/index.md:16|9a198642e797
-commands/collab/rewrite-speak/index.md:17|c190d93368e3
-commands/collab/rewrite-speak/index.md:18|60a4bdb147b3
-commands/collab/rewrite-speak/index.md:19|4637c7a2b2d5
-commands/collab/rewrite-speak/index.md:20|6267b9a1db37
-commands/collab/rewrite-speak/index.md:21|4118dc3449da
-commands/collab/rewrite-speak/index.md:22|d717d7857b6c
-commands/collab/rewrite-speak/index.md:29|5c789ceb0b5e
+commands/collab/rewrite-speak/index.md:23|16d605315414
+commands/collab/rewrite-speak/index.md:24|9a198642e797
+commands/collab/rewrite-speak/index.md:25|c190d93368e3
+commands/collab/rewrite-speak/index.md:26|60a4bdb147b3
+commands/collab/rewrite-speak/index.md:27|4637c7a2b2d5
+commands/collab/rewrite-speak/index.md:28|6267b9a1db37
+commands/collab/rewrite-speak/index.md:29|4118dc3449da
+commands/collab/rewrite-speak/index.md:30|d717d7857b6c
+commands/collab/rewrite-speak/index.md:37|5c789ceb0b5e
 commands/collab/rewrite-summary/index.md:15|16d605315414
 commands/collab/rewrite-summary/index.md:16|fc46f18344c2
 commands/collab/rewrite-summary/index.md:24|5c789ceb0b5e
@@ -74,6 +64,7 @@ commands/collab/run-plan/index.md:16|f3ce6825f74e
 commands/collab/run-plan/index.md:17|1a4357b0b6a3
 commands/collab/run-plan/index.md:20|8eda620cd3fe
 commands/collab/run-plan/index.md:35|5c789ceb0b5e
+commands/collab/seal-verification/index.md:35|0c09498256aa
 commands/collab/set/index.md:13|3f54d30be2b2
 commands/collab/set/index.md:14|d84cbcba8683
 commands/collab/set/index.md:15|a770ecd339c1

@@ -37,9 +37,9 @@ Files under `generated/` are produced by scripts in `platform/tooling/`. Edit th
 
 ## User-scope collab state root
 
-`$HOME/.collabs/<projectId>/` is a fourth operating plane that holds live collab records and transcripts for this repository. It lives outside the repository tree and survives `git clean`, `/compact`, and agent swaps. `.collab.json` at the repo root is the tracked marker that binds this directory to the repo; agents resolve the state root by reading `.collab.json` and computing the `projectId` from it.
+`$HOME/.collabs/<projectId>/` is a fourth operating plane that holds live collab records and transcripts for this repository. The directory lives outside the repository tree and survives `git clean`, `/compact`, and agent swaps. `.collab.json` at the repo root is the tracked marker that binds this directory to the repo; agents resolve the state root by reading `.collab.json` and computing the `projectId` from it.
 
-The state root is excluded from git — it is never source, never deployed, and never committed. It is the durable runtime side of the collab system: what the registry writes, agents read, and seals are computed against.
+The state root is excluded from git — it is never source, never deployed, and never committed. The state root is the durable runtime side of the collab system: what the registry writes, agents read, and seals are computed against.
 
 ## Prerequisites
 

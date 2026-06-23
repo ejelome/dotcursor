@@ -475,6 +475,13 @@ Arguments and flags:
 - `role` required; required
 - `--resume` optional; flag
 
+### `status-view`
+
+Usage: `registry.py status-view [-h] target`
+
+Arguments and flags:
+- `target` required; required
+
 ### `summarize`
 
 Usage: `registry.py summarize [-h] [--date DATE] target`

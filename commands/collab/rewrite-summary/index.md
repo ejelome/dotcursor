@@ -9,7 +9,7 @@ Rewrite the most recent summary in-place within the Completion section of a coll
 
 ## Steps
 
-**This command rewrites the summary only. Do not make file edits, run shell commands, or modify any codebase artifact outside the user-scope collab state root.**
+**The command rewrites the summary only. Do not make file edits, run shell commands, or modify any codebase artifact outside the user-scope collab state root.**
 
 1. Read [invariants.md](../../../commands/collab/reference/invariants.md) before executing; call the relevant helper fresh and do not trust prior reads from conversation context (Invariant #4). Resolve the target collab with **Registry targeting** in **Notes**.
 2. Read the resolved registry and the resolved transcript path. If either is unreadable, **ABORT**: record unreadable; name the path.
