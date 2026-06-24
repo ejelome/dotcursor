@@ -10,10 +10,15 @@ Register one joinable participant in the active collaboration record from comman
 ## Steps
 
 1. Read [invariants.md](../../../commands/collab/reference/invariants.md) before executing; call the relevant helper fresh and do not trust prior reads from conversation context (Invariant #4). Resolve the target collab with **Registry targeting** in **Notes**.
+<!-- abort: join-role-required -->
 2. Resolve `<role>` from `--role <role>`. If missing, **ABORT**: `--role <role>` is required.
+<!-- abort: join-role-file-unreadable -->
 3. Read `../../../commands/collab/reference/roles/<role>.json`. If unreadable, **ABORT**: role file unreadable; name the expected path.
+<!-- abort: join-invalid-role-json -->
 4. Validate the role JSON against **Role schema** in **Notes**. If invalid, **ABORT**: invalid role JSON; name the failed field.
+<!-- abort: join-record-unreadable -->
 5. Read the resolved registry and the resolved transcript path. If either is unreadable, **ABORT**: record unreadable; name the path.
+<!-- abort: join-record-is-closed -->
 6. If the registry status is `closed` or `archived`, **ABORT**: record is closed.
 7. Append `<role>` to the registry `participants` list when missing. If the role already exists, leave the registry roster unchanged.
 8. If the registry `turnOrder` is empty, seed it from `participants`, excluding `reviewerRole` when `reviewerMode` is `last-in-convergent-phases`. If the role is new, `turnOrder` exists, and the role is not that reviewer, append the role at the end.
@@ -25,6 +30,7 @@ Register one joinable participant in the active collaboration record from comman
 ## Notes
 
 - **Parameters:** target collab slug, id, or numeric `#N` as the first positional token after `join`; when absent, resolved per **Registry targeting** in **Notes**. `--role <role>` — required role key.
+<!-- abort: join-registry-target-unavailable -->
 - **Registry targeting:** Resolve the target collab from the resolved registry, using `commands/collab/engine/registry.py` as the shared helper. When the first token after the route is present, treat it as a collab slug, id, or stable numeric position. Otherwise use `activeCollabId`. If the registry is unreadable or invalid, the token does not match any entry, or `activeCollabId` is empty, **ABORT**: registry target unavailable; name the registry field or token.
 - **Role schema:** Defined in [platform/standards/role-standard.md](../../../platform/standards/role-standard.md). Required fields: `key` (must match `<role>`), `displayName`, `concerns` (non-empty array). Optional field: `prohibitions` (string array; principle-level behavioral constraints, not a runtime enforcement list). For per-role join-time model recommendations, see [`agent-model.md`](../../../commands/collab/reference/agent-model.md).
 - **Participant row format:** `| <#> | <key> | <displayName> | <agentId> | <concern>; <concern> |`. The table header is `| # | Key | Role | Agent | Responsibilities |`. The `agentId` value is the joining agent's active runtime harness identity declared in Step 9 on first join; see **`agentId`** in **Notes**.

@@ -2044,14 +2044,13 @@ def set_field(
                 die(f'{field} requires a non-empty value')
             entry[field] = value
         transcript_path = lifecycle_transcript_path_for_entry(entry)
-        if transcript_path.exists():
-            rendered, header_changed = render_managed_header_text(transcript_path.read_text(), entry, roles_dir)
-            if forced_active_phase:
-                force_advisory = forced_active_phase_advisory(entry, rendered)
-            print_header_overwrite(header_changed)
-            commit_registry_and_transcript(path, data, transcript_path, rendered)
-        else:
-            save_registry(path, data)
+        if not transcript_path.exists():
+            die(f'transcript missing: {transcript_path}')
+        rendered, header_changed = render_managed_header_text(transcript_path.read_text(), entry, roles_dir)
+        if forced_active_phase:
+            force_advisory = forced_active_phase_advisory(entry, rendered)
+        print_header_overwrite(header_changed)
+        commit_registry_and_transcript(path, data, transcript_path, rendered)
     print(entry['id'])
     if force_advisory:
         print(force_advisory)
@@ -2087,6 +2086,51 @@ def unset_field(
         nextdata = deepcopy(data)
         next_entry = resolve_collab(nextdata, target)
         clear_reviewer(next_entry)
+        validate_registry(nextdata, path)
+
+        transcript_path = lifecycle_transcript_path_for_entry(next_entry)
+        if not transcript_path.exists():
+            die(f'transcript missing: {transcript_path}')
+        rendered, header_changed = render_managed_header_text(transcript_path.read_text(), next_entry, roles_dir)
+        print_header_overwrite(header_changed)
+        commit_registry_and_transcript(path, nextdata, transcript_path, rendered)
+    print(next_entry['id'])
+    return 0
+
+
+def remove_participant(
+    path: Path,
+    target: str,
+    role: str,
+    roles_dir: Path,
+    caller_role: str | None = None,
+) -> int:
+    with registry_lock(path):
+        data = load_registry(path)
+        current_entry = resolve_collab(data, target)
+        assert_caller_role(current_entry, caller_role, 'remove-participant')
+        if current_entry['status'] in {'closed', 'archived'}:
+            die('record is closed')
+        if role == current_entry['moderatorRole']:
+            die('moderator cannot be removed')
+        if role == reviewer_role(current_entry):
+            die('reviewer cannot be removed while assigned')
+        if not has_participant(current_entry, role):
+            print(f'participant already absent: {role}')
+            return 0
+
+        nextdata = deepcopy(data)
+        next_entry = resolve_collab(nextdata, target)
+        next_entry['participants'] = [
+            participant
+            for participant in next_entry.get('participants', [])
+            if participant.get('role') != role
+        ]
+        next_entry['turnOrder'] = [
+            participant_role
+            for participant_role in next_entry.get('turnOrder', [])
+            if participant_role != role
+        ]
         validate_registry(nextdata, path)
 
         transcript_path = lifecycle_transcript_path_for_entry(next_entry)
@@ -3087,16 +3131,19 @@ def advance_phase(
         assert_caller_role(entry, caller_role, 'advance' if direction == 'next' else 'restore')
         if entry['status'] in {'closed', 'archived'}:
             die('record is closed')
-        index = PHASES.index(entry['activePhase'])
-        from_phase = entry['activePhase']
+        active_phase = entry.get('activePhase')
+        if active_phase not in PHASES:
+            die('active phase missing in metadata')
+        index = PHASES.index(active_phase)
+        from_phase = active_phase
         transcript_path = lifecycle_transcript_path_for_entry(entry)
-        transcript = transcript_path.read_text() if transcript_path.exists() else None
+        if not transcript_path.exists():
+            die(f'transcript missing: {transcript_path}')
+        transcript = transcript_path.read_text()
         if direction == 'next':
             if index == len(PHASES) - 1:
                 die('no next phase')
             if from_phase == 'Action Plan':
-                if transcript is None:
-                    die(f'transcript missing: {transcript_path}')
                 validate_action_plan_executable_scope(transcript)
             entry['activePhase'] = PHASES[index + 1]
             if entry['activePhase'] in MOD_EXCLUDED_PHASES:
@@ -3117,13 +3164,10 @@ def advance_phase(
                 invalidate_verification_seal(entry, f'restored to {entry["activePhase"]}')
 
         notice = transition_notice(from_phase, entry['activePhase'])
-        if transcript_path.exists():
-            rendered, header_changed = render_managed_header_text(transcript or transcript_path.read_text(), entry, DEFAULT_ROLES_DIR)
-            notice = add_completion_summary_notice(notice, rendered)
-            print_header_overwrite(header_changed)
-            commit_registry_and_transcript(path, data, transcript_path, rendered)
-        else:
-            save_registry(path, data)
+        rendered, header_changed = render_managed_header_text(transcript, entry, DEFAULT_ROLES_DIR)
+        notice = add_completion_summary_notice(notice, rendered)
+        print_header_overwrite(header_changed)
+        commit_registry_and_transcript(path, data, transcript_path, rendered)
     print_post_action_advisories(
         entry,
         None,
@@ -3958,21 +4002,44 @@ def archive_collab(
         data = load_registry(path)
         entry = resolve_collab(data, target)
         assert_caller_role(entry, caller_role, 'archive')
+        transcript_path = lifecycle_transcript_path_for_entry(entry)
+        if not transcript_path.exists():
+            die(f'transcript missing: {transcript_path}')
         entry['status'] = 'archived'
         entry['archived'] = True
         if data.get('activeCollabId') == entry['id']:
             data['activeCollabId'] = None
-        transcript_path = lifecycle_transcript_path_for_entry(entry)
-        if transcript_path.exists():
-            rendered, header_changed = render_managed_header_text(transcript_path.read_text(), entry, DEFAULT_ROLES_DIR)
-            print_header_overwrite(header_changed)
-            commit_registry_and_transcript(path, data, transcript_path, rendered)
-        else:
-            save_registry(path, data)
+        rendered, header_changed = render_managed_header_text(transcript_path.read_text(), entry, DEFAULT_ROLES_DIR)
+        print_header_overwrite(header_changed)
+        commit_registry_and_transcript(path, data, transcript_path, rendered)
     notice = lifecycle_status_notice('archived')
     print_post_action_advisories(entry, None, None, notice, next_line_for_state(entry))
     print(entry['id'])
     print_notice_diagnostic(notice, emit_json)
+    return 0
+
+
+def open_collab(path: Path, target: str, caller_role: str | None = None) -> int:
+    with registry_lock(path):
+        data = load_registry(path)
+        entry = resolve_collab(data, target)
+        assert_caller_role(entry, caller_role, 'open')
+        if entry['status'] == 'archived' or entry.get('archived'):
+            die('archived records must be restored before reopening')
+        if entry['status'] == 'open':
+            print(f'record already open: {entry["id"]}')
+            return 0
+        transcript_path = lifecycle_transcript_path_for_entry(entry)
+        if not transcript_path.exists():
+            die(f'transcript missing: {transcript_path}')
+        transcript = transcript_path.read_text()
+        entry['status'] = 'open'
+        entry['archived'] = False
+        data['activeCollabId'] = entry['id']
+        rendered, header_changed = render_managed_header_text(transcript, entry, DEFAULT_ROLES_DIR)
+        print_header_overwrite(header_changed)
+        commit_registry_and_transcript(path, data, transcript_path, rendered)
+    print(entry['id'])
     return 0
 
 
@@ -4062,6 +4129,8 @@ def delete_collab(path: Path, target: str, confirmed: bool, caller_role: str | N
         assert_caller_role(entry, caller_role, 'delete')
         transcript_path = lifecycle_transcript_path_for_entry(entry)
         contribution_store_path = contribution_store_path_for_entry(path, entry)
+        if not transcript_path.exists():
+            die(f'transcript missing: {transcript_path}')
         data['collabs'] = [candidate for candidate in data['collabs'] if candidate['id'] != entry['id']]
         if data.get('activeCollabId') == entry['id']:
             data['activeCollabId'] = None
@@ -4321,6 +4390,10 @@ def build_parser() -> argparse.ArgumentParser:
     activate_parser = subparsers.add_parser('activate')
     activate_parser.add_argument('target')
 
+    open_parser = subparsers.add_parser('open')
+    open_parser.add_argument('target')
+    open_parser.add_argument('--caller-role')
+
     init_parser = subparsers.add_parser(
         'init',
         usage=(
@@ -4343,6 +4416,12 @@ def build_parser() -> argparse.ArgumentParser:
     join_participants_parser.add_argument('--agent-id', required=True)
     join_participants_parser.add_argument('--roles-dir', default=str(DEFAULT_ROLES_DIR))
     join_participants_parser.add_argument('--json', action='store_true')
+
+    remove_participant_parser = subparsers.add_parser('remove-participant')
+    remove_participant_parser.add_argument('target')
+    remove_participant_parser.add_argument('role')
+    remove_participant_parser.add_argument('--roles-dir', default=str(DEFAULT_ROLES_DIR))
+    remove_participant_parser.add_argument('--caller-role')
 
     set_parser = subparsers.add_parser('set')
     set_parser.add_argument('target')
@@ -4619,6 +4698,8 @@ def main(argv: list[str]) -> int:
         return handoff_state_command(path, args.target, args.role)
     if args.command == 'activate':
         return activate_collab(path, args.target)
+    if args.command == 'open':
+        return open_collab(path, args.target, args.caller_role)
     if args.command == 'init':
         tokens: list[str] = []
         for agent_id in args.agent_id or []:
@@ -4637,6 +4718,8 @@ def main(argv: list[str]) -> int:
         return init_collab(path, tokens, DEFAULT_ROLES_DIR)
     if args.command == 'join-participants':
         return join_participants(path, args.target, args.role, args.agent_id, Path(args.roles_dir), args.json)
+    if args.command == 'remove-participant':
+        return remove_participant(path, args.target, args.role, Path(args.roles_dir), args.caller_role)
     if args.command == 'set':
         value = '--clear' if args.clear else args.value
         return set_field(path, args.target, args.field, value, args.force, Path(args.roles_dir), args.caller_role)

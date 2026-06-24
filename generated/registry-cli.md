@@ -194,6 +194,14 @@ Usage: `registry.py log [-h] target`
 Arguments and flags:
 - `target` required; required
 
+### `open`
+
+Usage: `registry.py open [-h] [--caller-role CALLER_ROLE] target`
+
+Arguments and flags:
+- `target` required; required
+- `--caller-role` optional; value
+
 ### `out-of-scope-patch`
 
 Usage: `registry.py out-of-scope-patch [-h] --path PATH
@@ -259,6 +267,18 @@ Arguments and flags:
 Usage: `registry.py registry-path [-h]`
 
 Arguments and flags: none
+
+### `remove-participant`
+
+Usage: `registry.py remove-participant [-h] [--roles-dir ROLES_DIR]
+                                      [--caller-role CALLER_ROLE]
+                                      target role`
+
+Arguments and flags:
+- `target` required; required
+- `role` required; required
+- `--roles-dir` optional; value
+- `--caller-role` optional; value
 
 ### `render-participants`
 

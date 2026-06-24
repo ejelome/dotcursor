@@ -19,7 +19,7 @@ Authority is strict and ordered:
 1. Repo-owned executable checks and scripts:
    - `./tests/run.sh` (runs `./platform/tooling/audit.sh` then every `tests/**/*.test.sh`)
    - `./platform/tooling/audit.sh` (adapter routing, runtime ignore rules, role-key prose drift guard)
-   - `./platform/tooling/check-source-ledger.py --check` (source-ledger schema, always-on retired-trace scan; declared carrier inventory validation is dormant while `source-ledger.md` carries zero rows)
+   - `./platform/tooling/check-source-ledger.py --check` (source-ledger schema, always-on retired-trace scan; declared carrier inventory validation is dormant-by-design: no active carriers exist — the `.mdc` context-carrier format is not used by this repo and `source-ledger.md` carries zero rows; the inventory check activates automatically if new carriers are introduced)
    - `./platform/tooling/sync-context-gate.sh --check` (context-gate canonical source/projection parity)
    - `./platform/tooling/audit-role-prose.sh` (role-key prose drift guard for Markdown and MDC surfaces)
    - `./platform/tooling/sync-commands-catalog.sh --check` (commands roster integrity)
@@ -32,7 +32,7 @@ Authority is strict and ordered:
    - `./platform/tooling/audit-present-state.py` (run by `audit.sh`; tracked source carries present state only, with no past/future outcome residue)
 **Execution prerequisites** for the checks listed above are specified in [`platform/standards/runtime-contract.md`](platform/standards/runtime-contract.md): Python ≥ 3.9, bash ≥ 3.2, `git` and `python3` on `$PATH`, and stdlib-only Python tooling.
 
-`./platform/tooling/coverage-gate.sh` checks that every public collab route in `commands/collab/` has a P9-required abort test. A fixed set of pre-existing routes is exempted in that script; new routes are not eligible for that exemption and must ship with an abort test.
+`./platform/tooling/coverage-gate.sh` checks every public collab route in `commands/collab/` for full ABORT coverage: each discovered public-route ABORT clause must carry a stable `<!-- abort: <id> -->` anchor and have a matching P9 test, unless the clause is explicitly marked `**ABORT** (agent-honor-system):` with a reason. The migration buckets are retired; there is no allowlist, discovery-debt set, or deferred coverage path. The retired per-batch schedule and clause classification live in [`platform/tooling/coverage-gate-migration.md`](platform/tooling/coverage-gate-migration.md).
 
 `tests/commands/collab/registry.py/` is the `registry.py` behavior smoke gate; exercised via `./tests/run.sh`, it asserts the `speak-render` → `speak-state`/lifecycle round trip over live-shaped state built by real helpers in an isolated `COLLAB_STATE_HOME`, demonstrating RED on a desynchronized registry/transcript and GREEN on a valid round trip.
 
