@@ -36,7 +36,7 @@ If any file in the chain cannot be reached or read, halt immediately and name th
 
 ## Fail-fast discipline
 
-Halt when the required command or source-of-truth cannot be resolved. Verify command availability in `commands/collab/engine/registry.py` before exploring implementation files. Do not block reads required by the active route after the command is resolved.
+Halt when the required command or source-of-truth cannot be resolved. Verify command availability in `commands/collab/engine/registry.py` before exploring implementation files. Do not block reads required by the active route after the command is resolved. To verify that a subcommand, flag, or argument shape exists, consult `generated/registry-cli.md` or run `registry.py [<sub>] --help`; read the engine source directly only when the task requires one of: (a) modifying engine source, (b) debugging observed behavior, (c) evaluating an invariant implemented in code, or (d) reviewing a suspected helper defect.
 
 ## Agent profile
 

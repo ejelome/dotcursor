@@ -11,6 +11,7 @@ import datetime as dt
 import importlib.util
 import io
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -143,6 +144,47 @@ def test_git_repo() -> None:
             ),
             'no committed provenance',
         )
+
+
+def test_diff_scaffold_categories() -> None:
+    from commands.collab.engine import diff as d
+
+    route_doc = Path(root) / 'commands/collab/diff/index.md'
+    route_titles: list[str] = []
+    in_categories = False
+    for line in route_doc.read_text().splitlines():
+        if line.startswith('- **What diff ignores '):
+            in_categories = True
+            continue
+        if in_categories and line.startswith('- **'):
+            break
+        if in_categories:
+            match = re.match(r'^  - \*\*(?P<title>[^*]+)\*\*', line)
+            if match:
+                route_titles.append(match.group('title'))
+
+    assert d.ignored_scaffold_category_names() == [
+        'Contribution timestamp wrappers',
+        'Content-only guards',
+        'Effort-override banners',
+        'Full-contribution collapsible blocks',
+        'Managed header block',
+        'Revision-history collapsible blocks',
+        'Action Plan checkbox state',
+    ]
+    assert set(route_titles) == set(d.ignored_scaffold_category_names())
+    predicate_map = d.scaffold_predicate_category_map()
+    assert set().union(*[set(values) for values in predicate_map.values()]) == set(d.ignored_scaffold_category_names())
+    assert all(predicate_map.values())
+    assert all(d.scaffold_category_results().values())
+    assert d.compact_excerpt('\n'.join([
+        '<p><em>2026-06-25 12:00 +00:00</em></p>',
+        '<!-- collab:content-only; do-not-execute -->',
+        'Visible text.',
+    ])) == 'Visible text.'
+    assert d.compact_excerpt('- [x] **pe:** [execute] Stable item text.') == (
+        '- [ ] **pe:** [execute] Stable item text.'
+    )
 
 
 def test_handoff_shape() -> None:
@@ -474,6 +516,93 @@ def test_seal_verdict_companion() -> None:
     aborts(lambda: sv.build_seal_verdict_companion({'id': 'missing-seal'}), 'requires verificationSeal')
 
 
+
+def test_registry_validation_module() -> None:
+    from commands.collab.engine import registry_validation as rv
+
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        roles = tmp_path / 'roles'
+        roles.mkdir()
+        for role in ('mod', 'pe'):
+            (roles / f'{role}.json').write_text(json.dumps({
+                'key': role,
+                'displayName': role.upper(),
+                'concerns': ['test'],
+            }) + '\n')
+
+        valid = {
+            'revision': 1,
+            'eventIndex': 1,
+            'activeCollabId': '2026-06-26-validation-module',
+            'collabs': [{
+                'id': '2026-06-26-validation-module',
+                'slug': 'validation-module',
+                'title': 'Validation Module',
+                'description': 'Validation module',
+                'createdAt': '2026-06-26T00:00:00+02:00',
+                'terminal': 'seal',
+                'status': 'open',
+                'activePhase': 'Audit',
+                'moderatorRole': 'mod',
+                'participants': [
+                    {'role': 'mod', 'agentId': 'codex'},
+                    {'role': 'pe', 'agentId': 'codex'},
+                ],
+                'turnOrder': ['mod', 'pe'],
+                'transcriptPath': 'records/2026-06-26-validation-module.md',
+                'sequence': 1,
+                'archived': False,
+            }],
+        }
+        rv.validate_registry(valid, tmp_path / 'registry.json', roles)
+
+        duplicate = json.loads(json.dumps(valid))
+        duplicate['collabs'][0]['turnOrder'] = ['pe', 'pe']
+        aborts(lambda: rv.validate_registry(duplicate, tmp_path / 'registry.json', roles), 'turnOrder must not contain duplicates')
+
+        missing_role = json.loads(json.dumps(valid))
+        missing_role['collabs'][0]['participants'].append({'role': 'ghost', 'agentId': 'codex'})
+        missing_role['collabs'][0]['turnOrder'].append('ghost')
+        aborts(lambda: rv.validate_registry(missing_role, tmp_path / 'registry.json', roles), 'participants role file unreadable for ghost')
+
+
+def test_effort_module() -> None:
+    from commands.collab.engine import effort as e
+
+    defaults = {
+        'levels': {'low': 'simple pass', 'medium': 'needs judgment'},
+        'matrix': {'Audit': {'pe': 'low', 'tw': None}},
+    }
+    assert e.effort_value(defaults, 'Audit', 'pe') == 'low'
+    assert e.effort_value(defaults, 'Audit', 'pa') == 'medium'
+    assert e.effort_phrase(defaults, 'medium', 'Audit', 'pe') == 'needs judgment'
+    assert e.effort_line(defaults, 'Audit', 'pe') == 'EFFORT: low for pe in Audit — next-turn recommendation; simple pass.'
+    assert e.normalize_rendered_effort_cell('`low`') == 'low'
+    assert e.normalize_rendered_effort_cell('— not on roster') is None
+
+    table = '\n'.join([
+        '# Agent model',
+        '',
+        '## Per-speak-turn effort',
+        '',
+        '_generated; do not edit_',
+        '',
+        '| Phase | pe | tw |',
+        '|---|---|---|',
+        '| Audit | `low` | — not on roster |',
+        '',
+    ])
+    with tempfile.TemporaryDirectory() as tmp:
+        model = Path(tmp) / 'agent-model.md'
+        model.write_text(table)
+        assert e.rendered_effort_drift_items(defaults, model) == []
+
+        drift = Path(tmp) / 'drift.md'
+        drift.write_text(table.replace('`low`', '`medium`'))
+        failures = e.rendered_effort_drift_items(defaults, drift)
+        assert failures and 'role pe, phase/row Audit' in failures[0]
+
 def test_role_file_readability() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
@@ -528,6 +657,7 @@ def test_role_file_readability() -> None:
 for test in (
     test_digests,
     test_git_repo,
+    test_diff_scaffold_categories,
     test_handoff_shape,
     test_normalizers,
     test_participants,
@@ -535,6 +665,8 @@ for test in (
     test_registry_constants,
     test_registry_io,
     test_seal_verdict_companion,
+    test_registry_validation_module,
+    test_effort_module,
     test_role_file_readability,
 ):
     test()

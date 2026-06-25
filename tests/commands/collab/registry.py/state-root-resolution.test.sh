@@ -38,16 +38,18 @@ entry = next(item for item in json.loads(registry.read_text())['collabs'] if ite
 print(registry.parent / Path(entry['transcriptPath']))
 PY
 )"
-STORE_PATH="$(python3 - "$REGISTRY" "$RUN_DATE-home-state-init" <<'PY'
+STORE_PATH="$(python3 - "$REGISTRY" "$RUN_DATE-home-state-init" "$ROOT" <<'PY'
 import json
 import sys
 from pathlib import Path
 
 registry = Path(sys.argv[1])
 target = sys.argv[2]
+sys.path.insert(0, sys.argv[3])
+from commands.collab.engine.contribution_store import contribution_store_path_for_entry
+
 entry = next(item for item in json.loads(registry.read_text())['collabs'] if item['id'] == target)
-transcript = Path(entry['transcriptPath'])
-print(registry.parent / transcript.with_name(f"{transcript.stem}-contributions.json"))
+print(contribution_store_path_for_entry(registry, entry))
 PY
 )"
 cp "$REGISTRY" registry-before-status.json
@@ -59,7 +61,7 @@ cmp "$REGISTRY" registry-before-status.json
 cmp "$TRANSCRIPT_PATH" transcript-before-status.md
 cmp "$STORE_PATH" store-before-status.json
 
-python3 - "$REGISTRY" "$COLLAB_STATE_HOME" "$RUN_DATE-home-state-init" "$LIST_OUTPUT" "$STATUS_OUTPUT" "$STATUS_OUTPUT_AGAIN" <<'PY'
+python3 - "$REGISTRY" "$COLLAB_STATE_HOME" "$RUN_DATE-home-state-init" "$LIST_OUTPUT" "$STATUS_OUTPUT" "$STATUS_OUTPUT_AGAIN" "$ROOT" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -70,6 +72,9 @@ target = sys.argv[3]
 list_output = sys.argv[4]
 status_output = sys.argv[5]
 status_output_again = sys.argv[6]
+sys.path.insert(0, sys.argv[7])
+from commands.collab.engine.contribution_store import contribution_store_path_for_entry
+
 identity = json.loads(Path('.collab.json').read_text())
 assert 'schema' + 'Version' not in identity
 assert identity['projectId']
@@ -85,7 +90,7 @@ revision = data['revision']
 assert entry['id'] == target
 assert entry['transcriptPath'] == f'records/{target}.md'
 projection = registry.parent / entry['transcriptPath']
-store = registry.parent / Path(entry['transcriptPath']).with_name(f"{Path(entry['transcriptPath']).stem}-contributions.json")
+store = contribution_store_path_for_entry(registry, entry)
 assert projection.exists()
 assert store.exists()
 assert json.loads(registry.read_text())['revision'] == revision

@@ -75,6 +75,13 @@ Arguments and flags:
 - `--yes` optional; flag
 - `--caller-role` optional; value
 
+### `diff`
+
+Usage: `registry.py diff [-h] [target]`
+
+Arguments and flags:
+- `target` required; nargs=?
+
 ### `effort-state`
 
 Usage: `registry.py effort-state [-h] [--effort-defaults EFFORT_DEFAULTS]
@@ -154,9 +161,16 @@ Arguments and flags:
 - `target` required; required
 - `role` required; required
 
+### `help`
+
+Usage: `registry.py help [-h] [route ...]`
+
+Arguments and flags:
+- `route` required; nargs=*
+
 ### `init`
 
-Usage: `registry.py init --agent-id <agentId> [--reviewer <role>] [--terminal <seal|issue>] [--no-participant-verification] [--work-repo <path>] [--preview] <name>`
+Usage: `registry.py init --agent-id <agentId> [--reviewer <role>] [--terminal <seal|issue>] [--no-participant-verification] [--work-repo <path>] [--open] <name>`
 
 Arguments and flags:
 - `--agent-id` optional; value
@@ -164,7 +178,7 @@ Arguments and flags:
 - `--terminal` optional; value
 - `--work-repo` optional; value
 - `--no-participant-verification` optional; flag
-- `--preview` optional; flag
+- `--open` optional; flag
 - `name` required; nargs=*
 
 ### `join-participants`

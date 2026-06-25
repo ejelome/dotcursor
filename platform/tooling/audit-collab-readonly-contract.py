@@ -19,6 +19,7 @@ READ_ONLY_SUBCOMMANDS = {
     "audit-closed",
     "audit-effort-matrix",
     "banner-timestamp",
+    "diff",
     "effort-state",
     "flag-inventory",
     "handoff-state",

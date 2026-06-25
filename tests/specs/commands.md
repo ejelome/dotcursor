@@ -27,6 +27,7 @@ Public command routers under `~/.cursor/commands/`:
 - `collab/index.md`
 - `doc/index.md`
 - `git/index.md`
+- `help/index.md`
 - `quality/index.md`
 - `test/index.md`
 
@@ -40,6 +41,7 @@ Route playbooks under `~/.cursor/commands/`:
 - `collab/archive/index.md`
 - `collab/close/index.md`
 - `collab/delete/index.md`
+- `collab/diff/index.md`
 - `collab/export-issues/index.md`
 - `collab/init/index.md`
 - `collab/join/index.md`

@@ -93,6 +93,7 @@ check_adapters() {
   grep -Fq 'AGENTS.md' CLAUDE.md || fail "CLAUDE.md does not route to AGENTS.md"
   grep -Fq 'AGENTS.md' GEMINI.md || fail "GEMINI.md does not route to AGENTS.md"
   grep -Fq 'commands/commands.md' AGENTS.md || fail "AGENTS.md does not route to commands/commands.md"
+  grep -Fq 'generated/registry-cli.md' AGENTS.md || fail "AGENTS.md Fail-fast section is missing availability-check carve-out (generated/registry-cli.md)"
   ok "adapter entry surfaces are named"
 }
 
@@ -593,39 +594,164 @@ check_public_dispatch_surface() {
 
 check_verification_round_call_sites() {
   local status=0
-  python3 - commands/collab/engine/registry.py <<'PY' || status=$?
+  python3 - commands/collab/engine/registry.py commands/collab/engine/seal_verification.py <<'PY' || status=$?
 import ast
 import sys
 from pathlib import Path
+from typing import Union
 
-source_path = Path(sys.argv[1])
-tree = ast.parse(source_path.read_text(), filename=str(source_path))
-functions = {
-    node.name: node
-    for node in ast.walk(tree)
-    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-}
+registry_path = Path(sys.argv[1])
+seal_path = Path(sys.argv[2])
+FunctionNode = Union[ast.FunctionDef, ast.AsyncFunctionDef]
 
 
-def calls_recorder(function_name: str) -> bool:
-    function = functions[function_name]
+def parse_functions(path: Path) -> dict[str, FunctionNode]:
+    tree = ast.parse(path.read_text(), filename=str(path))
+    return {
+        node.name: node
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+
+
+registry_functions = parse_functions(registry_path)
+seal_functions = parse_functions(seal_path)
+
+
+def require_function(
+    functions: dict[str, FunctionNode],
+    function_name: str,
+    message: str,
+) -> FunctionNode:
+    function = functions.get(function_name)
+    assert function is not None, message
+    return function
+
+
+def calls_name(function: FunctionNode, callee_name: str) -> bool:
     for node in ast.walk(function):
         if isinstance(node, ast.Call):
             callee = node.func
-            if isinstance(callee, ast.Name) and callee.id == 'record_verification_round_for_execution':
+            if isinstance(callee, ast.Name) and callee.id == callee_name:
                 return True
     return False
 
 
-assert calls_recorder('participant_verify_render'), (
+def delegates_to_seal_verification(
+    function: FunctionNode,
+    callee_name: str,
+) -> bool:
+    for node in ast.walk(function):
+        if isinstance(node, ast.Call):
+            callee = node.func
+            if (
+                isinstance(callee, ast.Attribute)
+                and callee.attr == callee_name
+                and isinstance(callee.value, ast.Name)
+                and callee.value.id == '_seal_verification'
+            ):
+                return True
+    return False
+
+
+registry_participant_verify_render = require_function(
+    registry_functions,
+    'participant_verify_render',
+    'registry.py must define participant_verify_render as part of the permanent seal facade pair',
+)
+registry_render_seal = require_function(
+    registry_functions,
+    'render_seal',
+    'registry.py must define render_seal as part of the permanent seal facade pair',
+)
+seal_participant_verify_render = require_function(
+    seal_functions,
+    'participant_verify_render',
+    'seal_verification.py must define the participant_verify_render implementation',
+)
+seal_render_seal = require_function(
+    seal_functions,
+    'render_seal',
+    'seal_verification.py must define the render_seal implementation',
+)
+
+assert delegates_to_seal_verification(
+    registry_participant_verify_render,
+    'participant_verify_render',
+), (
+    'registry.py participant_verify_render facade must delegate to '
+    '_seal_verification.participant_verify_render'
+)
+assert delegates_to_seal_verification(registry_render_seal, 'render_seal'), (
+    'registry.py render_seal facade must delegate to _seal_verification.render_seal'
+)
+assert calls_name(seal_participant_verify_render, 'record_verification_round_for_execution'), (
     'participant_verify_render must record the paired verification round'
 )
-assert not calls_recorder('render_seal'), (
-    'seal-render must not record or advance verification rounds'
+assert not calls_name(registry_participant_verify_render, 'record_verification_round_for_execution'), (
+    'registry.py participant_verify_render facade must not call '
+    'record_verification_round_for_execution; seal_verification.py owns the recorder call'
+)
+assert not calls_name(registry_render_seal, 'record_verification_round_for_execution'), (
+    'protected seal-render recorder boundary: registry.py render_seal must not call '
+    'record_verification_round_for_execution'
+)
+assert not calls_name(seal_render_seal, 'record_verification_round_for_execution'), (
+    'protected seal-render recorder boundary: seal_verification.py render_seal must not call '
+    'record_verification_round_for_execution'
 )
 PY
   ((status == 0)) || failures=$((failures + 1))
   ((status == 0)) && ok "verification round recorder call sites stay owned by participant verification"
+}
+
+check_contribution_validation_placement() {
+  local status=0
+  python3 - commands/collab/engine/registry.py commands/collab/engine/contribution_validation.py <<'PY' || status=$?
+import ast
+import sys
+from pathlib import Path
+
+registry_path = Path(sys.argv[1])
+validation_path = Path(sys.argv[2])
+
+
+def function_names(path: Path) -> set[str]:
+    tree = ast.parse(path.read_text(), filename=str(path))
+    return {
+        node.name
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+
+
+registry_functions = function_names(registry_path)
+validation_functions = function_names(validation_path)
+owned_by_validation = {
+    'assert_turn_order_not_drifted',
+    'enforce_contribution_budget',
+    'validate_action_plan_executable_scope',
+    'validate_action_plan_shape',
+    'validate_conclusion_directive_gap',
+    'validate_effort_override',
+    'validate_reviewer_conclusion_gates',
+}
+
+missing = sorted(owned_by_validation - validation_functions)
+assert not missing, (
+    'contribution_validation.py must own speak-time contribution gates: '
+    + ', '.join(missing)
+)
+
+leaked = sorted(owned_by_validation & registry_functions)
+assert not leaked, (
+    'registry.py must stay a facade for speak-time contribution gates; move back to '
+    'contribution_validation.py: '
+    + ', '.join(leaked)
+)
+PY
+  ((status == 0)) || failures=$((failures + 1))
+  ((status == 0)) && ok "speak-time contribution validation stays outside registry.py facade"
 }
 
 check_route_arg_defaults() {
@@ -805,6 +931,7 @@ check_tracked_source_boundary
 check_collab_registry_lock
 check_public_dispatch_surface
 check_verification_round_call_sites
+check_contribution_validation_placement
 check_generated_freshness
 check_generated_boundary
 check_retired_collab_residue

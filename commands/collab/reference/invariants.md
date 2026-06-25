@@ -162,6 +162,8 @@ A seal verdict of `success` is rejected unless every item in the collab's `chart
 
 **Path-not-content caveat:** This gate checks path coverage — that at least one committed path is cited for each chartered item — not content sufficiency. Whether the committed content actually fulfills the chartered item is a reviewer judgment, not a gate outcome. A passing coverage check is a necessary prerequisite for `success`; it does not guarantee correctness.
 
+For source-decomposition work, a chartered path alone is not a completion proof. The Action Plan must pair the path with a measurable content assertion — for example a symbol-placement audit, local-definition ceiling, byte-identical render gate, or dispatch-only check — so the seal can verify that the extraction changed the intended ownership boundary rather than only touching the named file.
+
 **Reopen carry-forward caveat:** Reopen carry-forward coverage is content-validated against `HEAD`; a carried chartered path that is removed or whose content has drifted is dropped from the coverage aggregate, so a name-only carry cannot mask a reverted deliverable. See Invariant #21 for the full carry-forward rule and `reopenCoverage` lifecycle.
 
 **18. Item tags required; `[defer]` rejected**

@@ -176,3 +176,4 @@ One sentence — purpose of the route and when to use it.
 - [Document standard](document-standard.md) — minimal command template and other shapes.
 - [Context engineering](context-management.md) — phases, precision, context budget.
 - [Author voice](author-voice.md) — register for personal-account exceptions.
+- [Command grammar](command-grammar.md) — spaced public verbs vs. hyphenated filesystem names.

@@ -19,6 +19,8 @@ Owns: seal state reads (seal_state, seal_snapshot, verification_state,
 Does not own: registry persistence, phase lifecycle sequencing, participant
               roster management, non-seal transcript rendering, or CLI dispatch.
               This module is imported by commands.collab.engine.registry only.
+              registry.py owns the permanent CLI facade for render_seal and
+              participant_verify_render; implementation lives in seal_verification.py.
 
 Naming convention
   *_state(entry, ...)   -- pure registry-entry accessor; no I/O or side effects.

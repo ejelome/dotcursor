@@ -19,6 +19,7 @@ Deterministic QA for `~/.cursor/platform/standards/*.md` canon documents.
 - `command-argument.md`
 - `command-convention.md`
 - `command-default.md`
+- `command-grammar.md`
 - `command-standard.md`
 - `context-gate.md`
 - `context-management.md`

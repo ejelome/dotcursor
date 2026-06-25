@@ -38,6 +38,7 @@ If any file in the chain cannot be reached or read, halt immediately and name th
 ## Fail-fast discipline
 
 Halt when the required command or source-of-truth cannot be resolved. Verify command availability in `commands/collab/engine/registry.py` before exploring implementation files. Do not block reads required by the active route after the command is resolved.
+<!-- TODO(project): If this project exposes a generated CLI catalog or tool-specific availability check, add a carve-out sentence here naming the permitted lookup path and the closed list of cases that still require reading engine source. See ~/.cursor/AGENTS.md for the framework-specific form. -->
 
 ## Agent profile
 

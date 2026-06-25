@@ -29,7 +29,7 @@ clause is marked `(agent-honor-system)`.
 
 `validate_planned_route_prerequisites(config_root: Path) -> None`
 
-Called by `commands/collab/engine/registry.py` via `validate_registry()` at load time. Calls the issue-bridge gate with `include_issue_route=True`, meaning the `commands/git/issue/index.md` route file is also checked as a prerequisite when the issue bridge is declared.
+Called by `commands/collab/engine/registry_validation.py` via `validate_registry()` at load time. Calls the issue-bridge gate with `include_issue_route=True`, meaning the `commands/git/issue/index.md` route file is also checked as a prerequisite when the issue bridge is declared.
 
 ### Prerequisite semantics
 
@@ -56,7 +56,7 @@ A **planned route** is any route that, if implemented, would activate a non-defa
 
 ### Firing point
 
-Load-time, during `validate_registry()` in `commands/collab/engine/registry.py`. The gate fires before any registry data is returned to the caller, on every registry-loading command.
+Load-time, during `validate_registry()` in `commands/collab/engine/registry_validation.py`. The gate fires before any registry data is returned to the caller, on every registry-loading command.
 
 ### Abort family
 
