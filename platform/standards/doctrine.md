@@ -65,3 +65,15 @@ Per-design rules that have been deliberated and converged through the collab pro
 **Schema posture.** `registry.schema.json` is reference and editor-tooling only. `load_registry()` validates through `REGISTRY_VALIDATOR` (the Pydantic validator in `registry_io.py`), not through the JSON schema. A parity gate (`tests/commands/collab/registry.py/registry-schema-roundtrip.test.sh`) asserts that the schema-declared field set matches the validator's enforced set. Load-time JSON-schema enforcement is deliberately not taken; promoting JSON Schema to a second runtime enforcer would create two independently-evolvable enforcement surfaces that can diverge in edge cases and produce split-authority failures. Pydantic is the single live validator; JSON Schema serves the editor-tooling and reference role it was designed for; the parity gate provides equivalent drift protection without runtime cost.
 
 **Source:** `registry.schema.json` (`x-dc-validatorParity`); collab `2026-06-18-doctrine-naming-glossary-system-reference` (directive: "F7 schema-enforcement posture settled by decision"; convergence: 2026-06-18)
+
+---
+
+## Verification three-plane separation
+
+**Verification three-plane separation.** `Completion.verification` is organized into three ordered planes, each certifying a distinct question. `verification.participant` is self-administered remediation: the certifying question is whether the owning role has self-audited and remediated its own write scope. `verification.seal` is content-integrity: the certifying question is whether the transcript content matches the committed tree at `HEAD`. `verification.assessment` is goal truth: the certifying question is whether the stated discussion goal was achieved.
+
+The three planes are not redundant because they answer different questions at different scopes. Passing the participant plane does not confirm that content is committed; passing the seal plane does not confirm the goal was met; passing the assessment plane presupposes both but cannot substitute for either. The participant plane is the sole production round-earning event when enabled; when disabled (`--no-participant-verification`), no production path earns the round and the zero-round seal gate blocks the seal. Canonical mechanics: [`verification.md` § Round definition](../../commands/collab/reference/verification.md#round-definition); disabled-path limitation: see the `--no-participant-verification` guardrail in [`(collab init)`](../../commands/collab/init/index.md).
+
+**Revision coupling:** The disabled-path claim above, the `--no-participant-verification` guardrail in [`(collab init)`](../../commands/collab/init/index.md), and the Round-earning event note in [`(collab participant verify)`](../../commands/collab/participant-verify/index.md) are a coupled set; when a production round-earning path for the disabled posture lands, all three must be revised in the same change or the docs contradict the code.
+
+**Source:** collab `2026-06-26-redundant-participant-verify` (directive: "settle the fate of `Completion.verification.participant`"; verdict: not redundant; convergence: 2026-06-26)

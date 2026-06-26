@@ -60,6 +60,7 @@ Execute the participant-verification sequence for an assigned role within `Compl
   ```
 - **Turn-budget trigger.** If any seal-attempt transcript exceeds 12 turns, open a follow-up DX audit on turn-budget management and `/compact` recovery ergonomics across participant verification.
 - **Post-state resume signal.** After `(collab participant verify)` completes, run `commands/collab/engine/registry.py speak-state --resume <target> <role>` to confirm the current state before any further action.
+- **Round-earning event.** When participant verification is enabled, this route is the sole production path that fires `participant_verify_render` and increments `verification.rounds`. Collabs initialized with `--no-participant-verification` have no production round-earning path; `rounds` stays at 0 and the zero-round rule blocks the seal. See [`verification.md` § Round definition](../reference/verification.md#round-definition).
 
 ```route-arg
 dispatch: (collab participant verify [<role>])
