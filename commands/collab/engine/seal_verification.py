@@ -59,6 +59,13 @@ DEFAULT_ROLES_DIR = DEFAULT_CONFIG_ROOT / 'commands/collab/reference/roles'
 SEAL_VERDICT_KIND = 'collab.seal-verdict'
 
 from commands.collab.engine import transcript_readers
+from commands.collab.engine.transcript_readers import (
+    completion_summary_empty,
+    phase_section,
+    read_transcript_for_entry,
+    section_bounds,
+    transcript_path_for_entry,
+)
 from commands.collab.engine.transcript_readers import SUMMARY_HEADING_RE
 from commands.collab.engine.transcript_readers import ANCHOR_RE
 from commands.collab.engine.dispatch_forms import collab_dispatch
@@ -161,29 +168,6 @@ def print_post_action_advisories(
     if _print_post_action_advisories is None:
         die('seal verification engine is not configured: advisory callback missing')
     _print_post_action_advisories(entry, role, phase, notice, next_line)
-
-
-def phase_section(text: str, phase: str) -> list[str]:
-    return transcript_readers.phase_section(text, phase)
-
-
-def section_bounds(lines: list[str], heading: str) -> tuple[int, int]:
-    return transcript_readers.section_bounds(lines, heading)
-
-
-def transcript_path_for_entry(entry: dict) -> Path:
-    return Path(entry['transcriptPath'])
-
-
-def read_transcript_for_entry(entry: dict) -> str:
-    transcript_path = transcript_path_for_entry(entry)
-    if not transcript_path.exists():
-        die(f'transcript missing: {transcript_path}')
-    return transcript_path.read_text()
-
-
-def completion_summary_empty(transcript: str) -> bool:
-    return transcript_readers.completion_summary_empty(transcript)
 
 
 def chartered_deliverables(transcript: str) -> list[str]:

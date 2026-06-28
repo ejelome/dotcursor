@@ -23,24 +23,27 @@ The facade owns: CLI argv dispatch, high-level orchestration wrappers (`render_s
 
 ### Module roster
 
-18 extracted modules in `commands/collab/engine/`:
+21 extracted modules in `commands/collab/engine/`:
 
 | Module | Owns | Does not own |
 | --- | --- | --- |
 | `errors.py` | shared exit helpers | any registry dependency |
 | `registry_constants.py` | registry lifecycle vocabulary and policy constants | state I/O |
 | `registry_state.py` | project-identity binding, state-root resolution | registry reads/writes |
+| `dispatch_forms.py` | command dispatch notation rendering | state, I/O, registry |
 | `planned_routes.py` | route prerequisite validation, issue-bridge detection | phase mutation |
-| `transcript_readers.py` | transcript phase parsing, contribution-block extraction | rendering or writes |
+| `transcript_readers.py` | transcript phase parsing, contribution-block extraction, transcript-path resolution and per-entry reads | rendering or writes |
 | `normalizers.py` | slug/title/path/scope normalization | state, I/O |
 | `digests.py` | content/path digest computation and signatures | git policy |
 | `handoff_shape.py` | handoff writeScope/validationCommands schema | lifecycle |
 | `git_repo.py` | git subprocess reads: head, commits, content-at-ref | seal policy |
 | `registry_io.py` | registry persistence, lock, resolve; validator injection | phase decisions |
 | `participants.py` | participant roster, reviewer wiring, turn-order helpers | phase mutation |
-| `phase_lifecycle.py` | phase sequencing and lifecycle notices | registry mutation, rendering |
-| `execution.py` | execution checks, run-plan support, write-scope enforcement | seal |
+| `phase_lifecycle.py` | phase sequencing, phase advancement, and lifecycle notices | registry mutation, rendering |
+| `execution.py` | execution checks, run-plan support, write-scope enforcement, execution state recording | seal |
+| `contribution_store.py` | contribution-store path and shape helpers | registry state, rendering, write path |
 | `contribution_validation.py` | speak-time contribution gates, moderator contribution normalization | rendering, write path |
+| `diff.py` | read-only collab drift comparison | registry writes, rendering, state mutation |
 | `registry_validation.py` | schema validation | advisory math, write path |
 | `effort.py` | advisory math | schema validation, write path |
 | `transcript_render.py` | managed rendering: header, TOC, all `<details>` blocks, contribution blocks, effort-override banners | registry state, phase lifecycle, write-path dispatch, CLI entry-point logic |
@@ -51,13 +54,13 @@ The facade owns: CLI argv dispatch, high-level orchestration wrappers (`render_s
 All 6 extraction stages are complete:
 
 1. Pure readers and parsers — done (#56: normalizers, digests, handoff\_shape, git\_repo, registry\_io)
-2. Route-planning helpers — done (#56: participants, phase\_lifecycle, execution)
+2. Route-planning helpers — done (#56: participants, phase\_lifecycle, execution, dispatch\_forms)
 3. Managed rendering engine — done (#57: transcript\_render.py)
 4. Seal/verification engine — done (#58: seal\_verification.py)
-5. Speak-time contribution validation — done (contribution\_validation.py)
-6. Registry validation and effort math — done (registry\_validation.py, effort.py)
+5. Speak-time contribution validation — done (contribution\_validation.py, contribution\_store.py)
+6. Registry validation, effort math, and drift comparison — done (registry\_validation.py, effort.py, diff.py)
 
-The decomposition is functionally complete. `registry.py` converges to a CLI facade plus thin orchestration wrappers; current line count 3,985 (target: < 3,800). No further module extractions are planned; line-count reduction is incremental as orchestration wrappers are thinned.
+The decomposition is complete. `registry.py` is the CLI facade plus thin orchestration wrappers; all modules in the roster above own their respective domains and no further extractions are planned. The facade's remaining surface is CLI argv dispatch, high-level orchestration calls into the extracted modules, and the `render_seal` dispatch shim.
 
 ### Keep-whole decisions
 

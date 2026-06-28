@@ -2,6 +2,8 @@
 
 Per-design rules that have been deliberated and converged through the collab process. Each entry is a binding ruling, not a guideline; a departure requires a new collab or an explicit supersession note.
 
+**Scope.** Mechanical enforcement gates (`audit-*.py` scripts, lint rules, CI checks) that implement an already-recorded doctrine decision do not themselves require a separate doctrine entry. The ruling that motivated the gate is the authoritative record; the gate is evidence the doctrine is being honored, not a new deliberation.
+
 ---
 
 ## Explicit values in records

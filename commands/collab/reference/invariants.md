@@ -102,6 +102,7 @@ These conditions are derived from the 2026-05-18 missed-and-deferred-goals audit
 - **Item 7 (round-counting / budget-exempt assessment path after cap-exit):** if any seal-attempt transcript exceeds 18 turns, or two consecutive participant verifications fail with full-body blocks present, open a follow-up audit of the round-counting and budget-exempt assessment path.
 - **Item 9 (`(collab rewrite execution)` redesign):** if any seal-attempt transcript exceeds 12 turns, open a follow-up DX audit on `rewrite-execution` and turn-budget management across `/compact`.
 - If any reviewer-backed collab closes via `--cap-exit archive` on a clean first seal (no findings during participant verification), open a verification-cap audit.
+  - _Present state: `--cap-exit archive` on a clean seal is a protocol violation (`verification.md` §"Cap and cap-exit options"; `seal-verification/index.md` §"Cap exits"). This trigger fires only if that prohibition is relaxed._
 
 **11. Observation backlog**
 

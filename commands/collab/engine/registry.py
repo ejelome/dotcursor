@@ -34,7 +34,21 @@ if str(COMMAND_SYSTEM_DIR) not in sys.path:
 
 from roles import load_role, participant_row, role_catalog
 from commands.collab.engine.errors import die, handoff_abort
-from commands.collab.engine.transcript_readers import ANCHOR_RE, CHARTERED_DELIVERABLES_LABEL, DETAILS_CLOSE_RE, DETAILS_OPEN_RE
+from commands.collab.engine.transcript_readers import (
+    ANCHOR_RE,
+    CHARTERED_DELIVERABLES_LABEL,
+    DETAILS_CLOSE_RE,
+    DETAILS_OPEN_RE,
+    completion_summary_empty,
+    contribution_body_lines,
+    contribution_is_retracted,
+    contribution_roles,
+    phase_section,
+    read_transcript_for_entry,
+    section_bounds,
+    summary_role,
+    transcript_path_for_entry,
+)
 from commands.collab.engine.planned_routes import validate_issue_bridge_block, validate_planned_route_prerequisites
 from commands.collab.engine.registry_validation import validate_registry as validate_registry_data
 from commands.collab.engine.effort import (
@@ -140,6 +154,7 @@ from commands.collab.engine.digests import (
 )
 from commands.collab.engine.dispatch_forms import collab_dispatch
 from commands.collab.engine.execution import (
+    ExecutionCallbacks,
     all_execution_completed,
     assert_disjoint_scopes,
     assert_execution_touched_paths_in_git_state,
@@ -147,6 +162,7 @@ from commands.collab.engine.execution import (
     assert_touched_paths_inside_handoff,
     execute_spawn,
     execution_scope_advisory,
+    record_execution_state,
 )
 from commands.collab.engine.git_repo import (
     assert_touched_paths_recordable_in_work_repo,
@@ -228,6 +244,8 @@ from commands.collab.engine.participants import (
     validate_participant_role_files,
 )
 from commands.collab.engine.phase_lifecycle import (
+    PhaseLifecycleCallbacks,
+    advance_phase_state,
     discussion_turn_notice,
     lifecycle_status_notice,
     next_phase_name,
@@ -462,18 +480,6 @@ def parse_init_tokens(tokens: list[str]) -> tuple[str, str, str | None, bool, bo
     return title, normalize_join_agent_id(agent_id), reviewer, open_requested, participant_verification, terminal, work_repo
 
 
-def summary_role(line: str) -> str | None:
-    return transcript_readers.summary_role(line)
-
-
-def phase_section(text: str, phase: str) -> list[str]:
-    return transcript_readers.phase_section(text, phase)
-
-
-def section_bounds(lines: list[str], heading: str) -> tuple[int, int]:
-    return transcript_readers.section_bounds(lines, heading)
-
-
 def next_anchor_counter(lines: list[str], phase: str, role: str) -> int:
     prefix = f'{phase_slug(phase)}-{role}-'
     highest = 0
@@ -484,18 +490,6 @@ def next_anchor_counter(lines: list[str], phase: str, role: str) -> int:
             if suffix.isdigit():
                 highest = max(highest, int(suffix))
     return max(highest, contribution_roles('\n'.join(lines), phase).count(role)) + 1
-
-
-def contribution_body_lines(block: list[str]) -> list[str]:
-    return transcript_readers.contribution_body_lines(block)
-
-
-def contribution_is_retracted(block: list[str]) -> bool:
-    return transcript_readers.contribution_is_retracted(block)
-
-
-def contribution_roles(text: str, phase: str) -> list[str]:
-    return transcript_readers.contribution_roles(text, phase)
 
 
 def action_plan_item_tag(text: str) -> str | None:
@@ -962,10 +956,6 @@ def die_with_resume(message: str, entry: dict, role: str) -> None:
     die(f'{message}\n{resume_command(entry, role)}')
 
 
-def completion_summary_empty(transcript: str) -> bool:
-    return transcript_readers.completion_summary_empty(transcript)
-
-
 def phase_summary_bounds(lines: list[str]) -> tuple[int, int] | None:
     start = None
     for index, line in enumerate(lines):
@@ -1050,7 +1040,7 @@ def summarize_collab(path: Path, target: str, date: str | None = None) -> int:
         entry = resolve_collab(data, target)
         if entry['status'] == 'archived':
             die('record is archived')
-        transcript_path = lifecycle_transcript_path_for_entry(entry)
+        transcript_path = transcript_path_for_entry(entry)
         if not transcript_path.exists():
             die(f'transcript missing: {transcript_path}')
         rendered, header_changed = render_managed_header_text(transcript_path.read_text(), entry, DEFAULT_ROLES_DIR)
@@ -1398,7 +1388,7 @@ def set_field(
             if not value.strip():
                 die(f'{field} requires a non-empty value')
             entry[field] = value
-        transcript_path = lifecycle_transcript_path_for_entry(entry)
+        transcript_path = transcript_path_for_entry(entry)
         if not transcript_path.exists():
             die(f'transcript missing: {transcript_path}')
         rendered, header_changed = render_managed_header_text(transcript_path.read_text(), entry, roles_dir)
@@ -1443,7 +1433,7 @@ def unset_field(
         clear_reviewer(next_entry)
         validate_registry(nextdata, path)
 
-        transcript_path = lifecycle_transcript_path_for_entry(next_entry)
+        transcript_path = transcript_path_for_entry(next_entry)
         if not transcript_path.exists():
             die(f'transcript missing: {transcript_path}')
         rendered, header_changed = render_managed_header_text(transcript_path.read_text(), next_entry, roles_dir)
@@ -1488,7 +1478,7 @@ def remove_participant(
         ]
         validate_registry(nextdata, path)
 
-        transcript_path = lifecycle_transcript_path_for_entry(next_entry)
+        transcript_path = transcript_path_for_entry(next_entry)
         if not transcript_path.exists():
             die(f'transcript missing: {transcript_path}')
         rendered, header_changed = render_managed_header_text(transcript_path.read_text(), next_entry, roles_dir)
@@ -1509,7 +1499,7 @@ def speak_lifecycle(path: Path, target: str, contributors: list[str]) -> int:
         for role in contributors:
             if not has_participant(entry, role):
                 die(f'contributor must already be a participant: {role}')
-        transcript_path = lifecycle_transcript_path_for_entry(entry)
+        transcript_path = transcript_path_for_entry(entry)
         transcript = transcript_path.read_text() if transcript_path.exists() else None
         advanced, notice = apply_speak_lifecycle_with_notice(entry, contributors, transcript)
         if transcript_path.exists():
@@ -1536,17 +1526,6 @@ def ensure_init_project_metadata(data: dict, registry_path: Path) -> None:
         'projectId': hashlib.sha256(str(project_root).encode()).hexdigest()[:32],
         'label': project_root.name or 'command-project',
     }
-
-
-def lifecycle_transcript_path_for_entry(entry: dict) -> Path:
-    return Path(entry['transcriptPath'])
-
-
-def read_transcript_for_entry(entry: dict) -> str:
-    transcript_path = lifecycle_transcript_path_for_entry(entry)
-    if not transcript_path.exists():
-        die(f'transcript missing: {transcript_path}')
-    return transcript_path.read_text()
 
 
 def contribution_store_record(
@@ -1715,7 +1694,7 @@ def speak_lifecycle_live(path: Path, target: str) -> int:
         entry = resolve_collab(data, target)
         if entry['status'] in {'closed', 'archived'}:
             die('record is closed')
-        transcript_path = lifecycle_transcript_path_for_entry(entry)
+        transcript_path = transcript_path_for_entry(entry)
         if not transcript_path.exists():
             die(f'transcript missing: {transcript_path}')
         transcript = transcript_path.read_text()
@@ -1833,7 +1812,7 @@ def render_speak(
                 f'{resume}'
             )
 
-        transcript_path = lifecycle_transcript_path_for_entry(current_entry)
+        transcript_path = transcript_path_for_entry(current_entry)
         if not transcript_path.exists():
             die(f'transcript missing: {transcript_path}')
         transcript = transcript_path.read_text()
@@ -2057,7 +2036,7 @@ def render_re_speak(
             die('rewrite-speak-render is not permitted in Completion')
         if not has_participant(entry, role):
             die(f'role must already be a participant: {role}')
-        transcript_path = lifecycle_transcript_path_for_entry(entry)
+        transcript_path = transcript_path_for_entry(entry)
         if not transcript_path.exists():
             die(f'transcript missing: {transcript_path}')
         transcript = transcript_path.read_text()
@@ -2122,58 +2101,26 @@ def advance_phase(
     emit_json: bool = False,
     caller_role: str | None = None,
 ) -> int:
-    with registry_lock(path):
-        data = load_registry(path)
-        entry = resolve_collab(data, target)
-        assert_caller_role(entry, caller_role, 'advance' if direction == 'next' else 'restore')
-        if entry['status'] in {'closed', 'archived'}:
-            die('record is closed')
-        active_phase = entry.get('activePhase')
-        if active_phase not in PHASES:
-            die('active phase missing in metadata')
-        index = PHASES.index(active_phase)
-        from_phase = active_phase
-        transcript_path = lifecycle_transcript_path_for_entry(entry)
-        if not transcript_path.exists():
-            die(f'transcript missing: {transcript_path}')
-        transcript = transcript_path.read_text()
-        if direction == 'next':
-            if index == len(PHASES) - 1:
-                die('no next phase')
-            if from_phase == 'Action Plan':
-                validate_action_plan_executable_scope(transcript)
-            entry['activePhase'] = PHASES[index + 1]
-            if entry['activePhase'] in MOD_EXCLUDED_PHASES:
-                remove_moderator_from_turn_order(entry)
-            if entry['activePhase'] == 'Completion' and seal_terminal(entry):
-                # Scope-aware on (re)entry into Completion: a fresh round, and for
-                # a reopen that preserved prior verification, keep the completed
-                # verification of roles whose write scope is unchanged so only the
-                # re-scoped roles re-verify. The all-preserved fallback in
-                # reset_participant_verification_stages keeps a round earnable.
-                initialize_completion_state(entry, 'execution', reset_rounds=True, scope_aware=True)
-        else:
-            if index == 0:
-                die('no previous phase')
-            entry['activePhase'] = PHASES[index - 1]
-            normalize_turn_order_for_phase(entry, entry['activePhase'])
-            if entry['activePhase'] != 'Completion':
-                invalidate_verification_seal(entry, f'restored to {entry["activePhase"]}')
-
-        notice = transition_notice(from_phase, entry['activePhase'])
-        rendered, header_changed = render_managed_header_text(transcript, entry, DEFAULT_ROLES_DIR)
-        notice = add_completion_summary_notice(notice, rendered)
-        print_header_overwrite(header_changed)
-        commit_registry_and_transcript(path, data, transcript_path, rendered)
-    print_post_action_advisories(
-        entry,
-        None,
-        None,
-        notice,
-        next_line_for_state(entry),
+    callbacks = PhaseLifecycleCallbacks(
+        seal_terminal=seal_terminal,
+        initialize_completion_state=initialize_completion_state,
+        invalidate_verification_seal=invalidate_verification_seal,
+        render_managed_header_text=render_managed_header_text,
+        add_completion_summary_notice=add_completion_summary_notice,
+        print_header_overwrite=print_header_overwrite,
+        commit_registry_and_transcript=commit_registry_and_transcript,
+        print_post_action_advisories=print_post_action_advisories,
+        next_line_for_state=next_line_for_state,
     )
-    print_phase_result(entry['activePhase'], notice, emit_json)
-    return 0
+    return advance_phase_state(
+        path,
+        target,
+        direction,
+        callbacks,
+        DEFAULT_ROLES_DIR,
+        emit_json=emit_json,
+        caller_role=caller_role,
+    )
 
 
 def record_execution(
@@ -2191,110 +2138,40 @@ def record_execution(
     emit_json: bool = False,
     caller_role: str | None = None,
 ) -> int:
-    if status not in ALLOWED_EXECUTION_STATUSES:
-        die(f'execution status must be one of {sorted(ALLOWED_EXECUTION_STATUSES)}')
-    if validation_scope and validation_scope not in ALLOWED_VALIDATION_SCOPES:
-        die(f'execution validation scope must be one of {sorted(ALLOWED_VALIDATION_SCOPES)}')
-    normalized_touched_paths = normalize_touched_paths(touched_paths)
-    with registry_lock(path):
-        data = load_registry(path)
-        entry = resolve_collab(data, target)
-        assert_caller_role(entry, caller_role, 'execution', role)
-        if entry['status'] in {'closed', 'archived'}:
-            die('record is closed')
-        if not has_participant(entry, role):
-            die(f'execution role must already be a participant: {role}')
-        if role == entry['moderatorRole']:
-            die('execution role must not be the moderator')
-        if reviewer_backed(entry) and reviewer_state(entry)['state'] != 'active':
-            die(f'execution blocked: reviewer role is not active: {reviewer_role(entry)}')
-        for assigned_role in assigned_roles:
-            if not has_participant(entry, assigned_role):
-                die(f'assigned role must already be a participant: {assigned_role}')
-        transcript = read_transcript_for_entry(entry) if lifecycle_transcript_path_for_entry(entry).exists() else ''
-        if status == 'completed' and entry['activePhase'] == 'Completion':
-            unchecked_count = unchecked_assigned_item_count(transcript, role)
-            if unchecked_count:
-                die(
-                    f'execution completed blocked for role {role}: '
-                    f'{unchecked_count} unchecked assigned Action Plan item(s) remain; '
-                    'loop target: Handoff for missing execution evidence'
-                )
-        assert_touched_paths_inside_handoff(entry, role, normalized_touched_paths)
-        assert_touched_paths_recordable_in_work_repo(entry, normalized_touched_paths)
-
-        execution_state = {'status': status, 'date': date}
-        execution_state['entryId'] = execution_identity(role, date)
-        commits = execution_commits_for_touched_paths(date, work_repo_root(entry), normalized_touched_paths)
-        if commits:
-            execution_state['commits'] = commits
-        digest = content_digest_for_touched_paths(work_repo_root(entry), 'WORKTREE', normalized_touched_paths)
-        execution_state['contentDigest'] = digest['contentDigest']
-        execution_state['pathDigests'] = digest['pathDigests']
-        if agent_id:
-            execution_state['agentId'] = agent_id
-        if validation_result:
-            execution_state['validationResult'] = validation_result
-        if validation_scope:
-            execution_state['validationScope'] = validation_scope
-        if normalized_touched_paths:
-            execution_state['touchedPaths'] = normalized_touched_paths
-        previous_signature = execution_signature(entry)
-        entry.setdefault('execution', {})[role] = execution_state
-        if seal_terminal(entry) and reviewer_backed(entry) and previous_signature != execution_signature(entry):
-            invalidate_verification_seal(entry, f'execution changed for {role}')
-            write_seal_verdict_companion(path, entry)
-        closed = False
-        if issue_terminal(entry) and entry['activePhase'] == 'Completion':
-            if auto_close and close_eligible_after_execution(entry, assigned_roles):
-                entry['status'] = 'closed'
-                closed = True
-                if data.get('activeCollabId') == entry['id']:
-                    data['activeCollabId'] = None
-        elif seal_terminal(entry) and reviewer_backed(entry) and entry['activePhase'] == 'Completion':
-            if close_eligible_after_execution(entry, assigned_roles):
-                if auto_close:
-                    entry['status'] = 'closed'
-                    closed = True
-                    if data.get('activeCollabId') == entry['id']:
-                        data['activeCollabId'] = None
-            else:
-                effective_assigned = assigned_roles if assigned_roles else [
-                    r for r in effective_turn_order(entry)
-                    if r != entry['moderatorRole']
-                ]
-                if effective_assigned and all(
-                    entry.get('execution', {}).get(r, {}).get('status') == 'completed'
-                    for r in effective_assigned
-                ):
-                    initialize_completion_state(entry, 'verification', reset_rounds=True)
-                else:
-                    initialize_completion_state(entry, 'execution')
-        elif auto_close and close_eligible_after_execution(entry, assigned_roles):
-            entry['status'] = 'closed'
-            closed = True
-            if data.get('activeCollabId') == entry['id']:
-                data['activeCollabId'] = None
-
-        notice = lifecycle_status_notice('closed') if closed else None
-        next_line = next_line_after_execution(entry, assigned_roles)
-        transcript_path = lifecycle_transcript_path_for_entry(entry)
-        if closed and transcript_path.exists():
-            rendered, header_changed = render_managed_header_text(transcript, entry, DEFAULT_ROLES_DIR)
-            if completion_summary_empty(rendered):
-                rendered = append_completion_summary(
-                    rendered,
-                    default_close_summary(entry),
-                    summary_date_from_timestamp(date),
-                )
-            print_header_overwrite(header_changed)
-            commit_registry_and_transcript(path, data, transcript_path, rendered)
-        else:
-            save_registry(path, data)
-    print_post_action_advisories(entry, role, 'Completion', notice, next_line)
-    print(entry['status'])
-    print_notice_diagnostic(notice, emit_json)
-    return 0
+    callbacks = ExecutionCallbacks(
+        seal_terminal=seal_terminal,
+        issue_terminal=issue_terminal,
+        close_eligible_after_execution=close_eligible_after_execution,
+        initialize_completion_state=initialize_completion_state,
+        invalidate_verification_seal=invalidate_verification_seal,
+        write_seal_verdict_companion=write_seal_verdict_companion,
+        next_line_after_execution=next_line_after_execution,
+        render_managed_header_text=render_managed_header_text,
+        append_completion_summary=append_completion_summary,
+        default_close_summary=default_close_summary,
+        summary_date_from_timestamp=summary_date_from_timestamp,
+        print_header_overwrite=print_header_overwrite,
+        commit_registry_and_transcript=commit_registry_and_transcript,
+        print_post_action_advisories=print_post_action_advisories,
+        print_notice_diagnostic=print_notice_diagnostic,
+    )
+    return record_execution_state(
+        path,
+        target,
+        role,
+        status,
+        date,
+        assigned_roles,
+        auto_close,
+        validation_result,
+        validation_scope,
+        touched_paths,
+        callbacks,
+        DEFAULT_ROLES_DIR,
+        agent_id=agent_id,
+        emit_json=emit_json,
+        caller_role=caller_role,
+    )
 
 
 def normalize_issue_export_evidence(evidence_path: Path) -> list[dict]:
@@ -2372,7 +2249,7 @@ def export_issues(
             if data.get('activeCollabId') == entry['id']:
                 data['activeCollabId'] = None
         notice = lifecycle_status_notice('closed') if closed else None
-        transcript_path = lifecycle_transcript_path_for_entry(entry)
+        transcript_path = transcript_path_for_entry(entry)
         if closed and transcript_path.exists():
             transcript = transcript_path.read_text()
             rendered, header_changed = render_managed_header_text(transcript, entry, DEFAULT_ROLES_DIR)
@@ -2476,7 +2353,7 @@ def reopen_collab(
         if restore_target != phase:
             expected_token = 'handoff' if restore_target == 'Handoff' else 'action-plan'
             die(f'{collab_dispatch("reopen")} phase mismatch: verdict restoreTarget is {restore_target}; expected {expected_token}')
-        transcript_path = lifecycle_transcript_path_for_entry(entry)
+        transcript_path = transcript_path_for_entry(entry)
         if not transcript_path.exists():
             die(f'transcript missing: {transcript_path}')
         transcript = transcript_path.read_text()
@@ -2550,7 +2427,7 @@ def status_view(path: Path, target: str) -> int:
     with registry_lock(path):
         data = load_registry(path)
         entry = resolve_collab(data, target)
-        transcript_path = lifecycle_transcript_path_for_entry(entry)
+        transcript_path = transcript_path_for_entry(entry)
         if not transcript_path.exists():
             die(f'transcript missing: {transcript_path}')
         transcript = transcript_path.read_text()
@@ -2573,7 +2450,7 @@ def render_status(path: Path, target: str) -> int:
     with registry_lock(path):
         data = load_registry(path)
         entry = resolve_collab(data, target)
-        transcript_path = lifecycle_transcript_path_for_entry(entry)
+        transcript_path = transcript_path_for_entry(entry)
         if not transcript_path.exists():
             die(f'transcript missing: {transcript_path}')
         transcript = transcript_path.read_text()
@@ -2594,7 +2471,7 @@ def re_summarize_collab(path: Path, target: str, summary_file: Path, date: str |
         entry = resolve_collab(data, target)
         if entry['status'] == 'archived':
             die('record is archived')
-        transcript_path = lifecycle_transcript_path_for_entry(entry)
+        transcript_path = transcript_path_for_entry(entry)
         if not transcript_path.exists():
             die(f'transcript missing: {transcript_path}')
         summary_date = date or dt.date.today().isoformat()
@@ -2608,7 +2485,7 @@ def render_participants(path: Path, target: str, roles_dir: Path) -> int:
     with registry_lock(path):
         data = load_registry(path)
         entry = resolve_collab(data, target)
-        transcript_path = lifecycle_transcript_path_for_entry(entry)
+        transcript_path = transcript_path_for_entry(entry)
         if not transcript_path.exists():
             die(f'transcript missing: {transcript_path}')
         rendered, header_changed = render_managed_header_text(transcript_path.read_text(), entry, roles_dir)
@@ -2969,7 +2846,7 @@ def join_participants(
             count_caller_declined_agent_id_write(nextdata, normalized_agent_id)
         validate_registry(nextdata, path)
 
-        transcript_path = lifecycle_transcript_path_for_entry(next_entry)
+        transcript_path = transcript_path_for_entry(next_entry)
         if not transcript_path.exists():
             die(f'transcript missing: {transcript_path}')
         transcript = transcript_path.read_text()
@@ -3031,7 +2908,7 @@ def archive_collab(
         data = load_registry(path)
         entry = resolve_collab(data, target)
         assert_caller_role(entry, caller_role, 'archive')
-        transcript_path = lifecycle_transcript_path_for_entry(entry)
+        transcript_path = transcript_path_for_entry(entry)
         if not transcript_path.exists():
             die(f'transcript missing: {transcript_path}')
         entry['status'] = 'archived'
@@ -3058,7 +2935,7 @@ def open_collab(path: Path, target: str, caller_role: str | None = None) -> int:
         if entry['status'] == 'open':
             print(f'record already open: {entry["id"]}')
             return 0
-        transcript_path = lifecycle_transcript_path_for_entry(entry)
+        transcript_path = transcript_path_for_entry(entry)
         if not transcript_path.exists():
             die(f'transcript missing: {transcript_path}')
         transcript = transcript_path.read_text()
@@ -3084,7 +2961,7 @@ def close_collab(
         assert_caller_role(entry, caller_role, 'close')
         if entry['status'] == 'archived':
             die('record is archived')
-        transcript_path = lifecycle_transcript_path_for_entry(entry)
+        transcript_path = transcript_path_for_entry(entry)
         if not transcript_path.exists():
             die(f'transcript missing: {transcript_path}')
         transcript = transcript_path.read_text()
@@ -3133,7 +3010,7 @@ def audit_closed(path: Path) -> int:
     for entry in data['collabs']:
         if entry['status'] != 'closed':
             continue
-        transcript_path = lifecycle_transcript_path_for_entry(entry)
+        transcript_path = transcript_path_for_entry(entry)
         if not transcript_path.exists():
             die(f'transcript missing: {transcript_path}')
         transcript = transcript_path.read_text()
@@ -3156,7 +3033,7 @@ def delete_collab(path: Path, target: str, confirmed: bool, caller_role: str | N
         data = load_registry(path)
         entry = resolve_collab(data, target)
         assert_caller_role(entry, caller_role, 'delete')
-        transcript_path = lifecycle_transcript_path_for_entry(entry)
+        transcript_path = transcript_path_for_entry(entry)
         contribution_store_path = contribution_store_path_for_entry(path, entry)
         if not transcript_path.exists():
             die(f'transcript missing: {transcript_path}')
@@ -3220,7 +3097,7 @@ def retract_latest_contribution(
             die('retract-speak is not permitted after Completion')
         if not has_participant(entry, role):
             die(f'role must already be a participant: {role}')
-        transcript_path = lifecycle_transcript_path_for_entry(entry)
+        transcript_path = transcript_path_for_entry(entry)
         if not transcript_path.exists():
             die(f'transcript missing: {transcript_path}')
         transcript = transcript_path.read_text()

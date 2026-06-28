@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 from commands.collab.engine.errors import die
 from commands.collab.engine.registry_constants import CONTENT_ONLY_GUARD, PHASES
@@ -88,6 +89,17 @@ def completion_summary_empty(transcript: str) -> bool:
         if SUMMARY_HEADING_RE.match(line.strip()):
             return False
     return True
+
+
+def transcript_path_for_entry(entry: dict) -> Path:
+    return Path(entry['transcriptPath'])
+
+
+def read_transcript_for_entry(entry: dict) -> str:
+    transcript_path = transcript_path_for_entry(entry)
+    if not transcript_path.exists():
+        die(f'transcript missing: {transcript_path}')
+    return transcript_path.read_text()
 
 
 def contribution_body_lines(block: list[str]) -> list[str]:

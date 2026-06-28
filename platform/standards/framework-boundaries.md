@@ -6,7 +6,7 @@ The framework boundary is the bootstrap chain, command routers, private route pl
 
 The runtime path remains the bootstrap anchor. Codex and Claude connect through the bootstrap chain; host-native features stay outside the portable layer unless a route explicitly documents a harness-specific policy.
 
-MCPs are out of scope for the portable layer by design. MCPs may be useful host integrations, but they are not required to understand or operate the framework.
+MCPs are out of scope for the portable layer by design. MCPs may be useful host integrations, but they are not required to understand or operate the framework. Host-level MCP configuration (`mcp.json`) is intentionally outside tracked source.
 
 ## Boundary map
 
