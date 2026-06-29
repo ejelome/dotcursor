@@ -43,7 +43,9 @@ Classification of `commands/collab/engine/registry.py` subcommands by operationa
 | `rewrite-summary` | `route-backend` | `(collab rewrite summary)` |
 | `role-row` | `utility` | participant table render |
 | `roles` | `utility` | role list |
-| `seal-render` | `route-backend` | `(collab seal verification)` |
+| `seal-write` | `route-backend` | `(collab seal verification)` |
+| `record-verdict` | `route-backend` | `(collab seal verification)` |
+| `seal-render` | `compat-shim` | legacy callers for `(collab seal verification)` |
 | `seal-state` | `route-backend` | `(collab seal verification)`; stale-seal checks |
 | `set` | `route-backend` | `(collab set)` |
 | `show-verdict` | `route-backend` | `(collab show verdict)` |

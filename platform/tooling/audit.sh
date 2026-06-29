@@ -594,13 +594,13 @@ check_public_dispatch_surface() {
 
 check_verification_round_call_sites() {
   local status=0
-  python3 - commands/collab/engine/registry.py commands/collab/engine/seal_verification.py <<'PY' || status=$?
+  python3 - commands/collab/engine/registry_core.py commands/collab/engine/seal_verification.py <<'PY' || status=$?
 import ast
 import sys
 from pathlib import Path
 from typing import Union
 
-registry_path = Path(sys.argv[1])
+registry_core_path = Path(sys.argv[1])
 seal_path = Path(sys.argv[2])
 FunctionNode = Union[ast.FunctionDef, ast.AsyncFunctionDef]
 
@@ -614,7 +614,7 @@ def parse_functions(path: Path) -> dict[str, FunctionNode]:
     }
 
 
-registry_functions = parse_functions(registry_path)
+registry_core_functions = parse_functions(registry_core_path)
 seal_functions = parse_functions(seal_path)
 
 
@@ -654,51 +654,73 @@ def delegates_to_seal_verification(
     return False
 
 
-registry_participant_verify_render = require_function(
-    registry_functions,
+registry_core_participant_verify_render = require_function(
+    registry_core_functions,
     'participant_verify_render',
-    'registry.py must define participant_verify_render as part of the permanent seal facade pair',
+    'registry_core.py must define participant_verify_render as part of the permanent seal facade pair',
 )
-registry_render_seal = require_function(
-    registry_functions,
+registry_core_render_seal = require_function(
+    registry_core_functions,
     'render_seal',
-    'registry.py must define render_seal as part of the permanent seal facade pair',
+    'registry_core.py must define render_seal as the legacy seal dispatch shim',
 )
 seal_participant_verify_render = require_function(
     seal_functions,
     'participant_verify_render',
     'seal_verification.py must define the participant_verify_render implementation',
 )
-seal_render_seal = require_function(
+seal_write = require_function(
+    seal_functions,
+    'seal_write',
+    'seal_verification.py must define the seal_write implementation',
+)
+record_verdict = require_function(
+    seal_functions,
+    'record_verdict',
+    'seal_verification.py must define the record_verdict implementation',
+)
+legacy_render_seal = require_function(
     seal_functions,
     'render_seal',
-    'seal_verification.py must define the render_seal implementation',
+    'seal_verification.py must define the legacy render_seal dispatch shim',
 )
 
 assert delegates_to_seal_verification(
-    registry_participant_verify_render,
+    registry_core_participant_verify_render,
     'participant_verify_render',
 ), (
-    'registry.py participant_verify_render facade must delegate to '
+    'registry_core.py participant_verify_render facade must delegate to '
     '_seal_verification.participant_verify_render'
 )
-assert delegates_to_seal_verification(registry_render_seal, 'render_seal'), (
-    'registry.py render_seal facade must delegate to _seal_verification.render_seal'
+assert delegates_to_seal_verification(registry_core_render_seal, 'render_seal'), (
+    'registry_core.py render_seal shim must delegate to _seal_verification.render_seal'
 )
 assert calls_name(seal_participant_verify_render, 'record_verification_round_for_execution'), (
     'participant_verify_render must record the paired verification round'
 )
-assert not calls_name(registry_participant_verify_render, 'record_verification_round_for_execution'), (
-    'registry.py participant_verify_render facade must not call '
+assert not calls_name(registry_core_participant_verify_render, 'record_verification_round_for_execution'), (
+    'registry_core.py participant_verify_render facade must not call '
     'record_verification_round_for_execution; seal_verification.py owns the recorder call'
 )
-assert not calls_name(registry_render_seal, 'record_verification_round_for_execution'), (
-    'protected seal-render recorder boundary: registry.py render_seal must not call '
+assert not calls_name(registry_core_render_seal, 'record_verification_round_for_execution'), (
+    'protected seal-render recorder boundary: registry_core.py render_seal must not call '
     'record_verification_round_for_execution'
 )
-assert not calls_name(seal_render_seal, 'record_verification_round_for_execution'), (
-    'protected seal-render recorder boundary: seal_verification.py render_seal must not call '
-    'record_verification_round_for_execution'
+for function_name, function in [
+    ('seal_write', seal_write),
+    ('record_verdict', record_verdict),
+    ('render_seal', legacy_render_seal),
+]:
+    assert not calls_name(function, 'record_verification_round_for_execution'), (
+        'protected seal recorder boundary: seal_verification.py '
+        f'{function_name} must not call record_verification_round_for_execution'
+    )
+
+assert calls_name(legacy_render_seal, 'seal_write'), (
+    'legacy render_seal shim must dispatch bare seals to seal_write'
+)
+assert calls_name(legacy_render_seal, 'record_verdict'), (
+    'legacy render_seal shim must dispatch verdict writes to record_verdict'
 )
 PY
   ((status == 0)) || failures=$((failures + 1))
@@ -707,12 +729,12 @@ PY
 
 check_contribution_validation_placement() {
   local status=0
-  python3 - commands/collab/engine/registry.py commands/collab/engine/contribution_validation.py <<'PY' || status=$?
+  python3 - commands/collab/engine/registry_core.py commands/collab/engine/contribution_validation.py <<'PY' || status=$?
 import ast
 import sys
 from pathlib import Path
 
-registry_path = Path(sys.argv[1])
+registry_core_path = Path(sys.argv[1])
 validation_path = Path(sys.argv[2])
 
 
@@ -725,7 +747,7 @@ def function_names(path: Path) -> set[str]:
     }
 
 
-registry_functions = function_names(registry_path)
+registry_core_functions = function_names(registry_core_path)
 validation_functions = function_names(validation_path)
 owned_by_validation = {
     'assert_turn_order_not_drifted',
@@ -743,9 +765,9 @@ assert not missing, (
     + ', '.join(missing)
 )
 
-leaked = sorted(owned_by_validation & registry_functions)
+leaked = sorted(owned_by_validation & registry_core_functions)
 assert not leaked, (
-    'registry.py must stay a facade for speak-time contribution gates; move back to '
+    'registry_core.py must stay a facade for speak-time contribution gates; move back to '
     'contribution_validation.py: '
     + ', '.join(leaked)
 )

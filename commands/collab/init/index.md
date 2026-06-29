@@ -20,6 +20,25 @@ Create a moderated collaboration record under the user-scope collab state root f
 4. Display the helper's first output line, which is the resolved transcript path `records/YYYY-MM-DD-<slug>.md` inside the state root. If `--open` is present, display the `OPEN:` advisory line when present; do not fail the route, alter the exit code, or unwind any registry write on opener error.
 5. Stop after creating the file, registering the moderator, selecting it as active in the registry, and — if `--open` was supplied — attempting to open the transcript in the default browser. Do not write a phase contribution.
 
+## Transaction
+
+`(collab init)` is a ten-effect atomic operation. If any step fails before step 10, no registry or artifact write occurs.
+
+| # | Effect | Rollback expectation |
+|---|--------|----------------------|
+| 1 | Validate flags — strict parsing; unknown flags and trailing positionals rejected | Abort before any write |
+| 2 | Normalize title — title-case, acronym preservation, whitespace collapse | Abort before any write |
+| 3 | Resolve local date and derive slug (lowercased, hyphen-separated) | Abort before any write |
+| 4 | Assign sequence number — next from insertion order; never reused after hard delete | Abort before any write |
+| 5 | Register moderator participant — from role file; stamp `agentId` at join time | Abort before any write |
+| 6 | Apply reviewer metadata — `reviewerRole`, `reviewerMode`, `reviewerOptionalPhases` when `--reviewer` is supplied | Abort before any write |
+| 7 | Stamp `createdAt` and `terminal` — workflow-model selector (`seal` \| `issue`) | Abort before any write |
+| 8 | Resolve `workRepo` — git work tree enclosing `.collab.json`, or `--work-repo` when supplied | Abort before any write |
+| 9 | Seed verification state — `rounds=0`, `cap=3`; `participantVerification` toggle from `--no-participant-verification` | Abort before any write |
+| 10 | Atomic registry/artifact replacement — append collab entry to `registry.json`, write lifecycle transcript (`records/<id>.md`), write contribution store (`records/<id>-contributions.json`), set `activeCollabId` | All-or-nothing; partial writes roll back |
+
+After step 10, `--open` issues a non-atomic browser launch. Opener failure is non-fatal and does not roll back the registry write.
+
 ## Notes
 
 - **Parameters:** `"<name>"` — required title text; all tokens after `init` that are not declared helper flags belong to this value. `--agent-id <agentId>` — required helper flag supplied by the route from the active runtime harness. `--reviewer <role>` — optional flag; writes `reviewerRole`, `reviewerMode`, and `reviewerOptionalPhases` to the registry entry unconditionally; adds a transcript note if the role is not yet a participant, but does not defer or skip the registry write. `--terminal <seal|issue>` — optional workflow-model selector; active values: `seal` (default) and `issue`; writes the per-collab top-level `terminal` field; full terminal doctrine in [`commands/collab/reference/workflow-models.md`](../reference/workflow-models.md). `--no-participant-verification` — optional boolean flag that disables the `Completion.verification.participant` gate; participant verification is on by default and allows exactly one reviewer pass; if the seal fails, the moderator decides whether to reopen. `--work-repo <path>` — optional flag; supplies the initial `workRepo` binding when the collab record is for a repo other than the one containing `.collab.json`; default resolves as the git work tree enclosing the `.collab.json` marker directory, and when that directory is not inside any git tree (a fresh planning directory) it falls back to the framework checkout and defers git enforcement to execution and seal time; supply `--work-repo` only when your shell cwd is not the target repo. `--open` — optional boolean flag; no value accepted. When present, passes the rendered path to the platform default browser; macOS users should set their default browser. See **`--open` flag** in **Notes**.

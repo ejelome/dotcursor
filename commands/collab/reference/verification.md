@@ -33,7 +33,7 @@ Within `Completion.verification`, three ordered sub-states apply for reviewer-ba
 
 `verification.participant` precedes `verification.seal`, which precedes `verification.assessment`. Assessment opens after a successful seal. Assessment also re-opens when the seal becomes stale or a cap-exit is recorded, which invalidates the prior seal. Assessment is budget-exempt when a cap-exit trigger opened it.
 
-On a clean first pass, `seal-render` transitions to `verification.assessment`; the reviewer emits `--outcome success`, and the collab auto-closes with an auto-summary.
+On a clean first pass, `seal-write` transitions to `verification.assessment`; the reviewer records `--outcome success` through `record-verdict`, and the collab auto-closes with an auto-summary.
 
 ### Per-role stage: `verification.participants[role].stage`
 
@@ -71,13 +71,13 @@ Assessment must emit even when no actionable cause is identifiable: `nullResult:
 
 ## Round definition
 
-A verification round is a paired-event unit. The round is recorded when the last participant verification completes. `participant_verify_render` increments the count atomically at the all-participants-completed transition; `pairedExecutionSignature` guards against double-increment on single-client retry — if `participant_verify_render` is retried after a transient registry write failure, the signature match prevents a second increment. `seal_render` checks that `verificationRounds > 0` as defense-in-depth only; it does not increment the count. The count is not derived from transcript parsing; `seal_state` exposes the current value as a non-mutating projection.
+A verification round is a paired-event unit. The round is recorded when the last participant verification completes. `participant_verify_render` increments the count atomically at the all-participants-completed transition; `pairedExecutionSignature` guards against double-increment on single-client retry — if `participant_verify_render` is retried after a transient registry write failure, the signature match prevents a second increment. `seal_write` checks that `verificationRounds > 0` as defense-in-depth only; it does not increment the count. The count is not derived from transcript parsing; `seal_state` exposes the current value as a non-mutating projection.
 
 **Zero-round rule:** A seal over zero verification rounds is a hard ABORT. At least one complete reviewer-executor paired event must be recorded before the seal is accepted. There is no advisory or warning path for the zero-round case.
 
 ## Seal object
 
-`verificationSeal` is written atomically to the registry by `seal-render`:
+`verificationSeal` is written atomically to the registry by `seal-write`:
 
 ```
 verificationSeal = {
@@ -118,9 +118,9 @@ The participant-verification attempt budget is bound to the active Handoff `writ
 | `reopen-action-plan` | Transitions the collab to `Action Plan` phase |
 | `reopen-handoff` | Transitions the collab to `Handoff` phase |
 | `archive` | Closes with an accepted-risk summary for unresolved findings |
-| `follow-up-collab` | Ends the verification loop and opens a new linked collab for unresolved findings; `seal-render` emits structured `NEXT:` guidance with `restoreReason`, open `evidence` anchors, and `failureCategory`. |
+| `follow-up-collab` | Ends the verification loop and opens a new linked collab for unresolved findings; `seal-write` emits structured `NEXT:` guidance with `restoreReason`, open `evidence` anchors, and `failureCategory`. |
 
-The cap-exit action is passed to `seal-render` as `--cap-exit <action>`. The reviewer may also declare a cap exit before the cap fires when they choose to end the loop early. `--cap-exit archive` requires unresolved findings; using it when participant verification passed cleanly is a protocol violation.
+The cap-exit action is passed to `seal-write` as `--cap-exit <action>`. The reviewer may also declare a cap exit before the cap fires when they choose to end the loop early. `--cap-exit archive` requires unresolved findings; using it when participant verification passed cleanly is a protocol violation.
 
 ## writeScope reopen advisory
 
@@ -140,7 +140,7 @@ For reviewer-backed collabs, auto-close from `(collab run plan)` alone is remove
 
 The seal model governs two distinct time domains:
 
-**Seal time (open records):** Content-integrity is enforced when `seal-render` runs. The scope digest and `pathDigests` map are recomputed from `HEAD` and must equal the stored seal values; committed deletions are represented as deletion tombstones in `pathDigests`. The declared scope must also be fully committed at `HEAD`. The exact mechanics are defined in the [Content-integrity gate](../seal-verification/index.md#content-integrity-gate) note in `(collab seal verification)`.
+**Seal time (open records):** Content-integrity is enforced when `seal-write` runs, and checked again for success through `record-verdict`. The scope digest and `pathDigests` map are recomputed from `HEAD` and must equal the stored seal values; committed deletions are represented as deletion tombstones in `pathDigests`. The declared scope must also be fully committed at `HEAD`. The exact mechanics are defined in the [Content-integrity gate](../seal-verification/index.md#content-integrity-gate) note in `(collab seal verification)`.
 
 **Post-close exemption:** `closed` and `archived` records are not re-validated after close. History rewrites (amend, rebase, squash) that preserve the content of touched paths do not affect the sealed digest and are expected artifacts in immutable records — not live defects. The state at seal time is the authoritative attestation.
 

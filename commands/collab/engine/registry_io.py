@@ -218,7 +218,7 @@ def ensure_legacy_revision_baselines(registry_path: Path, before: dict | None) -
 
 def write_revision_event(registry_path: Path, event: dict) -> None:
     event_to_write = dict(event)
-    legacy_before = event_to_write.pop('_legacyBefore', None)
+    legacy_before = event_to_write.get('_legacyBefore')
     ensure_legacy_revision_baselines(registry_path, legacy_before)
     event_dir = revision_event_dir(registry_path, event_to_write['collabId'])
     event_dir.mkdir(parents=True, exist_ok=True)

@@ -94,7 +94,10 @@ def workflow_model_selection_gaps(config_root: Path) -> list[str]:
     gaps: list[str] = []
     init_text = source_text(config_root / 'commands/collab/init/index.md')
     registry_text = source_text(config_root / 'commands/collab/reference/registry.md')
-    helper_text = source_text(config_root / 'commands/collab/engine/registry.py')
+    helper_text = '\n'.join([
+        source_text(config_root / 'commands/collab/engine/registry.py'),
+        source_text(config_root / 'commands/collab/engine/registry_core.py'),
+    ])
 
     init_required = {
         'init --terminal selector': '--terminal',

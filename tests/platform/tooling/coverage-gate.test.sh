@@ -81,6 +81,24 @@ cat >"$routes/commands/collab/sample/index.md" <<'MD'
 MD
 run_gate >"$TMPDIR/honor.out"
 
+touch "$tests_dir/sample-human-judgment.test.sh"
+set +e
+run_gate >"$TMPDIR/stale-honor.out" 2>&1
+status=$?
+set -e
+
+if [[ "$status" -eq 0 ]]; then
+  printf 'FAIL: stale agent-honor-system marker passed when a test exists\n' >&2
+  exit 1
+fi
+
+if ! grep -Fq "stale agent-honor-system marker(s):" "$TMPDIR/stale-honor.out"; then
+  printf 'FAIL: stale honor-system output did not name failure\n' >&2
+  cat "$TMPDIR/stale-honor.out" >&2
+  exit 1
+fi
+rm "$tests_dir/sample-human-judgment.test.sh"
+
 cat >"$routes/commands/collab/sample/index.md" <<'MD'
 # sample route
 

@@ -40,9 +40,21 @@ Per-design rules that have been deliberated and converged through the collab pro
 
 ## Single-writer helper
 
-**Single-writer helper.** A single Python helper (`commands/collab/engine/registry.py`) owns every write to the registry and transcript. No route, agent, or external script writes registry JSON or transcript Markdown directly. The helper ensures consistent serialization, revision tracking, stale-write detection, and digest computation across all collab operations.
+**Single-writer helper.** A single Python helper entrypoint (`commands/collab/engine/registry.py`) owns every write to the registry and transcript. Its implementation may delegate into domain modules, currently including the compatibility core `commands/collab/engine/registry_core.py`. No route, agent, or external script writes registry JSON or transcript Markdown directly. The helper ensures consistent serialization, revision tracking, stale-write detection, and digest computation across all collab operations.
 
 **Source:** collab `2026-06-18-doctrine-naming-glossary-system-reference` (convergence: 2026-06-18)
+
+---
+
+## Thin registry core
+
+**Thin registry core.** `registry.py` is the single-writer helper entrypoint (see **Single-writer helper** above). Its thin-core target restricts what belongs in `registry.py`: package bootstrap, compatibility exports, and executable delegation only. Domain logic — field validation, schema migration, I/O operations, seal computation, transcript parsing, plan-item extraction, lifecycle state machines — belongs in owning modules (`registry_io.py`, `seal_verification.py`, `transcript_readers.py`, `registry_constants.py`, `registry_core.py` during the compatibility extraction phase, and future domain modules), not inlined in `registry.py`. A function in `registry.py` that carries business logic is a thin-core violation.
+
+**Verification contract:** A change satisfies the thin-core target when: (a) `registry.py` has no domain helper definitions; (b) the CLI still executes through `registry.py`; and (c) every extracted function either lives in its owning module or, if ownership is still being decomposed, in `registry_core.py` with a tracked follow-up extraction condition. The target is not only a line-count threshold; it is a structural gate — domain functions belong where the domain is owned.
+
+**Current state:** `registry.py` is a thin executable facade. The former registry helper body lives in `registry_core.py` so behavior and import compatibility remain stable while ownership extraction continues. `registry_core.py` is not the final architecture; domain clusters in it remain in scope for extraction to `phase_lifecycle`, contribution, effort, transcript, and completion modules.
+
+**Source:** collab `2026-06-29-coding-principles` (directive: "thin core + de-braid completion effort"; convergence: 2026-06-29)
 
 ---
 
@@ -76,6 +88,6 @@ Per-design rules that have been deliberated and converged through the collab pro
 
 The three planes are not redundant because they answer different questions at different scopes. Passing the participant plane does not confirm that content is committed; passing the seal plane does not confirm the goal was met; passing the assessment plane presupposes both but cannot substitute for either. The participant plane is the sole production round-earning event when enabled; when disabled (`--no-participant-verification`), no production path earns the round and the zero-round seal gate blocks the seal. Canonical mechanics: [`verification.md` § Round definition](../../commands/collab/reference/verification.md#round-definition); disabled-path limitation: see the `--no-participant-verification` guardrail in [`(collab init)`](../../commands/collab/init/index.md).
 
-**Revision coupling:** The disabled-path claim above, the `--no-participant-verification` guardrail in [`(collab init)`](../../commands/collab/init/index.md), and the Round-earning event note in [`(collab participant verify)`](../../commands/collab/participant-verify/index.md) are a coupled set; when a production round-earning path for the disabled posture lands, all three must be revised in the same change or the docs contradict the code.
+**Revision coupling:** The disabled-path claim above, the `--no-participant-verification` guardrail in [`(collab init)`](../../commands/collab/init/index.md), and the Round-earning event note in [`(collab participant verify)`](../../commands/collab/participant-verify/index.md) are a coupled set; when a production round-earning path for the disabled posture lands, all three must be revised in the same change or the docs contradict the code. **Current state:** no production path earns a round when `--no-participant-verification` is set; `participant_verify_render` is bypassed and `verification.rounds` stays at 0; the zero-round seal gate blocks the seal. The gate has not yet fired. Verification: search for any code path that both (a) is reachable when `participantVerification == false` and (b) calls `participant_verify_render` or otherwise increments `verification.rounds`; any such path is a gate trigger.
 
 **Source:** collab `2026-06-26-redundant-participant-verify` (directive: "settle the fate of `Completion.verification.participant`"; verdict: not redundant; convergence: 2026-06-26)

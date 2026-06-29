@@ -162,6 +162,7 @@ def main() -> int:
 
     discovered = existing_test_stems(tests_dir) | central_checker_test_stems(root, root / "tests/specs/tests.md")
     required: list[str] = []
+    stale_honor_system: list[str] = []
     errors: list[str] = []
 
     for clause in clauses:
@@ -179,8 +180,15 @@ def main() -> int:
             )
             continue
         if clause.honor_system:
+            if clause.anchor in discovered:
+                stale_honor_system.append(clause.anchor)
             continue
         required.append(clause.anchor)
+
+    if stale_honor_system:
+        errors.append("stale agent-honor-system marker(s):")
+        for stem in sorted(set(stale_honor_system)):
+            errors.append(f"  {stem}: matching test exists; remove `(agent-honor-system)` from the route ABORT")
 
     missing = sorted(set(required) - discovered)
     if missing:

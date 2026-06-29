@@ -269,6 +269,31 @@ Arguments and flags:
 - `role` required; required
 - `--resume` optional; flag
 
+### `record-verdict`
+
+Usage: `registry.py record-verdict [-h] --observed-revision OBSERVED_REVISION
+                                  --outcome OUTCOME
+                                  [--restore-target RESTORE_TARGET]
+                                  [--restore-reason RESTORE_REASON]
+                                  [--evidence EVIDENCE]
+                                  [--failure-category FAILURE_CATEGORY]
+                                  [--null-result] [--json]
+                                  [--caller-role CALLER_ROLE]
+                                  target role`
+
+Arguments and flags:
+- `target` required; required
+- `role` required; required
+- `--observed-revision` required; value
+- `--outcome` required; value
+- `--restore-target` optional; value
+- `--restore-reason` optional; value
+- `--evidence` optional; value
+- `--failure-category` optional; value
+- `--null-result` optional; flag
+- `--json` optional; flag
+- `--caller-role` optional; value
+
 ### `registry-cli-doc`
 
 Usage: `registry.py registry-cli-doc [-h] [--check]`
@@ -340,6 +365,15 @@ Usage: `registry.py restart-verification [-h] [--caller-role CALLER_ROLE]
 
 Arguments and flags:
 - `target` required; required
+- `--caller-role` optional; value
+
+### `restore`
+
+Usage: `registry.py restore [-h] --to TO [--caller-role CALLER_ROLE] target`
+
+Arguments and flags:
+- `target` required; required
+- `--to` required; value
 - `--caller-role` optional; value
 
 ### `retract-speak`
@@ -442,6 +476,27 @@ Arguments and flags:
 - `target` required; required
 - `role` required; nargs=?
 - `--resume` optional; flag
+
+### `seal-write`
+
+Usage: `registry.py seal-write [-h] --observed-revision OBSERVED_REVISION
+                              [--cap-exit CAP_EXIT]
+                              [--restore-reason RESTORE_REASON]
+                              [--evidence EVIDENCE]
+                              [--failure-category FAILURE_CATEGORY] [--json]
+                              [--caller-role CALLER_ROLE]
+                              target role`
+
+Arguments and flags:
+- `target` required; required
+- `role` required; required
+- `--observed-revision` required; value
+- `--cap-exit` optional; value
+- `--restore-reason` optional; value
+- `--evidence` optional; value
+- `--failure-category` optional; value
+- `--json` optional; flag
+- `--caller-role` optional; value
 
 ### `set`
 

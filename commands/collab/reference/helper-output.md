@@ -131,11 +131,11 @@ Emits JSON object with fields: `target`, `activePhase`, `registryRevision`, `rev
 
 Exit 0 on valid input. Exit 1 when the collab is closed, the phase is not `Completion`, or the target is unresolvable.
 
-### `seal-render`
+### `seal-write`
 
-Two modes share the subcommand: bare seal (no verdict flags) and assessment verdict (with `--outcome` and optional verdict fields). The modes are mutually exclusive; `--cap-exit` and verdict flags cannot be combined.
+Writes the immutable verification seal snapshot. The legacy `seal-render` subcommand without verdict flags dispatches to this path for old callers.
 
-**Bare seal path** (no verdict flags; `verificationReviewSubState` must be `seal`):
+`verificationReviewSubState` must be `seal`.
 
 Post-write advisories in order:
 
@@ -147,7 +147,9 @@ Post-write advisories in order:
 
 When `--cap-exit` is provided, the `NEXT:` line reflects the new state after the transition rather than prompting for an assessment verdict. For `--cap-exit follow-up-collab`, it requires `--restore-reason`, `--evidence`, and `--failure-category`, records them on `verificationSeal.followUp`, and emits `NEXT: Open a follow-up collab {"evidence":...,"failureCategory":...,"restoreReason":...}.`
 
-**Assessment verdict path** (with `--outcome`; `verificationReviewSubState` must be `assessment`):
+### `record-verdict`
+
+Records the assessment verdict and owns the terminal close/reopen mutation path. The legacy `seal-render` subcommand with verdict flags dispatches to this path for old callers. `verificationReviewSubState` must be `assessment`; `--cap-exit` and verdict flags cannot be combined.
 
 Post-write advisories in order:
 
@@ -509,7 +511,8 @@ Maps each documented `## Abort families` module family to its implementing subco
 |---|---|---|
 | `speak-render` / `rewrite-speak-render` | `speak-render`, `rewrite-speak-render` | `render_speak()`, `render_re_speak()` |
 | `seal-state` | `seal-state` | `seal_state()` |
-| `seal-render` | `seal-render` | `render_seal()` |
+| `seal-write` | `seal-write`, legacy `seal-render` without verdict flags | `seal_write()`, `render_seal()` shim |
+| `record-verdict` | `record-verdict`, legacy `seal-render` with verdict flags | `record_verdict()`, `render_seal()` shim |
 | `handoff-shape` | `speak-render`, `rewrite-speak-render` | `parse_handoff_content()`, `validate_handoff_write_scope()`, `validate_handoff_validation_commands()`, `validate_handoff_state()` |
 | `participant-verify-state` | `participant-verify-state` | `participant_verify_state()` |
 | `participant-verify-render` | `participant-verify-render` | `participant_verify_render()` |

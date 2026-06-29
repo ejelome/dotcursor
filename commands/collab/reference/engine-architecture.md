@@ -17,13 +17,13 @@ Boundary map for the collab engine: module roster, facade pattern, DI constraint
 
 ### Facade and DI boundary
 
-`commands/collab/engine/registry.py` is the permanent CLI facade. It is the single importer of all extracted modules; the modules do not import each other. Dependencies flow in one direction: registry.py calls into extracted modules as pure functions or passes state as arguments. No module-level or global state is shared between extracted modules.
+`commands/collab/engine/registry.py` is the permanent executable facade. It performs package bootstrap, exposes compatibility imports for tests/importers, and delegates execution to `registry_core.py`. The compatibility core remains the single importer of extracted modules; extracted modules must not import the facade or each other unless a documented dependency boundary allows it. Dependencies flow in one direction: CLI facade → compatibility core → extracted modules.
 
-The facade owns: CLI argv dispatch, high-level orchestration wrappers (`render_speak`, `render_re_speak`, `render_seal`, `render_status`, `render_participants`, `render_registry_cli_doc`), and the `render_seal` permanent dispatch shim. All managed rendering, seal-integrity logic, and contribution validation belong to their extracted modules.
+The executable facade owns no domain behavior. `registry_core.py` currently owns CLI argv dispatch, compatibility orchestration wrappers (`render_speak`, `render_re_speak`, `render_seal`, `render_status`, `render_participants`, `render_registry_cli_doc`), and the legacy `render_seal` dispatch shim. All managed rendering, seal-integrity logic, and contribution validation belong to their extracted modules.
 
 ### Module roster
 
-21 extracted modules in `commands/collab/engine/`:
+22 implementation modules in `commands/collab/engine/`:
 
 | Module | Owns | Does not own |
 | --- | --- | --- |
@@ -31,6 +31,7 @@ The facade owns: CLI argv dispatch, high-level orchestration wrappers (`render_s
 | `registry_constants.py` | registry lifecycle vocabulary and policy constants | state I/O |
 | `registry_state.py` | project-identity binding, state-root resolution | registry reads/writes |
 | `dispatch_forms.py` | command dispatch notation rendering | state, I/O, registry |
+| `registry_core.py` | CLI argv dispatch, compatibility wrappers, remaining legacy registry orchestration pending extraction | executable bootstrap, extracted domain ownership |
 | `planned_routes.py` | route prerequisite validation, issue-bridge detection | phase mutation |
 | `transcript_readers.py` | transcript phase parsing, contribution-block extraction, transcript-path resolution and per-entry reads | rendering or writes |
 | `normalizers.py` | slug/title/path/scope normalization | state, I/O |
@@ -51,7 +52,7 @@ The facade owns: CLI argv dispatch, high-level orchestration wrappers (`render_s
 
 ### Decomposition status
 
-All 6 extraction stages are complete:
+The executable facade target is complete; the domain extraction target is not yet complete:
 
 1. Pure readers and parsers — done (#56: normalizers, digests, handoff\_shape, git\_repo, registry\_io)
 2. Route-planning helpers — done (#56: participants, phase\_lifecycle, execution, dispatch\_forms)
@@ -60,11 +61,11 @@ All 6 extraction stages are complete:
 5. Speak-time contribution validation — done (contribution\_validation.py, contribution\_store.py)
 6. Registry validation, effort math, and drift comparison — done (registry\_validation.py, effort.py, diff.py)
 
-The decomposition is complete. `registry.py` is the CLI facade plus thin orchestration wrappers; all modules in the roster above own their respective domains and no further extractions are planned. The facade's remaining surface is CLI argv dispatch, high-level orchestration calls into the extracted modules, and the `render_seal` dispatch shim.
+`registry.py` is now thin: package bootstrap, compatibility exports, and executable delegation only. `registry_core.py` remains a large compatibility module and is explicitly not the final architecture. Remaining work is to continue moving its non-dispatch helpers into owning modules (`phase_lifecycle.py`, `contribution_validation.py`, `contribution_store.py`, `effort.py`, `transcript_render.py`, `completion.py`) until the compatibility core is limited to argv parsing, dispatch, and narrow orchestration wrappers.
 
 ### Keep-whole decisions
 
-**`seal_verification.py` (kept whole — verification boundary):** All seal integrity, stale-seal triggers, content-integrity gates, participant verification, and verdict construction are cohesive and mutually dependent. Splitting them would either introduce circular imports or fragment the integrity guarantee across modules. This module may only be imported by `registry.py`.
+**`seal_verification.py` (verification boundary):** Seal integrity, stale-seal triggers, content-integrity gates, participant verification, and verdict construction stay in the verification boundary. The write braid is split at the public entry point: `seal_write` writes the immutable integrity snapshot, `record_verdict` records assessment state and terminal mutation, and `render_seal` remains a legacy dispatch shim. This module may only be imported by `registry_core.py`.
 
 **`transcript_render.py` (kept whole — managed-rendering boundary):** Header scaffolding, TOC management, and all `<details>` block construction share the `rendered_collapsible_block` primitive and the single-owner invariant: no caller constructs a `<details>` block outside this module. Splitting prematurely would compromise that invariant. If the module later warrants division, the documented split boundary is: `header_render.py` (header, TOC, `insert_toc_entry`) and `contribution_render.py` (contribution/collapsible-block rendering, excerpt/full-body handling, effort-override banners).
 

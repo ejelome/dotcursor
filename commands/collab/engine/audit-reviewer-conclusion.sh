@@ -33,7 +33,8 @@ from pathlib import Path
 
 root = Path(sys.argv[1]).resolve()
 speak_path = root / 'commands/collab/speak/index.md'
-registry_path = root / 'commands/collab/engine/registry.py'
+registry_core_path = root / 'commands/collab/engine/registry_core.py'
+registry_path = registry_core_path if registry_core_path.exists() else root / 'commands/collab/engine/registry.py'
 validation_path = root / 'commands/collab/engine/contribution_validation.py'
 expected_gates = (
     'DIRECTIVE TEST',
