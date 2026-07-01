@@ -64,7 +64,6 @@ All collab commands are dispatched through the `~/.cursor` routing system.
 
 ## Source ledger
 
-- [`platform/data/source-ledger.md`](data/source-ledger.md) — disposition record for retired source carriers and embedded metadata blocks
 
 ## Generated mirrors
 

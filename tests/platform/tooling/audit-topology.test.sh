@@ -30,6 +30,45 @@ printf '# /demo\n' >"$clean/commands/demo/index.md"
 printf '# /demo run\n' >"$clean/commands/demo/run/index.md"
 COMMAND_CONFIG_ROOT="$clean" "$ROOT/platform/tooling/audit-topology.sh" >/dev/null
 
+empty_dir="$TMPDIR/empty-dir"
+make_catalog "$empty_dir"
+mkdir -p "$empty_dir/commands/demo/run" "$empty_dir/commands/demo/empty"
+printf '# /demo\n' >"$empty_dir/commands/demo/index.md"
+printf '# /demo run\n' >"$empty_dir/commands/demo/run/index.md"
+set +e
+COMMAND_CONFIG_ROOT="$empty_dir" "$ROOT/platform/tooling/audit-topology.sh" >"$TMPDIR/empty-dir.out" 2>&1
+status=$?
+set -e
+if [[ "$status" -eq 0 ]]; then
+  printf 'FAIL: expected empty command directory to fail topology\n' >&2
+  exit 1
+fi
+if ! grep -Fxq 'ERROR: empty command directory remains: commands/demo/empty' "$TMPDIR/empty-dir.out"; then
+  printf 'FAIL: empty command directory output did not name stable path\n' >&2
+  cat "$TMPDIR/empty-dir.out" >&2
+  exit 1
+fi
+
+retired_dir="$TMPDIR/retired-dir"
+make_catalog "$retired_dir"
+mkdir -p "$retired_dir/commands/demo/run" "$retired_dir/commands/git"
+printf '# /demo\n' >"$retired_dir/commands/demo/index.md"
+printf '# /demo run\n' >"$retired_dir/commands/demo/run/index.md"
+printf '# retired residue\n' >"$retired_dir/commands/git/README.md"
+set +e
+COMMAND_CONFIG_ROOT="$retired_dir" "$ROOT/platform/tooling/audit-topology.sh" >"$TMPDIR/retired-dir.out" 2>&1
+status=$?
+set -e
+if [[ "$status" -eq 0 ]]; then
+  printf 'FAIL: expected retired namespace directory to fail topology\n' >&2
+  exit 1
+fi
+if ! grep -Fxq 'ERROR: retired command namespace directory remains: commands/git' "$TMPDIR/retired-dir.out"; then
+  printf 'FAIL: retired namespace output did not name stable path\n' >&2
+  cat "$TMPDIR/retired-dir.out" >&2
+  exit 1
+fi
+
 missing="$TMPDIR/missing"
 make_catalog "$missing"
 mkdir -p "$missing/commands/demo"

@@ -11,7 +11,7 @@ from commands.collab.engine.participants import (
     reviewer_backed,
     reviewer_role,
 )
-from commands.collab.engine.seal_verification import (
+from commands.collab.engine.seal_verification_logic import (
     first_pending_participant_verification_role,
     participant_verification_enabled,
     successful_verdict,

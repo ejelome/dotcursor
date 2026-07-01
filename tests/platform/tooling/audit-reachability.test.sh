@@ -68,7 +68,7 @@ fi
 # --- Test 5: outbound root contract references must resolve ------------------
 outbound="$TMPDIR_BASE/outbound"
 _scaffold "$outbound"
-printf 'Authority references `rules/{auto,shared}.mdc`.\n' >"$outbound/REPOSITORY.md"
+printf 'Authority references `missing/{one,two}.md`.\n' >"$outbound/REPOSITORY.md"
 
 if COMMAND_CONFIG_ROOT="$outbound" "$GATE" >/dev/null 2>&1; then
   printf 'FAIL: missing outbound root contract reference should be rejected\n' >&2
@@ -76,7 +76,7 @@ if COMMAND_CONFIG_ROOT="$outbound" "$GATE" >/dev/null 2>&1; then
 fi
 
 out="$(COMMAND_CONFIG_ROOT="$outbound" "$GATE" 2>&1 || true)"
-if ! printf '%s\n' "$out" | grep -q 'FAIL: unresolved outbound contract reference: REPOSITORY.md:1: rules/{auto,shared}.mdc'; then
+if ! printf '%s\n' "$out" | grep -q 'FAIL: unresolved outbound contract reference: REPOSITORY.md:1: missing/{one,two}.md'; then
   printf 'FAIL: outbound reference error message not stable: %s\n' "$out" >&2
   exit 1
 fi

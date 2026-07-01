@@ -28,7 +28,7 @@ from commands.collab.engine.registry_io import (
     resolve_collab,
     save_registry,
 )
-from commands.collab.engine.seal_verification import content_digest_for_execution
+from commands.collab.engine.seal_verification_logic import content_digest_for_execution
 
 _invalidate_verification_seal: Callable[[dict, str], None] | None = None
 

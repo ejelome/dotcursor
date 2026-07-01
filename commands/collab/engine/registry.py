@@ -2,7 +2,7 @@
 """Thin CLI facade for the collab registry helper.
 
 Domain implementation lives in ``registry_core``.  This file stays limited to
-the executable entrypoint and compatibility exports for tests/importers.
+the executable entrypoint and lazy compatibility exports for tests/importers.
 """
 from __future__ import annotations
 
@@ -14,11 +14,14 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from commands.collab.engine import registry_core as _registry_core
-from commands.collab.engine.registry_core import *  # noqa: F401,F403
 from commands.collab.engine.registry_core import main
 
-if __name__ != "__main__":
-    sys.modules[__name__] = _registry_core
+
+def __getattr__(name: str) -> object:
+    try:
+        return getattr(_registry_core, name)
+    except AttributeError as exc:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}") from exc
 
 
 if __name__ == "__main__":

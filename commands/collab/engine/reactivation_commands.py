@@ -34,9 +34,11 @@ from commands.collab.engine.restore_inputs import (
     collab_entry_from_registry_snapshot,
     parse_restore_event_index,
 )
-from commands.collab.engine.seal_verification import (
+from commands.collab.engine.seal_verification_logic import (
     clear_verdict,
     initialize_completion_state,
+)
+from commands.collab.engine.seal_verification_render import (
     insert_reopen_pointer,
     latest_reviewer_findings_anchor,
 )

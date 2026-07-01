@@ -532,7 +532,7 @@ def test_onboarding_commands_join_handler_isolated() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         root_dir = Path(tmp)
         roles = root_dir / 'roles'
-        write_test_roles(roles, 'mod', 'pe')
+        write_test_roles(roles, 'mod', 'zz')
         records = root_dir / 'records'
         records.mkdir()
         collab_id = '2026-06-30-onboarding-isolation'
@@ -542,10 +542,16 @@ def test_onboarding_commands_join_handler_isolated() -> None:
         registry = root_dir / 'registry.json'
         write_registry_fixture(registry, entry)
 
-        commits: list[tuple[dict, str]] = []
+        commits: list[tuple[dict, str, Path | None]] = []
 
-        def commit(_path: Path, data: dict, transcript_path: Path, rendered: str) -> None:
-            commits.append((json.loads(json.dumps(data)), rendered))
+        def commit(
+            _path: Path,
+            data: dict,
+            transcript_path: Path,
+            rendered: str,
+            roles_dir: Path | None = None,
+        ) -> None:
+            commits.append((json.loads(json.dumps(data)), rendered, roles_dir))
             _path.write_text(json.dumps(data, indent=2) + '\n')
             transcript_path.write_text(rendered)
 
@@ -554,12 +560,60 @@ def test_onboarding_commands_join_handler_isolated() -> None:
             commit_registry_and_transcript=commit,
         )
         with pushd(root_dir), contextlib.redirect_stdout(io.StringIO()):
-            assert o.join_participants(registry, collab_id, 'pe', 'codex', roles) == 0
+            assert o.join_participants(registry, collab_id, 'zz', 'codex', roles) == 0
 
         assert commits, 'join handler did not call injected commit'
         joined = commits[-1][0]['collabs'][0]
-        assert {'role': 'pe', 'agentId': 'codex'} in joined['participants']
-        assert joined['turnOrder'] == ['mod', 'pe']
+        assert {'role': 'zz', 'agentId': 'codex'} in joined['participants']
+        assert joined['turnOrder'] == ['mod', 'zz']
+        assert commits[-1][2] == roles
+
+
+def test_field_commands_unset_handler_uses_supplied_roles_dir() -> None:
+    from commands.collab.engine import field_commands as f
+    from commands.collab.engine.transcript_render import render_initial_transcript
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root_dir = Path(tmp)
+        roles = root_dir / 'roles'
+        write_test_roles(roles, 'mod', 'zz')
+        records = root_dir / 'records'
+        records.mkdir()
+        collab_id = '2026-06-30-field-isolation'
+        entry = base_collab_entry(collab_id, f'records/{collab_id}.md')
+        entry.update({
+            'reviewerRole': 'zz',
+            'reviewerMode': 'last-in-convergent-phases',
+            'reviewerOptionalPhases': ['Discussion'],
+        })
+        entry['participants'].append({'role': 'zz', 'agentId': 'codex'})
+        records.joinpath(f'{collab_id}.md').write_text(
+            render_initial_transcript(entry['title'], entry, roles, '2026-06-30 00:00 +00:00')
+        )
+        registry = root_dir / 'registry.json'
+        write_registry_fixture(registry, entry)
+        commits: list[tuple[dict, Path | None]] = []
+
+        def commit(
+            _path: Path,
+            data: dict,
+            transcript_path: Path,
+            rendered: str,
+            roles_dir: Path | None = None,
+        ) -> None:
+            commits.append((json.loads(json.dumps(data)), roles_dir))
+            _path.write_text(json.dumps(data, indent=2) + '\n')
+            transcript_path.write_text(rendered)
+
+        f.configure_field_commands(commit_registry_and_transcript=commit)
+        with pushd(root_dir), contextlib.redirect_stdout(io.StringIO()):
+            assert f.unset_field(registry, collab_id, 'reviewer', roles) == 0
+
+        assert commits, 'unset handler did not call injected commit'
+        updated = commits[-1][0]['collabs'][0]
+        assert 'reviewerRole' not in updated
+        assert {'role': 'zz', 'agentId': 'codex'} in updated['participants']
+        assert commits[-1][1] == roles
 
 
 def test_reactivation_commands_reopen_handler_isolated() -> None:
@@ -839,6 +893,7 @@ for test in (
     test_registry_constants,
     test_registry_io,
     test_onboarding_commands_join_handler_isolated,
+    test_field_commands_unset_handler_uses_supplied_roles_dir,
     test_reactivation_commands_reopen_handler_isolated,
     test_speak_commands_lifecycle_handler_isolated,
     test_seal_verdict_companion,

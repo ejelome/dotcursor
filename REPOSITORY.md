@@ -19,22 +19,22 @@ Authority is strict and ordered:
 1. Repo-owned executable checks and scripts:
    - `./tests/run.sh` (runs `./platform/tooling/audit.sh` then every `tests/**/*.test.sh`)
    - `./platform/tooling/audit.sh` (adapter routing, runtime ignore rules, role-key prose drift guard)
-   - `./platform/tooling/check-source-ledger.py --check` (source-ledger schema, always-on retired-trace scan; declared carrier inventory validation is dormant-by-design: no active carriers exist — the `.mdc` context-carrier format is not used by this repo and `source-ledger.md` carries zero rows; the inventory check activates automatically if new carriers are introduced)
-   - `./platform/tooling/sync-context-gate.sh --check` (context-gate canonical source/projection parity)
+   - `./platform/tooling/sync-context-gate.sh --check` (context-gate canonical source shape: present, no frontmatter, at least one critical directive retained)
    - `./platform/tooling/audit-role-prose.sh` (role-key prose drift guard for Markdown and MDC surfaces)
    - `./platform/tooling/sync-commands-catalog.sh --check` (commands roster integrity)
    - `./platform/tooling/sync-framework-boundaries.sh` (framework boundary projections)
    - `./platform/tooling/sync-roles-roster.sh` (roles roster projection)
    - `./platform/tooling/audit-collab-route-wiring.py` (run by `audit.sh`; every public collab route resolves to a backing `registry.py` helper subcommand — catalogued routes stay wired, no documented-but-unbacked surface)
    - `./platform/tooling/audit-collab-readonly-contract.py` (run by `audit.sh`; every collab route doc that claims read-only calls only non-mutating `registry.py` subcommands)
-   - `./platform/tooling/audit-projector-loader-symbols.py` (run by `audit.sh`; the retired deterministic-projector loader machinery stays absent from the engine)
+   - `./platform/tooling/audit-deleted-path-references.py` (run by `audit.sh`; tracked source does not reference files that are absent at `HEAD` after deletion in git history)
    - `./platform/tooling/audit-doc-paths.py` (run by `audit.sh`; backticked repo-relative paths in tracked Markdown resolve — only deliberately-prohibited names are allowlisted)
    - `./platform/tooling/audit-present-state.py` (run by `audit.sh`; tracked source carries present state only, with no past/future outcome residue)
+   - The list above names the load-bearing checks; `./platform/tooling/audit.sh` runs the complete, authoritative set — including topology, placement, reachability, vocabulary, advisory, and behavior-smoke-floor (`check_behavior_smoke_floor`) checks not separately enumerated here.
 **Execution prerequisites** for the checks listed above are specified in [`platform/standards/runtime-contract.md`](platform/standards/runtime-contract.md): Python ≥ 3.9, bash ≥ 3.2, `git` and `python3` on `$PATH`, and stdlib-only Python tooling.
 
-`./platform/tooling/coverage-gate.sh` checks every public collab route in `commands/collab/` for full ABORT coverage: each discovered public-route ABORT clause must carry a stable `<!-- abort: <id> -->` anchor and have a matching P9 test, unless the clause is explicitly marked `**ABORT** (agent-honor-system):` with a reason. The migration buckets are retired; there is no allowlist, discovery-debt set, or deferred coverage path. The retired per-batch schedule and clause classification live in [`platform/tooling/coverage-gate-migration.md`](platform/tooling/coverage-gate-migration.md).
+`./platform/tooling/coverage-gate.sh` proves the mandatory behavior-smoke floor and reports opt-in per-clause coverage over public collab routes in `commands/collab/`. The floor is mandatory for every route; per-clause ABORT coverage — a stable `<!-- abort: <route>-<id> -->` anchor plus a matching P9 test — is opt-in, kept only for the reviewer-selected keep-list rather than required for every discovered ABORT clause. An anchor always means "tested": strip an anchor when its backing test retires, and keep an anchor only while its test remains on the keep-list. Guards that are discipline-only rather than helper-enforced use `agent-honor-system` as the sole vocabulary; no other escape term exists. The retired per-batch burn-down schedule and clause classification live in [`platform/tooling/coverage-gate-migration.md`](platform/tooling/coverage-gate-migration.md).
 
-`tests/commands/collab/registry.py/` is the `registry.py` behavior smoke gate; exercised via `./tests/run.sh`, it asserts the `speak-render` → `speak-state`/lifecycle round trip over live-shaped state built by real helpers in an isolated `COLLAB_STATE_HOME`, demonstrating RED on a desynchronized registry/transcript and GREEN on a valid round trip.
+`tests/commands/collab/registry.py/real-record-behavior-smoke.test.sh` is the mandatory behavior-smoke floor; exercised via `./tests/run.sh`, it asserts the `speak-render` → `speak-state`/lifecycle round trip over live-shaped state built by real helpers in an isolated `COLLAB_STATE_HOME`, demonstrating RED on a desynchronized registry/transcript and GREEN on a valid round trip. The rest of `tests/commands/collab/registry.py/` is the opt-in per-clause keep-list described above. `./platform/tooling/audit.sh` asserts this floor file exists (`check_behavior_smoke_floor`), so deleting it fails the audit rather than silently disabling the floor.
 
 2. Repo-owned source files and policy documents:
    - Root adapters: `CLAUDE.md`, `AGENTS.md`, `REPOSITORY.md`, `README.md`, `.gitignore`, `.collab.json`
@@ -88,7 +88,7 @@ The repo projects the following root outputs, with deepest dependency chains and
 
 The repo projects runtime state under `~/.cursor/*` and generated mirrors under `generated/`. Required validation:
 
-- `./platform/tooling/audit.sh` (includes `audit-role-prose.sh`, `check-source-ledger.py --check`, `sync-context-gate.sh --check`, `audit-collab-route-wiring.py`, `audit-collab-readonly-contract.py`, `audit-projector-loader-symbols.py`, `audit-doc-paths.py`, and `audit-present-state.py`)
+- `./platform/tooling/audit.sh` (includes `audit-role-prose.sh`, `sync-context-gate.sh --check`, `audit-collab-route-wiring.py`, `audit-collab-readonly-contract.py`, `audit-deleted-path-references.py`, `audit-doc-paths.py`, and `audit-present-state.py`)
 - `./platform/tooling/sync-commands-catalog.sh --check`
 - `./platform/tooling/sync-framework-boundaries.sh` (run and diff `generated/` if `--check` is unsupported)
 - `./platform/tooling/sync-roles-roster.sh` (run and diff `generated/` if `--check` is unsupported)

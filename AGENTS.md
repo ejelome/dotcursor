@@ -40,7 +40,7 @@ Halt when the required command or source-of-truth cannot be resolved. Verify com
 ## Agent profile
 
 - Supported agents: role metadata declared by the global agent runtime.
-- Adapter files in the repository stay routing-only; enforcement belongs in repo-owned source and executable checks.
+- Adapter files carry routing plus agent-behavioral discipline (reading depth, fail-fast); repository-invariant enforcement belongs in repo-owned source and executable checks, not in adapter prose.
 
 ## Required workflow
 

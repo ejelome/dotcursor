@@ -76,7 +76,7 @@ def issue_bridge_prerequisite_gaps(config_root: Path, include_issue_route: bool 
             gaps.append(label)
 
     if include_issue_route:
-        issue_route = source_text(config_root / 'commands/git/issue/index.md')
+        issue_route = source_text(config_root / 'commands/collab/issue/index.md')
         issue_route_required = {
             'issue output contract': 'Output contract',
             'issue caller-distinction': 'connector-backed',
@@ -97,6 +97,7 @@ def workflow_model_selection_gaps(config_root: Path) -> list[str]:
     helper_text = '\n'.join([
         source_text(config_root / 'commands/collab/engine/registry.py'),
         source_text(config_root / 'commands/collab/engine/registry_core.py'),
+        source_text(config_root / 'commands/collab/engine/registry_parser.py'),
         source_text(config_root / 'commands/collab/engine/onboarding_commands.py'),
     ])
 
@@ -140,7 +141,7 @@ def validate_issue_bridge_block(config_root: Path, include_issue_route: bool = F
     gaps = issue_bridge_prerequisite_gaps(config_root, include_issue_route)
     if gaps:
         issue_clause = (
-            'third prerequisite: commands/git/issue/index.md (output contract); '
+            'third prerequisite: commands/collab/issue/index.md (output contract); '
             if include_issue_route else ''
         )
         die(

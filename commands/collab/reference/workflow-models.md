@@ -32,19 +32,16 @@ Closes when the platform engineer exports issue evidence — no reviewer seal ne
 initializes a collab with `--terminal issue`, records completed execution,
 exports issue evidence, verifies the collab closes, verifies `activeCollabId` is
 cleared, and verifies no `verificationSeal` is written. This status covers the
-end-to-end close flow. `export-issues` ABORT-clause coverage is now anchored and
-tested: each guard carries a stable `<!-- abort: export-issues-... -->` anchor,
-and the six helper-enforced guards each have a matching P9 test under
-`tests/commands/collab/registry.py/`:
+end-to-end close flow. The reviewer-selected `export-issues` ABORT keep-list
+guards remain anchored and tested under `tests/commands/collab/registry.py/`:
 
 ```
-record-closed       role-not-pe        phase-not-completion
-terminal-not-issue  pending-execution  registry-target
+role-not-pe  terminal-not-issue  pending-execution
 ```
 
-The step-2 record-unreadable clause is marked `(agent-honor-system)` because the
-helper performs no up-front transcript read before its lifecycle guards. Batch 6
-of the burn-down in `platform/tooling/coverage-gate-migration.md` is complete.
+Other `export-issues` route ABORT prose is no longer a direct P9 obligation
+unless it carries an opt-in anchor; the mandatory floor is the real-record
+behavior-smoke test described in `REPOSITORY.md`.
 
 ### Issue lifecycle
 
@@ -69,4 +66,4 @@ Pass `--terminal <seal|issue>` to `(collab init)`. Stored in the `terminal` fiel
 
 ## Issue-terminal activation status
 
-**Active and tested** as of 2026-06-24 (structural-architecture-completion-audit). All planned-route prerequisites are satisfied (`validate_planned_route_prerequisites` passes). `--terminal issue` is a selectable value at init time and `(collab export-issues)` closes a collab end-to-end without a `verificationSeal`. End-to-end proof: `tests/commands/collab/registry.py/issue-terminal-close-flow.test.sh` and `tests/commands/collab/registry.py/export-issues-flow.test.sh`. Beyond the close flow, `export-issues` ABORT coverage is now anchored and tested per-guard (Batch 6 complete); the only non-tested clause is the step-2 record-unreadable guard, which is marked `(agent-honor-system)` because the helper does no up-front transcript read.
+**Active and tested** as of 2026-06-24 (structural-architecture-completion-audit). All planned-route prerequisites are satisfied (`validate_planned_route_prerequisites` passes). `--terminal issue` is a selectable value at init time and `(collab export-issues)` closes a collab end-to-end without a `verificationSeal`. End-to-end proof: `tests/commands/collab/registry.py/issue-terminal-close-flow.test.sh` and `tests/commands/collab/registry.py/export-issues-flow.test.sh`. Beyond the close flow, direct P9 coverage is opt-in and limited to the reviewer-selected keep-list anchors.

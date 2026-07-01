@@ -9,7 +9,6 @@ from typing import Callable
 from roles import load_role
 
 from commands.collab.engine.advisories import forced_active_phase_advisory
-from commands.collab.engine.config_paths import DEFAULT_ROLES_DIR
 from commands.collab.engine.errors import die
 from commands.collab.engine.execution import seal_terminal
 from commands.collab.engine.git_repo import resolve_git_work_tree
@@ -33,26 +32,26 @@ from commands.collab.engine.registry_io import (
     resolve_collab,
 )
 from commands.collab.engine.registry_validation import validate_registry as validate_registry_data
-from commands.collab.engine.seal_verification import initialize_completion_state
+from commands.collab.engine.seal_verification_logic import initialize_completion_state
 from commands.collab.engine.transcript_readers import transcript_path_for_entry
 from commands.collab.engine.transcript_render import (
     print_header_overwrite,
     render_managed_header_text,
 )
 
-_commit_registry_and_transcript: Callable[[Path, dict, Path, str], None] | None = None
+_commit_registry_and_transcript: Callable[..., None] | None = None
 
 
 def configure_field_commands(
     *,
-    commit_registry_and_transcript: Callable[[Path, dict, Path, str], None],
+    commit_registry_and_transcript: Callable[..., None],
 ) -> None:
     """Inject the cycle-blocked dependency of the set/unset/remove-participant write paths: the core-owned two-file commit."""
     global _commit_registry_and_transcript
     _commit_registry_and_transcript = commit_registry_and_transcript
 
 
-def _require_commit() -> Callable[[Path, dict, Path, str], None]:
+def _require_commit() -> Callable[..., None]:
     if _commit_registry_and_transcript is None:
         die('field commands engine is not configured: commit callback missing')
     return _commit_registry_and_transcript
@@ -142,7 +141,7 @@ def set_field(
         if forced_active_phase:
             force_advisory = forced_active_phase_advisory(entry, rendered)
         print_header_overwrite(header_changed)
-        _require_commit()(path, data, transcript_path, rendered)
+        _require_commit()(path, data, transcript_path, rendered, roles_dir)
     print(entry['id'])
     if force_advisory:
         print(force_advisory)
@@ -178,14 +177,14 @@ def unset_field(
         nextdata = deepcopy(data)
         next_entry = resolve_collab(nextdata, target)
         clear_reviewer(next_entry)
-        validate_registry_data(nextdata, path, DEFAULT_ROLES_DIR)
+        validate_registry_data(nextdata, path, roles_dir)
 
         transcript_path = transcript_path_for_entry(next_entry)
         if not transcript_path.exists():
             die(f'transcript missing: {transcript_path}')
         rendered, header_changed = render_managed_header_text(transcript_path.read_text(), next_entry, roles_dir)
         print_header_overwrite(header_changed)
-        _require_commit()(path, nextdata, transcript_path, rendered)
+        _require_commit()(path, nextdata, transcript_path, rendered, roles_dir)
     print(next_entry['id'])
     return 0
 
@@ -223,13 +222,13 @@ def remove_participant(
             for participant_role in next_entry.get('turnOrder', [])
             if participant_role != role
         ]
-        validate_registry_data(nextdata, path, DEFAULT_ROLES_DIR)
+        validate_registry_data(nextdata, path, roles_dir)
 
         transcript_path = transcript_path_for_entry(next_entry)
         if not transcript_path.exists():
             die(f'transcript missing: {transcript_path}')
         rendered, header_changed = render_managed_header_text(transcript_path.read_text(), next_entry, roles_dir)
         print_header_overwrite(header_changed)
-        _require_commit()(path, nextdata, transcript_path, rendered)
+        _require_commit()(path, nextdata, transcript_path, rendered, roles_dir)
     print(next_entry['id'])
     return 0

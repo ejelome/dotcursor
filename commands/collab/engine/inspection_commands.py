@@ -28,7 +28,7 @@ from commands.collab.engine.registry_io import (
     resolve_collab,
 )
 from commands.collab.engine.registry_state import project_metadata_for_display
-from commands.collab.engine.seal_verification import verification_substate
+from commands.collab.engine.seal_verification_logic import verification_substate
 from commands.collab.engine.transcript_readers import (
     transcript_path_for_entry,
     unchecked_assigned_items_by_role,

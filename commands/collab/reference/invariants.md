@@ -32,7 +32,7 @@ Maintainer check: `git grep -rn 'agent-honor-system' commands/collab/` shows eve
 
 For the audit inventory of current agent-honor-system clauses, see [`honor-system-audit.md`](honor-system-audit.md).
 
-Maintainer check: `git grep -rnP '(?<![A-Za-z0-9_])(mod|pa|pe|tw)(?![A-Za-z0-9_])' -- '*.md' '*rule file'` is the broad review sweep for role-key prose drift. Every prose match must either be covered by the documented carve-outs in `platform/tooling/audit-role-prose.sh` or rewritten to function-bound prose. The pattern covers the live role keys swept for prose drift — the human moderator and the joinable participant roles under `commands/collab/reference/roles/`. The pattern does not include the non-joinable deterministic-projector stub also kept under that directory (retained, after the synthesis/projection stack was retired, as a backed tombstone for historical-participant rendering of closed collab a13dba4c, whose participant roster references `dp`). Update the pattern when the role roster changes. This tombstone retention is a closed-collab-provenance carve-out from any present-tense-only doctrine, not an exception to it — see [doctrine.md § Present-tense doctrine: closed-collab provenance carve-out](../../../platform/standards/doctrine.md#present-tense-doctrine-closed-collab-provenance-carve-out).
+Maintainer check: `git grep -rnP '(?<![A-Za-z0-9_])(mod|pa|pe|tw)(?![A-Za-z0-9_])' -- '*.md' '*rule file'` is the broad review sweep for role-key prose drift. Every prose match must either be covered by the documented carve-outs in `platform/tooling/audit-role-prose.sh` or rewritten to function-bound prose. The pattern covers the live role keys under `commands/collab/reference/roles/` — the human moderator and the joinable participant roles. Update the pattern when the role roster changes.
 
 **2. Registry as source of truth; transcript as human ledger**
 
@@ -97,23 +97,27 @@ No-assignment-lines: `ABORT: Action Plan body contains no assignment lines after
 
 **10. Rollback triggers**
 
-These conditions are derived from the 2026-05-18 missed-and-deferred-goals audit. Each line names the observable event that re-opens the item; no behavior change until the event fires.
+Each line states a standing rule: an observable event, and the review action it triggers. No behavior changes until the named event occurs.
 
-- **Item 7 (round-counting / budget-exempt assessment path after cap-exit):** if any seal-attempt transcript exceeds 18 turns, or two consecutive participant verifications fail with full-body blocks present, open a follow-up audit of the round-counting and budget-exempt assessment path.
-- **Item 9 (`(collab rewrite execution)` redesign):** if any seal-attempt transcript exceeds 12 turns, open a follow-up DX audit on `rewrite-execution` and turn-budget management across `/compact`.
-- If any reviewer-backed collab closes via `--cap-exit archive` on a clean first seal (no findings during participant verification), open a verification-cap audit.
-  - _Present state: `--cap-exit archive` on a clean seal is a protocol violation (`verification.md` §"Cap and cap-exit options"; `seal-verification/index.md` §"Cap exits"). This trigger fires only if that prohibition is relaxed._
+- **Item 7 (round-counting / budget-exempt assessment path after cap-exit):** a seal-attempt transcript exceeding 18 turns, or two consecutive participant verifications failing with full-body blocks present, opens a follow-up audit of the round-counting and budget-exempt assessment path.
+- **Item 9 (`(collab rewrite execution)` redesign):** a seal-attempt transcript exceeding 12 turns opens a follow-up DX audit on `rewrite-execution` and turn-budget management across `/compact`.
+- A reviewer-backed collab that closes via `--cap-exit archive` on a clean first seal (no findings during participant verification) opens a verification-cap audit.
+  - `--cap-exit archive` on a clean seal is currently a protocol violation (`verification.md` §"Cap and cap-exit options"; `seal-verification/index.md` §"Cap exits"); this trigger applies only if that prohibition is relaxed.
+
+**Source:** the 2026-05-18 missed-and-deferred-goals audit.
 
 **11. Observation backlog**
 
-The following carry-forwards from the 2026-05-18 missed-and-deferred-goals audit are observation-class: no behavior change until the named event is observed. Each re-enters only on evidence, not on transcript memory.
+Each line is an observation-class rule: no behavior changes until the named event is directly observed — evidence, not transcript memory, is the trigger.
 
-- **Item 10 (`tests/specs/roles.md` generator):** re-entry when a fifth role is added to the roster.
-- **Item 11 (effort-matrix shape redesign):** re-entry if a third axis (admission column or `level|null` cells) surfaces during Action Plan drafting.
-- **Item 12 (cross-project registry federation):** re-entry when more than one project store in `~/.collabs/` shows observable drift.
-- **Item 13 (stub retirement observation point):** re-entry when a coverage assertion is added confirming stub fallback is unreached on resolution.
-- **Item 14 (PE Q4 carry-forward — pre-seal reopen primitive):** re-entry if a future protocol redesign reopens the pre-seal flow.
-- **Item 15 (CI scope items — required-status checks, secrets, deploy gates):** re-entry when merge-gating, authenticated workflows, or a deploy surface is introduced.
+- **Item 10 (`tests/specs/roles.md` generator):** a fifth role added to the roster activates this item.
+- **Item 11 (effort-matrix shape redesign):** a third axis (admission column or `level|null` cells) surfacing during Action Plan drafting activates this item.
+- **Item 12 (cross-project registry federation):** more than one project store in `~/.collabs/` showing observable drift activates this item.
+- **Item 13 (stub retirement observation point):** a coverage assertion confirming stub fallback is unreached on resolution activates this item.
+- **Item 14 (pre-seal reopen primitive):** a protocol redesign that reopens the pre-seal flow activates this item.
+- **Item 15 (CI scope items — required-status checks, secrets, deploy gates):** merge-gating, authenticated workflows, or a deploy surface being introduced activates this item.
+
+**Source:** the 2026-05-18 missed-and-deferred-goals audit.
 
 **12. Routing-vs-rationale lifecycle**
 
@@ -139,7 +143,7 @@ A direct commit (with no preceding collab execution flow) may close a Conclusion
 
 When all four conditions hold, the direct commit is accepted without a retroactive collab or execution record. When any condition fails, open a collab for the remediation and record the execution there.
 
-Codified from the reviewer's path-(a) decision in collab #36 (`2c14a36`). Does not retroactively absorb prior direct commits; authorizes future ones when conditions (a)–(d) are satisfied.
+Codified from the reviewer's path-(a) decision in collab #36 (`2c14a36`). The rule applies at each commit's own time: a direct commit is accepted only when conditions (a)–(d) hold for that commit; it does not certify any direct commit that was not evaluated against them.
 
 **14. cap-exit follow-up-collab scope**
 
@@ -183,7 +187,7 @@ The purpose of `charteredDeliverables` is to prevent reviewer-driven scope expan
 
 **20. Seal verification is content-addressed, not commit-reachable**
 
-Seal integrity is enforced by the **scope digest** — the `pathDigests`/`contentDigest` recomputed from the *content* of each execution `touchedPath` at `HEAD` — together with the requirement that every touched path is committed at `HEAD` (`SEAL-GIT-STATE` / `SEAL-CONTENT-INCOMPLETE`). The commit SHA recorded in `execution.<role>.commits` is provenance **metadata only**: it is never checked for reachability or membership. A "wrong", orphaned, amended, rebased, or squashed commit does **not** fail the seal, as long as the touched-path content is committed at `HEAD` and matches the sealed digest. The approach replaces the retired commit-reachability check (`SEAL-PROVENANCE`); content identity is invariant under history rewrites that preserve the tree.
+Seal integrity is enforced by the **scope digest** — the `pathDigests`/`contentDigest` recomputed from the *content* of each execution `touchedPath` at `HEAD` — together with the requirement that every touched path is committed at `HEAD` (`SEAL-GIT-STATE` / `SEAL-CONTENT-INCOMPLETE`). The commit SHA recorded in `execution.<role>.commits` is provenance **metadata only**: it is never checked for reachability or membership. A "wrong", orphaned, amended, rebased, or squashed commit does **not** fail the seal, as long as the touched-path content is committed at `HEAD` and matches the sealed digest. No commit-reachability check (`SEAL-PROVENANCE`) exists; content identity is invariant under history rewrites that preserve the tree.
 
 **Reviewer directive:** Never block or condition a seal on commit-hash provenance (e.g. "the cited commit does not contain the file", "the SHA is stale/orphaned"). The only seal-time integrity questions are: (1) is every touched-path's final content committed at `HEAD`, and (2) does the recomputed scope digest equal `verificationSeal.contentDigest`. If both hold, provenance is satisfied regardless of which commit is cited.
 

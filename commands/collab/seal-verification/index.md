@@ -12,61 +12,39 @@ Commit the integrity seal on the active completion pass, or record the assessmen
 **Seal-write** (no `--outcome` — commits `verificationSeal`; integrity gate):
 
 1. Read [invariants.md](../../../commands/collab/reference/invariants.md) before executing; call the relevant helper fresh and do not trust prior reads from conversation context (Invariant #4). Resolve the target collab with **Registry targeting** in **Notes**.
-<!-- abort: seal-verification-record-unreadable -->
 2. Read the resolved registry and the resolved transcript path. If either is unreadable, **ABORT**: record unreadable; name the path.
-<!-- abort: seal-verification-record-closed -->
 3. If the registry status is `closed` or `archived`, **ABORT**: record is closed.
-<!-- abort: seal-verification-phase-not-completion -->
 4. If the registry `activePhase` is not `Completion`, **ABORT**: `(collab seal verification)` is valid only in the `Completion` phase.
 5. Call `commands/collab/engine/registry.py seal-state <target>` to read the live verification state. Capture `registryRevision`, `verificationSubState`, `verificationRounds`, and `verificationCap` from the output.
-<!-- abort: seal-verification-substate-not-verification -->
 6. If the reported `verificationSubState` is not `verification`, **ABORT**: seal-write requires `Completion.verification` to be in `verification` sub-state; current sub-state: `<verificationSubState>`. If the sub-state is `assessment`, a seal already exists — use `(collab seal verification --outcome <outcome>)` to record the verdict instead.
-<!-- abort: seal-verification-no-reviewer -->
 7. If `reviewerRole` is absent from the registry `participants` list, **ABORT**: reviewer role is not a registered participant; run `(collab join --role <reviewerRole>)` first.
-<!-- abort: seal-verification-zero-round-no-record -->
 8. If `verificationRounds` is zero, **ABORT**: zero verification rounds; at least one reviewer-executor paired event is required before sealing.
-<!-- abort: seal-verification-wrong-role -->
 9. Resolve the sealing participant from the current agent's joined role. If the joining role does not match `reviewerRole`, **ABORT**: seal must be authored by the reviewer role; current role: `<role>`; expected: `<reviewerRole>`.
 10. If `--cap-exit <action>` is present: validate that `<action>` is one of `reopen-action-plan`, `reopen-handoff`, `follow-up-collab`, or `archive`.
-<!-- abort: seal-verification-invalid-cap-exit -->
     If invalid, **ABORT**: invalid cap-exit value `<action>`; must be one of: reopen-action-plan, reopen-handoff, follow-up-collab, archive.
-<!-- abort: seal-verification-cap-exceeded -->
 11. If `--cap-exit` is absent and `verificationRounds` is at or above `verificationCap`, **ABORT**: round cap reached; reviewer has not issued a seal event in this round; reissue with `--cap-exit reopen-action-plan`, `--cap-exit reopen-handoff`, `--cap-exit follow-up-collab`, or `--cap-exit archive`.
-<!-- abort: seal-verification-uncommitted-paths -->
 12. Collect every path listed in `execution.<role>.touchedPaths` across all execution entries. For each path, verify the path's final state — present or deleted — is committed in `HEAD`. A committed deletion (a path removed by a commit) satisfies this gate: the deletion is recorded in git even though the file no longer exists on disk. A staged-only path, a path deleted only in the working tree (not yet committed), or a touched path with unstaged content means the implementation has not fully reached `HEAD` and cannot be sealed. **ABORT**: implementation not in git; list each path that is staged, unstaged, or uncommitted.
 13. Write the seal by calling `commands/collab/engine/registry.py seal-write <target> <role> --observed-revision <registryRevision> [--cap-exit <action>]`. The helper writes `verificationSeal = { observedRevision, executionEntries, validationScopes, touchedPaths, contentDigest, pathDigests, sealedAt, sealedBy }` atomically to the registry and appends the seal record to the transcript `## Completion` section; then transitions `verificationSubState` to `assessment`.
-<!-- abort: seal-verification-write-failed -->
     If the helper exits non-zero, **ABORT** (agent-honor-system): seal write failed; name the helper error. This is the generic non-zero-exit observation wrapping `seal-write`; the route reads the helper's own exit status and message. The distinct seal-write failure modes — uncommitted touched paths (`seal-verification-uncommitted-paths`), zero rounds (`seal-verification-zero-round-no-record`), stale revision, and cap-exceeded (`seal-verification-cap-exceeded`) — are anchored and tested separately, so there is no further repo-reachable failure the helper raises that this clause uniquely covers.
 14. Display the `NEXT:` guidance returned by `seal-write`. If a cap-exit action was declared, execute the named registered command after the seal is written. Stop.
 
 **Record-verdict** (`--outcome <outcome>` — records assessment; may close):
 
 1. Read [invariants.md](../../../commands/collab/reference/invariants.md) before executing; call the relevant helper fresh (Invariant #4). Resolve the target collab with **Registry targeting** in **Notes**.
-<!-- abort: seal-verification-record-unreadable -->
 2. Read the resolved registry and the resolved transcript path. If either is unreadable, **ABORT**: record unreadable; name the path.
-<!-- abort: seal-verification-record-closed -->
 3. If the registry status is `closed` or `archived`, **ABORT**: record is closed.
-<!-- abort: seal-verification-phase-not-completion -->
 4. If the registry `activePhase` is not `Completion`, **ABORT**: `(collab seal verification)` is valid only in the `Completion` phase.
 5. Call `commands/collab/engine/registry.py seal-state <target>` to read the live verification state. Capture `registryRevision`, `verificationSubState`, `verificationRounds`, and `verificationCap` from the output.
-<!-- abort: seal-verification-substate-not-assessment -->
 6. If the reported `verificationSubState` is not `assessment`, **ABORT** (agent-honor-system): record-verdict requires `Completion.verification` to be in `assessment` sub-state; current sub-state: `<verificationSubState>`. If the sub-state is `verification`, no seal exists yet — run `(collab seal verification)` (without `--outcome`) first.
-<!-- abort: seal-verification-no-reviewer -->
 7. If `reviewerRole` is absent from the registry `participants` list, **ABORT**: reviewer role is not a registered participant; run `(collab join --role <reviewerRole>)` first.
-<!-- abort: seal-verification-zero-round-no-record -->
 8. If `verificationRounds` is zero, **ABORT**: zero verification rounds; at least one reviewer-executor paired event is required before recording a verdict.
-<!-- abort: seal-verification-wrong-role -->
 9. Resolve the sealing participant from the current agent's joined role. If the joining role does not match `reviewerRole`, **ABORT**: verdict must be authored by the reviewer role; current role: `<role>`; expected: `<reviewerRole>`.
 10. If `--cap-exit <action>` is present: validate that `<action>` is one of `reopen-action-plan`, `reopen-handoff`, `follow-up-collab`, or `archive`.
-<!-- abort: seal-verification-invalid-cap-exit -->
     If invalid, **ABORT**: invalid cap-exit value `<action>`; must be one of: reopen-action-plan, reopen-handoff, follow-up-collab, archive.
-<!-- abort: seal-verification-cap-exceeded -->
 11. If `--cap-exit` is absent and `verificationRounds` is at or above `verificationCap`, **ABORT**: round cap reached; reviewer has not issued a seal event in this round; reissue with `--cap-exit reopen-action-plan`, `--cap-exit reopen-handoff`, `--cap-exit follow-up-collab`, or `--cap-exit archive`.
-<!-- abort: seal-verification-uncommitted-paths -->
 12. Confirm every path in `execution.<role>.touchedPaths` is committed in `HEAD`. Same gate as seal-write step 12; the content-integrity gate additionally recomputes the scope digest from `HEAD` and rejects if it differs from `verificationSeal.contentDigest`. **ABORT**: implementation not in git; list each path that is staged, unstaged, or uncommitted.
 13. If `--outcome success` is present, ask: would any durable rationale in the current transcript (Audit-block content, reviewer findings, seal-trust caveats, or qualifications) be lost if the transcript were not in context? If yes and the rationale belongs in committed source, promote it now — write it into the relevant route doc, reference doc, or invariant file and commit — before recording the success verdict. If promotion is out of scope for this seal, file a concrete backlog row naming the slug, file, and exact location before recording the success verdict. If no source-worthy rationale is found, state that explicitly and continue.
 14. Record the verdict by calling `commands/collab/engine/registry.py record-verdict <target> <role> --observed-revision <registryRevision> --outcome <outcome> [--restore-target <target>] [--restore-reason <reason> --evidence <json> --failure-category <category>]`. The helper records the assessment verdict and may auto-close on `outcome == success`.
-<!-- abort: seal-verification-write-failed -->
     If the helper exits non-zero, **ABORT** (agent-honor-system): verdict write failed; name the helper error.
 15. Display the `NEXT:` guidance returned by `record-verdict`. Stop.
 
@@ -74,8 +52,7 @@ Commit the integrity seal on the active completion pass, or record the assessmen
 
 - **Seal-write vs. record-verdict:** `(collab seal verification)` (no `--outcome`) is the integrity gate — it commits the `verificationSeal` and transitions `verificationSubState` to `assessment`. `(collab seal verification --outcome <outcome>)` is the assessment gate — it records whether the discussion goal was met and may auto-close. These are distinct lifecycle operations issued at different lifecycle positions: seal-write runs when `verificationSubState == "verification"`; record-verdict runs when `verificationSubState == "assessment"`. Seal-write must precede record-verdict; they do not compose in a single invocation.
 - **Parameters:** target collab slug, id, or numeric `#N` as the first token after `seal verification`; when absent, resolved per **Registry targeting** in **Notes**. `--cap-exit <action>` — one of `reopen-action-plan`, `reopen-handoff`, `follow-up-collab`, or `archive`; applies to both modes; required when the round cap is reached, optional when the reviewer chooses to end the loop before the cap. `--outcome <outcome>` — required for record-verdict mode; one of `success`, `incomplete`, `failed`. With `--cap-exit follow-up-collab`, `--restore-reason <reason>`, `--evidence <json>`, and `--failure-category <category>` are required and are recorded on `verificationSeal.followUp`.
-<!-- abort: seal-verification-registry-target -->
-- **Registry targeting:** Resolve the target collab from the resolved registry, using `commands/collab/engine/registry.py` as the shared helper. When the first token after the route is present, treat it as a collab slug, id, or stable numeric position. Otherwise use `activeCollabId`. If the registry is unreadable or invalid, the token does not match any entry, or `activeCollabId` is empty, **ABORT** (agent-honor-system): registry target unavailable; name the registry field or token.
+- **Registry targeting:** Resolve the target collab from the first token after the route, falling back to `activeCollabId` when absent, per **Target resolution** in [`platform/standards/route-invariants.md`](../../../platform/standards/route-invariants.md); this route does not restate the algorithm, except that a resolution failure here is tagged `(agent-honor-system)` rather than a helper-enforced abort.
 - **Reviewer-only:** Only the `reviewerRole` participant may author a seal or verdict. Non-reviewer roles must not issue either mode of this command.
 - **Git-tracking gate:** `seal-write` enforces the Step 12 check by inspecting each execution `touchedPath` against git's committed `HEAD` state, index, and unstaged diff. Committed paths — including paths committed as deletions — pass. Working-tree-only paths, staged paths, and touched paths with unstaged content fail with `SEAL-GIT-STATE: implementation not in git`. Sealing over uncommitted work would record paths in `verificationSeal.touchedPaths` whose content does not exist in `HEAD`, so helper enforcement blocks the seal before writing.
 - <a name="content-integrity-gate"></a>**Content-integrity gate:** At seal-write time and on every `success` verdict, the helpers recompute the scope digest from `HEAD`. If the recomputed digest differs from `verificationSeal.contentDigest` — caused by post-seal committed changes to any touched path — the seal is invalidated via `invalidate_seal_on_content_drift` (`verificationSeal.stale = true`, `staleReason: "content-drift"`); a `success` verdict then fails with `SEAL-CONTENT-DRIFT: post-seal content change detected in a touched path`. The declared scope must also be fully committed at `HEAD`; any declared path with no committed content (neither present nor committed-deleted) is rejected at seal time with `SEAL-CONTENT-INCOMPLETE`. This replaces the prior commit-reachability check (`SEAL-PROVENANCE`): content identity is invariant under amend, rebase, and squash that preserve the tree, so ordinary history hygiene no longer breaks the seal. For `workRepo` binding, see [`workRepo-remediation-index.md`](../../../commands/collab/reference/workRepo-remediation-index.md).

@@ -1,22 +1,26 @@
 # Coverage Gate ABORT-Coverage Record
 
 This file records the burn-down of historical ABORT-clause debt in
-`platform/tooling/coverage-gate.sh`. All historical public collab route ABORT
-clauses have been migrated from prose to anchored, test-backed (or
-`agent-honor-system`-marked) clauses across six batches completed 2026-06-24.
-The gate proves full abort-test coverage, not P9-required-only.
+`platform/tooling/coverage-gate.sh` and the resulting present-state posture.
+All historical public collab route ABORT clauses were migrated from prose to
+anchored, test-backed (or `agent-honor-system`-marked) clauses across six
+batches completed 2026-06-24; that burn-down is the foundation the current
+opt-in posture builds on. The current mandatory/opt-in coverage-gate contract
+itself is specified in `REPOSITORY.md`, not restated here.
 
-## Final State
+## Present State
 
 - allowlisted unanchored clauses: 0
 - discovery-debt unanchored clauses: 0
 - unknown unanchored clauses outside those buckets: 0
 
-The burn-down target of zero allowlisted and zero discovery-debt clauses is
-reached. `coverage-gate.sh` now proves that every historical public-route ABORT
-is anchored and either test-backed or marked `(agent-honor-system)` with a reason
-in its clause; it is no longer a P9-required-only gate. The allowlist file and the
-`DISCOVERY_DEBT_ROUTE_FILES` symbol have both been removed from the codebase.
+The burn-down target of zero allowlisted and zero discovery-debt clauses was
+reached, and the allowlist file and the `DISCOVERY_DEBT_ROUTE_FILES` symbol
+have both been removed from the codebase. On top of that zero-debt baseline,
+`coverage-gate.sh` now proves the mandatory behavior-smoke floor for every
+route and reports opt-in per-clause anchor/test coverage for the
+reviewer-selected keep-list; it is no longer a full-exhaustive,
+P9-required-for-every-clause gate.
 
 ## Classification
 
@@ -32,11 +36,15 @@ Each batch classified ABORT clauses into one of three buckets before anchoring:
   unavailable to repo-owned tests. These cite the reason and use the
   `agent-honor-system` marker.
 
-### Tier analysis — starting classification (34 allowlisted clauses)
+### Tier analysis — starting classification (87 allowlisted clauses)
 
 Enumerated during the structural-architecture-completion-audit (pe). No untestable
-clauses were in the allowlist — all 34 were deferred fixture work, retired across
-Batches 1–6.
+clauses were in the allowlist — all 87 were deferred fixture work, retired across
+Batches 1–6. This is the same 87-clause count the Burn-Down Record below
+reconciles against the six batch totals; the Tier breakdown immediately below
+(~35 + ~20 + ~15 + ~17 ≈ 87) accounts for it by fixture complexity, and the
+26 discovery-debt clauses retired in Batch 6 are a separate bucket, not part
+of this count.
 
 **Tier 1 — Shared structural guards (~35 clauses, lowest fixture complexity):**
 `record-unreadable`, `registry-target-unavailable`, and `record-is-closed` appear
@@ -83,9 +91,12 @@ Established by Batches 1–3; governed Batches 4–6.
 
 ## Burn-Down Record
 
-Each batch updated `coverage-gate-allowlist.txt`, this file's counts, and the
-route/test evidence in the same commit. The allowlist is closed: new routes must
-ship with anchored, test-backed abort clauses and nothing may be added to it.
+Each batch updated the (since-removed) `coverage-gate-allowlist.txt`, this file's
+counts, and the route/test evidence in the same commit. The allowlist was retired
+at the end of the burn-down. The live rule is now the opt-in posture specified in
+`REPOSITORY.md`: the real-record behavior-smoke floor is mandatory, while
+per-clause anchors are kept only for reviewer-selected direct P9 obligations.
+No allowlist file exists to add to.
 
 The six batches account for the full starting debt exactly: 13 + 12 + 28 + 19 +
 14 + 27 = 113 retired clauses, matching 87 original allowlisted clauses plus 26

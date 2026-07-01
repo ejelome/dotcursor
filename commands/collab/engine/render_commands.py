@@ -16,7 +16,7 @@ from commands.collab.engine.registry_io import (
     registry_revision,
     resolve_collab,
 )
-from commands.collab.engine.seal_verification import replace_latest_summary
+from commands.collab.engine.seal_verification_render import replace_latest_summary
 from commands.collab.engine.transcript_readers import (
     read_transcript_for_entry,
     section_bounds,
@@ -29,19 +29,19 @@ from commands.collab.engine.transcript_render import (
 )
 from commands.collab.engine.config_paths import DEFAULT_ROLES_DIR
 
-_commit_registry_and_transcript: Callable[[Path, dict, Path, str], None] | None = None
+_commit_registry_and_transcript: Callable[..., None] | None = None
 
 
 def configure_render_commands(
     *,
-    commit_registry_and_transcript: Callable[[Path, dict, Path, str], None],
+    commit_registry_and_transcript: Callable[..., None],
 ) -> None:
     """Inject the cycle-blocked dependency of the render/summarize write paths: the core-owned two-file commit."""
     global _commit_registry_and_transcript
     _commit_registry_and_transcript = commit_registry_and_transcript
 
 
-def _require_commit() -> Callable[[Path, dict, Path, str], None]:
+def _require_commit() -> Callable[..., None]:
     if _commit_registry_and_transcript is None:
         die('render commands engine is not configured: commit callback missing')
     return _commit_registry_and_transcript
@@ -121,6 +121,6 @@ def render_participants(path: Path, target: str, roles_dir: Path) -> int:
             die(f'transcript missing: {transcript_path}')
         rendered, header_changed = render_managed_header_text(transcript_path.read_text(), entry, roles_dir)
         print_header_overwrite(header_changed)
-        _require_commit()(path, data, transcript_path, rendered)
+        _require_commit()(path, data, transcript_path, rendered, roles_dir)
     print(transcript_path)
     return 0

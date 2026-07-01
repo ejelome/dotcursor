@@ -81,10 +81,10 @@ from pathlib import Path
 
 path = Path(sys.argv[1])
 data = json.loads(path.read_text())
-data["namespaceCoverageExemptions"].pop("doc")
+data["namespaceCoverageExemptions"].pop("help")
 path.write_text(json.dumps(data, indent=2) + "\n")
 PY
-assert_fails_with "advisory coverage policy lacks namespace decision(s): doc" \
+assert_fails_with "advisory coverage policy lacks namespace decision(s): help" \
   python3 platform/tooling/command-advisories.py --check --data-dir "$TMPDIR/missing-coverage-decision"
 
 cp -R platform/data "$TMPDIR/required-without-file"
@@ -97,11 +97,11 @@ from pathlib import Path
 
 path = Path(sys.argv[1])
 data = json.loads(path.read_text())
-data["namespaceCoverageExemptions"].pop("doc")
-data["requiredNamespaces"].append("doc")
+data["namespaceCoverageExemptions"].pop("help")
+data["requiredNamespaces"].append("help")
 path.write_text(json.dumps(data, indent=2) + "\n")
 PY
-assert_fails_with "missing required advisory namespace file(s): doc" \
+assert_fails_with "missing required advisory namespace file(s): help" \
   python3 platform/tooling/command-advisories.py --check --data-dir "$TMPDIR/required-without-file"
 
 python3 - "$ROOT/generated/command-reference.md" "$TMPDIR/leaky-command-reference.md" <<'PY'

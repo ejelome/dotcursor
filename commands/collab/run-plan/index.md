@@ -10,15 +10,10 @@ Implement the action-plan items assigned to the executing agent's role in a coll
 ## Steps
 
 1. Read [invariants.md](../../../commands/collab/reference/invariants.md) before executing; call the relevant helper fresh and do not trust prior reads from conversation context (Invariant #4). Resolve the target collab with **Registry targeting** in **Notes**.
-<!-- abort: run-plan-record-unreadable -->
 2. Read the resolved registry and the resolved transcript. If either is unreadable, **ABORT** (agent-honor-system): record unreadable; name the path. The `execution` and `execute-spawn` helpers tolerate a missing transcript rather than aborting, so this read-time guard is agent-enforced.
-<!-- abort: run-plan-record-is-closed -->
 3. If the registry status is `closed` or `archived`, **ABORT**: closed collaboration records cannot be executed. The `execution` helper backstops this with `record is closed`.
-<!-- abort: run-plan-active-phase-missing -->
 4. Resolve the active phase from registry `activePhase`. If missing or unknown, **ABORT**: active phase missing in metadata. The `execution` helper validates the phase enum on load and rejects an unknown value with `collab activePhase must be one of [...]`.
-<!-- abort: run-plan-phase-not-completion -->
 5. If the active phase is not `Completion`, **ABORT**: `(collab run plan)` is valid only when registry `activePhase` is `Completion`. The `execute-spawn` helper enforces the same gate before any subagent scope check, aborting with `execute-spawn is valid only in Completion`.
-<!-- abort: run-plan-role-not-registered -->
 6. Resolve the executing role from the registry participants list. Match the current agent to a registered participant. If no match, **ABORT**: role not registered; run `(collab join --role <role>)` first. The `execution` helper backstops this with `caller role must already be a participant: <role>` when the executing role is not yet a participant.
 7. Read `## Action Plan`. Collect all unchecked checklist items whose label begins with `**<role>:**` matching the resolved role. If none found, report that no assigned items remain and stop.
 8. If Step 7 found no unchecked assigned items and an execution-history item matching `**<role>:** completed` already exists, report that the role's execution is already complete and stop. If Step 7 found unchecked assigned items, continue execution; a later successful `execution` helper write replaces the role's prior execution metadata.
@@ -38,8 +33,7 @@ Implement the action-plan items assigned to the executing agent's role in a coll
 ## Notes
 
 - **Parameters:** target collab slug, id, or numeric `#N` as the first token after `run plan`; when absent, resolved per **Registry targeting** in **Notes**.
-<!-- abort: run-plan-registry-target -->
-- **Registry targeting:** Resolve the target collab from the resolved registry, using `commands/collab/engine/registry.py` as the shared helper. When the first token after the route is present, treat it as a collab slug, id, or stable numeric position. Otherwise use `activeCollabId`. If the registry is unreadable or invalid, the token does not match any entry, or `activeCollabId` is empty, **ABORT**: registry target unavailable; name the registry field or token. The shared `resolve_collab` helper backstops a non-matching token with `registry target not found: <token>`.
+- **Registry targeting:** Resolve the target collab from the first token after the route, falling back to `activeCollabId` when absent. The resolution algorithm and abort contract are owned by **Target resolution** in [`platform/standards/route-invariants.md`](../../../platform/standards/route-invariants.md); this route does not restate them.
 - **Completion-only guard:** `(collab run plan)` must refuse `Audit`, `Discussion`, `Conclusion`, `Action Plan`, and `Handoff`.
 - **Item scoping:** Execute selects only checklist items whose label begins with `**<role>:**` matching the executing role. Items labeled for other roles are skipped without modification.
 - **Executable Action Plan shape:** Executable items are flat checklist lines beginning with `**<role>:**`. Nested checklist items, role-group headings, or unlabeled child tasks are not executable assignments. Action-plan items must not assign running the full test suite (`./tests/run.sh`) as a per-agent completion step; the full-suite run belongs to the terminal execution turn only.

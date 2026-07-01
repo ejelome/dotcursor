@@ -17,7 +17,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
 python3 - "$ROOT" <<'PY'
 import sys
 sys.path.insert(0, f"{sys.argv[1]}/commands/collab/engine")
-import registry as R
+import seal_verification_logic as R
 
 def mk(rounds):
     return {

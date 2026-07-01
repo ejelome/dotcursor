@@ -6,7 +6,19 @@ TMPDIR="$(mktemp -d)"
 STAGED_PATH="tests/commands/collab/registry.py/staged-touch-fixture.txt"
 UNSTAGED_PATH="tests/commands/collab/registry.py/uncommitted-touch-fixture.txt"
 DIRTY_STAGED_PATH="tests/commands/collab/registry.py/dirty-staged-touch-fixture.txt"
-COMMITTED_DELETION_PATH="tools/narrative/state.py"
+COMMITTED_DELETION_PATH="$(
+  while IFS= read -r path; do
+    [[ -n "$path" ]] || continue
+    if [[ ! -e "$ROOT/$path" ]]; then
+      printf '%s\n' "$path"
+      break
+    fi
+  done < <(git -C "$ROOT" log --diff-filter=D --name-only --format=)
+)"
+if [[ -z "$COMMITTED_DELETION_PATH" ]]; then
+  printf 'FAIL: no committed-deletion fixture available from git history\n' >&2
+  exit 1
+fi
 trap 'rm -rf "$TMPDIR"; rm -f "$ROOT/$STAGED_PATH" "$ROOT/$UNSTAGED_PATH" "$ROOT/$DIRTY_STAGED_PATH"' EXIT
 
 cd "$TMPDIR"

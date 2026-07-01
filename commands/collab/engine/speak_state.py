@@ -22,7 +22,7 @@ from commands.collab.engine.participants import (
     reviewer_role,
     reviewer_state,
 )
-from commands.collab.engine.seal_verification import (
+from commands.collab.engine.seal_verification_logic import (
     first_pending_participant_verification_role,
     participant_verification_enabled,
     participant_verification_incomplete,

@@ -12,11 +12,11 @@ Public command documentation and runtime advisory output present dispatch forms 
 
 ## Rules
 
-**Rule 1 — Namespace**: Singular lowercase kebab-case noun naming a durable domain. No verbs. Abbreviations are permitted only when the abbreviation *is* the domain name (e.g., `git`).
+**Rule 1 — Namespace**: Singular lowercase kebab-case noun naming a durable domain. No verbs. Abbreviations are permitted only when the abbreviation *is* the domain name.
 
 **Rule 2 — Verb**: Lowercase kebab-case imperative drawn from the reserved-form table. No namespace-owned allowlist. Every route verb must map to a reserved form; when a live route needs a verb absent from the table, add one operation class row and migrate every route performing that operation before use.
 
-**Rule 3 — Target**: Optional lowercase kebab-case noun. Specifies the artifact or resource the verb acts on. Routes with two apparent verb tokens restructure as verb + target: `(git create issue)`, not `(git issue create)`.
+**Rule 3 — Target**: Optional lowercase kebab-case noun. Specifies the artifact or resource the verb acts on. Routes with two apparent verb tokens restructure as verb + target: `(collab create issue)`, not `(collab issue create)`.
 
 **Rule 4 — Flags**: `--kebab-case-name [value]`. Flags modify behavior only. State mutation always routes through an explicit verb. No flag may replicate a reserved-form verb's function.
 
@@ -56,12 +56,11 @@ Public command documentation and runtime advisory output present dispatch forms 
 | Compact artifact | `compact <target>` |
 | Compare artifacts | `compare <target>` |
 
-**`init` vs `create <target>`**: Use `init` when the namespace is its own artifact and there is no named sub-resource (e.g., `(collab init)` creates a collab; the collab *is* the namespace target). Use `create <target>` when the artifact is a sub-resource of a domain (e.g., `(git create issue)`). "Chosen per domain" is not a valid choice; one of these two forms must be selected at route definition time.
+**`init` vs `create <target>`**: Use `init` when the namespace is its own artifact and there is no named sub-resource (e.g., `(collab init)` creates a collab; the collab *is* the namespace target). Use `create <target>` when the artifact is a sub-resource of a domain (e.g., `(collab create issue)`). "Chosen per domain" is not a valid choice; one of these two forms must be selected at route definition time.
 
 ## Named exceptions
 
 1. **`(test)` private-surface targets** (Rule 5): Route names under `(test)` may carry a `_` prefix when they name underscore-prefixed private trees. Scope is limited to the `test` namespace. No other namespace may claim this exception without a convention review.
-2. **Tool-domain namespaces**: `git` is permitted as a namespace because the tool name *is* the domain. No other tool name may serve as a namespace without a convention review.
 
 ## Helper subcommand grammar
 

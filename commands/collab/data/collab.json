@@ -147,6 +147,18 @@
       "rationale": "Records issue-terminal handoff evidence and may close the collab without reviewer seal state."
     },
     {
+      "route": "commit",
+      "capabilityTier": "execution",
+      "effortTier": "high",
+      "rationale": "Stages and commits repository changes; atomic grouping and squash ranges require careful git-state judgment."
+    },
+    {
+      "route": "issue",
+      "capabilityTier": "composition",
+      "effortTier": "high",
+      "rationale": "Creates issue handoffs or grounded implementation plans tied to repository state and owner metadata."
+    },
+    {
       "route": "rewrite execution",
       "capabilityTier": "execution",
       "effortTier": "medium",

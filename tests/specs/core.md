@@ -33,7 +33,6 @@ Deterministic QA for `~/.cursor/platform/standards/*.md` canon documents.
 - `host-integration.md`
 - `markdown-workflow.md`
 - `playbook-discipline.md`
-- `quality-learning.md`
 - `role-standard.md`
 - `route-invariants.md`
 - `route-sufficiency.md`

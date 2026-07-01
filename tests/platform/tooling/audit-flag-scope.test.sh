@@ -123,4 +123,22 @@ clean="$TMPDIR/clean"
 write_flag_tree "$clean" "override: system — namespace narrows force" "override: namespace — command narrows force"
 COMMAND_CONFIG_ROOT="$clean" "$ROOT/platform/tooling/audit-flag-scope.sh" >/dev/null
 
+empty="$TMPDIR/empty"
+mkdir -p "$empty/commands/demo/run"
+cat >"$empty/commands/index.md" <<'MD'
+# Commands
+MD
+cat >"$empty/commands/demo/index.md" <<'MD'
+# /demo
+MD
+cat >"$empty/commands/demo/run/index.md" <<'MD'
+# /demo run
+MD
+COMMAND_CONFIG_ROOT="$empty" "$ROOT/platform/tooling/audit-flag-scope.sh" >"$TMPDIR/empty.out"
+if ! grep -Fq "route-flag blocks are optional; none found" "$TMPDIR/empty.out"; then
+  printf 'FAIL: empty route-flag tree did not report optional no-op\n' >&2
+  cat "$TMPDIR/empty.out" >&2
+  exit 1
+fi
+
 printf 'OK: flag-scope audit rejects silent shadowing and enforces em-dash overrides\n'

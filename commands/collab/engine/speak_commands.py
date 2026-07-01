@@ -63,7 +63,7 @@ from commands.collab.engine.registry_io import (
     resolve_collab,
     save_registry,
 )
-from commands.collab.engine.seal_verification import initialize_completion_state
+from commands.collab.engine.seal_verification_logic import initialize_completion_state
 from commands.collab.engine.speak_state import (
     add_participation_resume_fields,
     blocked_resume_state_for_entry,

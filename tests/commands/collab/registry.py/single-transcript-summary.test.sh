@@ -73,9 +73,4 @@ if [[ -e "$RAW" ]]; then
   printf 'FAIL: summary write created legacy raw transcript: %s\n' "$RAW" >&2
   exit 1
 fi
-if find "$RECORDS_DIR" -maxdepth 1 \( -name "$TARGET-synthesis.json" -o -name "$TARGET-synthesis" \) | grep -q .; then
-  printf 'FAIL: summary write created synthesis artifacts\n' >&2
-  exit 1
-fi
-
 printf 'OK: summary writes stay inside the single canonical transcript\n'

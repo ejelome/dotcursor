@@ -10,7 +10,6 @@ Mark a collaboration record closed so contribution and phase-advance routes stop
 ## Steps
 
 1. Read [invariants.md](../../../commands/collab/reference/invariants.md) before executing; call the relevant helper fresh and do not trust prior reads from conversation context (Invariant #4). Resolve the target collab with **Registry targeting** in **Notes**.
-<!-- abort: close-record-unreadable -->
 2. Read the resolved registry and the resolved transcript path. If either is unreadable, **ABORT**: record unreadable; name the path.
 3. If the registry status is `closed`, report that the record is already closed and stop.
 4. Ask: would any durable rationale in the current transcript (Audit-block content, reviewer findings, seal-trust caveats, or qualifications) be lost if the transcript were not in context? If yes and the rationale belongs in committed source, promote it now — write it into the relevant route doc, reference doc, or invariant file and commit — before closing. If promotion is out of scope for this close, file a concrete backlog row naming the slug, file, and exact location before closing. If no source-worthy rationale is found, state that explicitly and continue.
@@ -22,9 +21,7 @@ Mark a collaboration record closed so contribution and phase-advance routes stop
 ## Notes
 
 - **Parameters:** target collab slug, id, or numeric `#N` as the first token after `close`; when absent, resolved per **Registry targeting** in **Notes**. `--no-summary` — skip the automatic summary (optional).
-- **Registry targeting:** Resolve the target collab from the resolved registry, using `commands/collab/engine/registry.py` as the shared helper. When the first token after the route is present, treat it as a collab slug, id, or stable numeric `#N` position. Otherwise use `activeCollabId`.
-<!-- abort: close-registry-target-unavailable -->
-  If the registry is unreadable or invalid, the token does not match any entry, or `activeCollabId` is empty, **ABORT**: registry target unavailable; name the registry field or token.
+- **Registry targeting:** Resolve the target collab from the first token after the route, falling back to `activeCollabId` when absent. The resolution algorithm and abort contract are owned by **Target resolution** in [`platform/standards/route-invariants.md`](../../../platform/standards/route-invariants.md); this route does not restate them.
 - **Promotion-discipline context:** Step 4 addresses a qualitative gap that the structured-field rules in `invariants.md` and `platform/data/doctrines.md` do not cover: collab-specific reasoning such as Audit-block content, reviewer findings, and seal-trust caveats can encode general principles that belong in committed source, but no close-time surface prompted that check before this step was added. The enforcement is a route-doc test guarding against silent removal rather than a `charteredDeliverables` binding, because the check is qualitative human judgment rather than the presence of a committed file. See the **Promotion mechanism** note in [`seal-verification/index.md`](../seal-verification/index.md) for the full rationale.
 - **Active cleanup:** Clearing `activeCollabId` means leaving the registry pointer empty. Subsequent routes must refuse target inference until the moderator runs `(collab activate <record>)` or names a target explicitly.
 - **Summary default:** The `close` helper emits a structural `### Summary —` block automatically; no route-level generation step is required. Pass `--no-summary` to skip narrative refinement. Use `(collab rewrite summary)` on closed records to replace the narrative body.

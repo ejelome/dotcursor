@@ -18,8 +18,8 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
         with:
-          # Full history: seal-render-git-state walks `git log` for the commit
-          # that deleted tools/narrative/state.py; a shallow clone hides it.
+          # Full history: seal-render-git-state derives a committed-deletion
+          # fixture from `git log`; a shallow clone hides it.
           fetch-depth: 0
       - name: Run test suite
         run: bash tests/run.sh

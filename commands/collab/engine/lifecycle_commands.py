@@ -27,7 +27,7 @@ from commands.collab.engine.registry_io import (
     resolve_collab,
     save_registry,
 )
-from commands.collab.engine.seal_verification import (
+from commands.collab.engine.seal_verification_logic import (
     invalidate_seal_on_content_drift,
     successful_verdict,
     write_seal_verdict_companion,

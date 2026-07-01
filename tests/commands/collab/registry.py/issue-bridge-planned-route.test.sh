@@ -51,7 +51,7 @@ write(
     ]),
 )
 write(
-    'commands/git/issue/index.md',
+    'commands/collab/issue/index.md',
     '\n'.join([
         '## Notes',
         '- **Output contract:** Issue delivery: prefill or connector-backed.',
@@ -118,21 +118,21 @@ write(
     ]),
 )
 
-(tmp / 'commands/git/issue/index.md').unlink()
+(tmp / 'commands/collab/issue/index.md').unlink()
 try:
     module.validate_planned_route_prerequisites(tmp)
 except SystemExit as exc:
     message = str(exc)
-    assert 'third prerequisite: commands/git/issue/index.md (output contract)' in message, message
+    assert 'third prerequisite: commands/collab/issue/index.md (output contract)' in message, message
     assert 'issue output contract' in message, message
     assert 'issue owner metadata' in message, message
     assert 'issue requires preservation' in message, message
     assert 'issue implement handoff shape' in message, message
 else:
-    raise AssertionError('planned route gate accepted missing (git issue) contract')
+    raise AssertionError('planned route gate accepted missing (collab issue) contract')
 
 write(
-    'commands/git/issue/index.md',
+    'commands/collab/issue/index.md',
     '\n'.join([
         '## Notes',
         '- **Output contract:** Issue delivery: prefill or connector-backed.',

@@ -29,8 +29,7 @@ fi
 
 dirty="$TMPDIR/dirty"
 make_repo "$dirty"
-mkdir -p "$dirty/_mdc/auto"
-printf 'retired\n' >"$dirty/_mdc/auto/auto-context-gate.mdc"
+perl -0pi -e 's/^# Context gate/---\nstate: invalid\n---\n# Context gate/' "$dirty/platform/standards/context-gate.md"
 
 set +e
 "$ROOT/platform/tooling/sync-context-gate.sh" --check --root "$dirty" >"$TMPDIR/dirty.out" 2>&1
@@ -41,10 +40,10 @@ if [[ "$status" -eq 0 ]]; then
   printf 'FAIL: expected drift fixture to fail\n' >&2
   exit 1
 fi
-if ! grep -Fq "retired context-gate projection still exists" "$TMPDIR/dirty.out"; then
+if ! grep -Fq "context-gate.md must not carry frontmatter" "$TMPDIR/dirty.out"; then
   printf 'FAIL: drift output mismatch\n' >&2
   cat "$TMPDIR/dirty.out" >&2
   exit 1
 fi
 
-printf 'OK: context-gate parity check detects projection drift\n'
+printf 'OK: context-gate parity check detects invalid canonical source shape\n'

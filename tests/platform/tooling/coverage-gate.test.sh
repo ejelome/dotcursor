@@ -31,6 +31,12 @@ if ! grep -Fq "abort coverage check passed" "$TMPDIR/pass.out"; then
   exit 1
 fi
 
+if grep -Fq "behavior-smoke floor present" "$TMPDIR/pass.out"; then
+  printf 'FAIL: strict fixture scan reported real-repo behavior-smoke floor\n' >&2
+  cat "$TMPDIR/pass.out" >&2
+  exit 1
+fi
+
 rm "$tests_dir/sample-missing-input.test.sh"
 set +e
 run_gate >"$TMPDIR/missing.out" 2>&1
@@ -185,5 +191,12 @@ fi
 
 if ! grep -Fq "platform/tooling/coverage-gate.sh" "$ROOT/platform/tooling/audit.sh"; then
   printf 'FAIL: audit.sh does not invoke coverage gate\n' >&2
+  exit 1
+fi
+
+"$ROOT/platform/tooling/coverage-gate.sh" >"$TMPDIR/real-floor.out"
+if ! grep -Fq "coverage-gate: behavior-smoke floor present." "$TMPDIR/real-floor.out"; then
+  printf 'FAIL: real-repo coverage gate did not report behavior-smoke floor\n' >&2
+  cat "$TMPDIR/real-floor.out" >&2
   exit 1
 fi

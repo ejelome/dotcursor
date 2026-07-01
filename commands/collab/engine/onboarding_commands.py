@@ -18,7 +18,6 @@ from commands.collab.engine.command_lines import (
     resume_command_invocation,
     transcript_view_command_for_role,
 )
-from commands.collab.engine.config_paths import DEFAULT_ROLES_DIR
 from commands.collab.engine.contribution_store import (
     empty_contribution_store,
     path_for_entry_target,
@@ -65,13 +64,13 @@ from commands.collab.engine.transcript_render import (
 )
 
 _commit_new_collab_artifacts: Callable[..., None] | None = None
-_commit_registry_and_transcript: Callable[[Path, dict, Path, str], None] | None = None
+_commit_registry_and_transcript: Callable[..., None] | None = None
 
 
 def configure_onboarding_commands(
     *,
     commit_new_collab_artifacts: Callable[..., None],
-    commit_registry_and_transcript: Callable[[Path, dict, Path, str], None],
+    commit_registry_and_transcript: Callable[..., None],
 ) -> None:
     """Inject the cycle-blocked commit primitives of the init/join write paths: the core-owned three-artifact create and two-file write."""
     global _commit_new_collab_artifacts, _commit_registry_and_transcript
@@ -85,7 +84,7 @@ def _require_commit_new() -> Callable[..., None]:
     return _commit_new_collab_artifacts
 
 
-def _require_commit() -> Callable[[Path, dict, Path, str], None]:
+def _require_commit() -> Callable[..., None]:
     if _commit_registry_and_transcript is None:
         die('onboarding commands engine is not configured: commit callback missing')
     return _commit_registry_and_transcript
@@ -225,7 +224,7 @@ def join_participants(
         next_entry = resolve_collab(nextdata, target)
         if add_participant_to_entry(next_entry, role, normalized_agent_id):
             count_caller_declined_agent_id_write(nextdata, normalized_agent_id)
-        validate_registry_data(nextdata, path, DEFAULT_ROLES_DIR)
+        validate_registry_data(nextdata, path, roles_dir)
 
         transcript_path = transcript_path_for_entry(next_entry)
         if not transcript_path.exists():
@@ -234,7 +233,7 @@ def join_participants(
 
         rendered, header_changed = render_managed_header_text(transcript, next_entry, roles_dir)
         print_header_overwrite(header_changed)
-        _require_commit()(path, nextdata, transcript_path, rendered)
+        _require_commit()(path, nextdata, transcript_path, rendered, roles_dir)
     print_post_action_advisories(
         next_entry,
         role,

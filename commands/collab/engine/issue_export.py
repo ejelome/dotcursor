@@ -24,7 +24,7 @@ from commands.collab.engine.registry_io import (
     resolve_collab,
     save_registry,
 )
-from commands.collab.engine.seal_verification import (
+from commands.collab.engine.seal_verification_render import (
     append_completion_summary,
     default_close_summary,
     summary_date_from_timestamp,

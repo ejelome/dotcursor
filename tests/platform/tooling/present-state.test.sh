@@ -12,7 +12,7 @@ doctrine_ban="Do not retain legacy aliases, deprecation win""dows, or backwards-
 cat >"$clean/commands/collab/reference/current.md" <<'MD'
 # Current Fixture
 
-The retract tombstone feature and dp tombstone status are current behavior.
+The retract tombstone feature is current behavior.
 Legacy-named test fixtures are allowed when they are live fixture names.
 The P9 no-legacy-dispatch rule remains a present-tense invariant.
 Each source file is capped at <= 250 lines per file.
